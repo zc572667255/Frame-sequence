@@ -1,0 +1,4144 @@
+<title>光台 · 序列帧动画工具</title>
+<style>
+  :root {
+    --bg: #f2ece0;
+    --bg-wash: #e9e0cd;
+    --panel: #ffffff;
+    --panel-line: rgba(60, 50, 30, 0.14);
+    --text: #2a2419;
+    --text-dim: #6b6252;
+    --accent: #c07a1e;
+    --accent-strong: #9c5e10;
+    --accent-soft: rgba(192, 122, 30, 0.14);
+    --teal: #2f7d78;
+    --danger: #b7473a;
+    --sprocket: rgba(60, 50, 30, 0.10);
+    --shadow: rgba(60, 50, 30, 0.16);
+    --focus: #1b6ee0;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #15161c;
+      --bg-wash: #1b1d25;
+      --panel: #1f212a;
+      --panel-line: rgba(230, 220, 200, 0.10);
+      --text: #ece6d8;
+      --text-dim: #8d8f9c;
+      --accent: #e2a63d;
+      --accent-strong: #f0bd63;
+      --accent-soft: rgba(226, 166, 61, 0.14);
+      --teal: #4fb3ac;
+      --danger: #e08277;
+      --sprocket: rgba(226, 166, 61, 0.10);
+      --shadow: rgba(0, 0, 0, 0.45);
+      --focus: #6fb2ff;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #15161c;
+    --bg-wash: #1b1d25;
+    --panel: #1f212a;
+    --panel-line: rgba(230, 220, 200, 0.10);
+    --text: #ece6d8;
+    --text-dim: #8d8f9c;
+    --accent: #e2a63d;
+    --accent-strong: #f0bd63;
+    --accent-soft: rgba(226, 166, 61, 0.14);
+    --teal: #4fb3ac;
+    --danger: #e08277;
+    --sprocket: rgba(226, 166, 61, 0.10);
+    --shadow: rgba(0, 0, 0, 0.45);
+    --focus: #6fb2ff;
+  }
+  :root[data-theme="light"] {
+    --bg: #f2ece0;
+    --bg-wash: #e9e0cd;
+    --panel: #ffffff;
+    --panel-line: rgba(60, 50, 30, 0.14);
+    --text: #2a2419;
+    --text-dim: #6b6252;
+    --accent: #c07a1e;
+    --accent-strong: #9c5e10;
+    --accent-soft: rgba(192, 122, 30, 0.14);
+    --teal: #2f7d78;
+    --danger: #b7473a;
+    --sprocket: rgba(60, 50, 30, 0.10);
+    --shadow: rgba(60, 50, 30, 0.16);
+    --focus: #1b6ee0;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background:
+      radial-gradient(ellipse 900px 500px at 20% -10%, var(--bg-wash), transparent),
+      var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", system-ui, "Microsoft YaHei", sans-serif;
+    line-height: 1.5;
+  }
+
+  .display {
+    font-family: Bahnschrift, "DIN Alternate", "Arial Narrow", "Microsoft YaHei", sans-serif;
+    font-stretch: condensed;
+  }
+
+  .mono {
+    font-family: "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 0.001ms !important; }
+  }
+
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 28px 20px 64px;
+  }
+
+  header.top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 22px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--panel-line);
+  }
+
+  header.top h1 {
+    font-size: 26px;
+    letter-spacing: 0.02em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  header.top h1 .dot { color: var(--accent); }
+
+  header.top p {
+    margin: 4px 0 0;
+    color: var(--text-dim);
+    font-size: 13.5px;
+    max-width: 46ch;
+  }
+
+  .badge {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent-strong);
+    background: var(--accent-soft);
+    border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+    padding: 4px 9px;
+    border-radius: 3px;
+    white-space: nowrap;
+  }
+
+  .grid-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.9fr);
+    gap: 20px;
+    align-items: start;
+  }
+  @media (max-width: 860px) {
+    .grid-main { grid-template-columns: 1fr; }
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--panel-line);
+    border-radius: 6px;
+    box-shadow: 0 1px 2px var(--shadow);
+    padding: 18px;
+  }
+
+  .panel + .panel { margin-top: 20px; }
+
+  .panel h2 {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--text-dim);
+    margin: 0 0 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .panel h2::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex: none;
+  }
+
+  /* --- Light table --- */
+  .lighttable {
+    position: relative;
+    border-radius: 4px;
+    background:
+      repeating-conic-gradient(var(--bg-wash) 0% 25%, var(--panel) 0% 50%) 0 0/18px 18px;
+    border: 1px solid var(--panel-line);
+    min-height: 220px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .lighttable.drag { outline: 2px dashed var(--accent); outline-offset: -2px; }
+
+  .dropzone {
+    width: 100%;
+    padding: 48px 20px;
+    text-align: center;
+    cursor: pointer;
+    color: var(--text-dim);
+  }
+  .dropzone strong { color: var(--text); font-weight: 600; }
+  .dropzone.drag { background: var(--accent-soft); }
+  .dropzone .icon {
+    font-size: 30px;
+    margin-bottom: 10px;
+    color: var(--accent);
+  }
+
+  .sheet-scroll {
+    width: 100%;
+    max-height: 540px;
+    overflow: auto;
+    padding: 10px;
+    text-align: center; /* centres the shrink-wrapped stack */
+  }
+
+  /* Fit mode (default): letterbox the whole sheet into the box. A 1000x1000+ sheet
+     forced to width:100% would render ~700px tall and push the page around; here it
+     scales down to fit and stays visible at a glance. */
+  #sheetCanvas {
+    display: block;
+    max-width: 100%;
+    max-height: 460px;
+    width: auto;
+    height: auto;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+  }
+  .sheet-scroll.actual #sheetCanvas { max-width: none; max-height: none; }
+  /* shrink-wraps the canvas so the absolutely-positioned mask overlay keeps
+     lining up with it once the canvas is letterboxed rather than full-width */
+  .sheet-stack { position: relative; display: inline-block; line-height: 0; }
+
+  .bg-chips {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin: 4px 0 12px;
+    min-height: 26px;
+  }
+  .bg-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 6px 3px 4px;
+    border: 1px solid var(--panel-line);
+    border-radius: 4px;
+    background: var(--bg-wash);
+    font-size: 11px;
+  }
+  .bg-chip .sw {
+    width: 16px; height: 16px;
+    border-radius: 3px;
+    border: 1px solid var(--panel-line);
+    flex: none;
+  }
+  .bg-chip button {
+    padding: 0 3px;
+    font-size: 13px;
+    line-height: 1;
+    border: none;
+    background: none;
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  .bg-chip button:hover { color: var(--danger); }
+  .bg-empty { font-size: 12px; color: var(--text-dim); }
+  #maskCanvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    pointer-events: none;
+  }
+  /* lightweight CSS-positioned brush ring — cheap to move, no canvas repaint needed */
+  .cursor-ring {
+    position: absolute;
+    border-radius: 50%;
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    border: 1.5px solid #fff;
+    box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.55);
+    display: none;
+    z-index: 3;
+  }
+
+  .field-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .field label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+  }
+  .field input[type="number"], .field select {
+    font-family: inherit;
+    font-size: 14px;
+    padding: 7px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--panel-line);
+    background: var(--bg-wash);
+    color: var(--text);
+  }
+  .field input:focus-visible, .field select:focus-visible, button:focus-visible, input[type=range]:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 1px;
+  }
+
+  .readout {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin: 4px 0 14px;
+    padding: 10px 12px;
+    background: var(--bg-wash);
+    border-radius: 4px;
+    font-size: 12.5px;
+  }
+  .readout span.k { color: var(--text-dim); margin-right: 5px; }
+  .readout span.v { font-weight: 600; }
+
+  hr.sep {
+    border: none;
+    border-top: 1px solid var(--panel-line);
+    margin: 14px 0;
+  }
+
+  .hint {
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.6;
+    margin: 0 0 12px;
+  }
+  .toggle-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13.5px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    cursor: pointer;
+  }
+  .toggle-line input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--accent);
+  }
+  .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 4px;
+  }
+  .slider-row input[type="range"] { flex: 1; accent-color: var(--accent); }
+  .slider-row .val { width: 34px; text-align: right; font-size: 13px; }
+  .slider-row input[type="number"].val-num {
+    width: 54px;
+    flex: none;
+    font-size: 13px;
+    text-align: right;
+    padding: 4px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--panel-line);
+    background: var(--bg-wash);
+    color: var(--text);
+  }
+  .slider-row input[type="number"].val-num:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 1px;
+  }
+  .slider-row .val-unit { width: 12px; flex: none; font-size: 12px; color: var(--text-dim); }
+
+  /* --- Palette --- */
+  .pal-grid {
+    display: grid;
+    grid-template-columns: repeat(16, minmax(0, 1fr));
+    gap: 3px;
+    margin-bottom: 4px;
+    max-height: 224px;
+    overflow-y: auto;
+    padding: 2px;
+  }
+  .pal-grid.pickmode { outline: 2px dashed var(--accent); outline-offset: 3px; border-radius: 4px; }
+  .pal-swatch {
+    aspect-ratio: 1 / 1;
+    min-width: 0;
+    padding: 0;
+    border: 1px solid var(--panel-line);
+    border-radius: 3px;
+    cursor: pointer;
+    position: relative;
+  }
+  .pal-swatch.sel { outline: 2px solid var(--accent); outline-offset: 1px; z-index: 1; }
+  .pal-swatch.mapped::after {
+    content: "";
+    position: absolute;
+    top: 1px; right: 1px;
+    width: 4px; height: 4px;
+    border-radius: 50%;
+    background: var(--accent-strong);
+    box-shadow: 0 0 0 1px var(--panel);
+  }
+  .pal-chip {
+    width: 24px; height: 24px;
+    border-radius: 4px;
+    border: 1px solid var(--panel-line);
+    display: inline-block;
+    flex: none;
+  }
+  .color-edit {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: var(--bg-wash);
+    border-radius: 4px;
+  }
+  .color-edit input[type="color"] {
+    width: 46px; height: 30px;
+    padding: 2px;
+    border: 1px solid var(--panel-line);
+    border-radius: 4px;
+    background: var(--bg-wash);
+    cursor: pointer;
+  }
+  .color-edit .arrow { color: var(--text-dim); font-size: 12px; }
+  #sheetCanvas.picking { cursor: crosshair; }
+
+  .pal-caption {
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: 0.02em;
+    margin: 12px 0 5px;
+  }
+  .pal-caption b { color: var(--accent-strong); font-weight: 700; }
+
+  .conv-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin: 2px 0 12px;
+  }
+  .conv-row select {
+    font-family: inherit;
+    font-size: 13px;
+    padding: 7px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--panel-line);
+    background: var(--bg-wash);
+    color: var(--text);
+  }
+
+  .map-list {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-top: 12px;
+  }
+  .map-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+  }
+  .map-row .pal-chip { width: 18px; height: 18px; }
+  .map-row .arrow { color: var(--text-dim); }
+  .map-row .hex { color: var(--text-dim); }
+  .map-row .rm {
+    margin-left: auto;
+    font-size: 11px;
+    padding: 3px 8px;
+  }
+
+  /* --- Viewfinder --- */
+  .viewfinder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+  .monitor {
+    border-radius: 4px;
+    padding: 14px;
+    background: linear-gradient(180deg, var(--bg-wash), var(--bg));
+    border: 1px solid var(--panel-line);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    /* auto-fit already shrinks oversized frames; this only catches an explicit
+       zoom, which scrolls inside the monitor instead of stretching the panel */
+    max-height: 320px;
+    overflow: auto;
+  }
+  #previewCanvas { flex: none; }
+  #previewCanvas {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    background:
+      repeating-conic-gradient(var(--bg-wash) 0% 25%, var(--panel) 0% 50%) 0 0/14px 14px;
+    border-radius: 2px;
+  }
+
+  .color-board {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .board-stage-wrap { position: relative; }
+  .color-board-stage {
+    border-radius: 4px;
+    padding: 12px;
+    background:
+      repeating-conic-gradient(var(--bg-wash) 0% 25%, var(--panel) 0% 50%) 0 0/14px 14px;
+    border: 1px solid var(--panel-line);
+    width: 100%;
+    height: var(--board-height, 460px);
+    min-height: 220px;
+    max-height: min(85vh, var(--board-max-height, 960px));
+    display: flex;
+    overflow: auto;
+    transition: height 140ms ease;
+  }
+  .color-board-stage.panning { cursor: grabbing; }
+  .color-board-stage.can-pan #firstFrameCanvas { cursor: grab; }
+  #firstFrameCanvas {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    flex: none;
+    display: block;
+    /* auto margins center the canvas when it's smaller than the stage, and
+       collapse to 0 when it overflows — keeps full scroll range reachable */
+    margin: auto;
+    cursor: none;
+    background:
+      repeating-conic-gradient(var(--bg-wash) 0% 25%, var(--panel) 0% 50%) 0 0/12px 12px;
+    border-radius: 2px;
+    box-shadow: 0 0 0 1px var(--panel-line);
+  }
+  .board-note {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin: 0;
+  }
+  .board-tools {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .board-tools label {
+    color: var(--text-dim);
+    font-size: 12px;
+  }
+  .board-tools select { min-width: 86px; }
+
+  .transport {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  button {
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 13px;
+    border-radius: 4px;
+    border: 1px solid var(--panel-line);
+    background: var(--panel);
+    color: var(--text);
+    cursor: pointer;
+    transition: background 120ms, border-color 120ms, transform 80ms;
+  }
+  button:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--panel-line)); }
+  button:active { transform: translateY(1px); }
+  button.primary {
+    background: var(--accent);
+    border-color: var(--accent-strong);
+    color: #241a08;
+  }
+  button.primary:hover { background: var(--accent-strong); }
+  button.icon { width: 38px; padding: 8px 0; text-align: center; }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  .fps-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+  }
+  .fps-row input[type=range] { flex: 1; accent-color: var(--accent); }
+  .fps-row .val { width: 54px; text-align: right; font-size: 13px; }
+
+  .bg-swatches { display: flex; gap: 6px; }
+  .swatch {
+    width: 22px; height: 22px; border-radius: 4px; border: 1px solid var(--panel-line);
+    cursor: pointer; padding: 0;
+  }
+  .swatch.active { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  /* --- Filmstrip --- */
+  .filmstrip {
+    display: flex;
+    gap: 2px;
+    overflow-x: auto;
+    padding: 10px 4px 6px;
+    background:
+      linear-gradient(var(--sprocket), var(--sprocket)) top / 100% 8px no-repeat,
+      linear-gradient(var(--sprocket), var(--sprocket)) bottom / 100% 8px no-repeat;
+  }
+  .frame-thumb {
+    position: relative;
+    flex: none;
+    width: 64px;
+    height: 64px;
+    border: 1px solid var(--panel-line);
+    background:
+      repeating-conic-gradient(var(--bg-wash) 0% 25%, var(--panel) 0% 50%) 0 0/12px 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .frame-thumb canvas { image-rendering: pixelated; image-rendering: crisp-edges; max-width: 100%; max-height: 100%; }
+  .frame-thumb .idx {
+    position: absolute;
+    top: 2px; left: 3px;
+    font-size: 9px;
+    color: var(--text-dim);
+    background: color-mix(in srgb, var(--panel) 75%, transparent);
+    padding: 0 3px;
+    border-radius: 2px;
+  }
+  .frame-thumb.current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .frame-thumb.excluded { opacity: 0.32; }
+  .frame-thumb.excluded::after {
+    content: "";
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(45deg, var(--danger) 0 1px, transparent 1px 7px);
+    opacity: 0.6;
+  }
+  .filmstrip-hint {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin: 8px 0 0;
+  }
+
+  .export-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 14px;
+  }
+
+  .status {
+    font-size: 12.5px;
+    color: var(--text-dim);
+    margin-top: 8px;
+    min-height: 16px;
+  }
+  .status.busy { color: var(--accent-strong); }
+
+  /* --- Perfect pixel --- */
+  details.dp-adv {
+    margin-top: 10px;
+    border-top: 1px solid var(--panel-line);
+    padding-top: 10px;
+  }
+  details.dp-adv > summary {
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text-dim);
+    list-style: none;
+    user-select: none;
+  }
+  details.dp-adv > summary::-webkit-details-marker { display: none; }
+  details.dp-adv > summary::before { content: "▸ "; color: var(--accent); }
+  details.dp-adv[open] > summary::before { content: "▾ "; }
+  details.dp-adv > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .field input[type="number"]::placeholder { color: var(--text-dim); opacity: 0.7; }
+
+  input[type="file"] { display: none; }
+
+  ::-webkit-scrollbar { height: 10px; width: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--panel-line); border-radius: 6px; }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1 class="display">光台<span class="dot">·</span>序列帧动画工具</h1>
+      <p>上传一整张序列帧图片，设定单帧尺寸即可切片、实时预览循环动画；支持按主体底部像素自动对齐消除抖动、一键转 64 色、在图上涂选局部（如服饰）单独调色、按需缩放或裁切输出尺寸，并导出 GIF 或新的序列帧图。</p>
+    </div>
+    <span class="badge">全部在浏览器本地处理</span>
+  </header>
+
+  <div class="grid-main">
+    <!-- LEFT: light table -->
+    <div>
+      <div class="panel">
+        <h2>光台 · 原图与切片网格<span id="sheetViewWrap" style="display:none; margin-left:auto; align-items:center; gap:6px; text-transform:none; letter-spacing:normal;"><label for="sheetFit" style="font-size:11px;">显示</label><select id="sheetFit" style="font-family:inherit;font-size:11px;padding:3px 6px;border-radius:4px;border:1px solid var(--panel-line);background:var(--bg-wash);color:var(--text);"><option value="fit" selected>适应</option><option value="actual">实际大小</option></select><button id="btnChangeImage" style="text-transform:none; letter-spacing:normal; font-size:11px; padding:4px 9px;">更换图片</button></span></h2>
+        <div class="lighttable" id="lighttable">
+          <div class="dropzone" id="dropzone">
+            <div class="icon">▦</div>
+            <div><strong>点击选择</strong>或将序列帧图片拖到此处</div>
+            <div style="font-size:12px;margin-top:6px;">支持 PNG / JPG / WebP，建议使用无损 PNG</div>
+          </div>
+          <div class="sheet-scroll" id="sheetScroll" style="display:none;">
+            <div class="sheet-stack" id="sheetStack">
+              <canvas id="sheetCanvas"></canvas>
+              <canvas id="maskCanvas"></canvas>
+            </div>
+          </div>
+        </div>
+        <input type="file" id="fileInput" accept="image/*" />
+        <div class="status" id="loadStatus" role="status"></div>
+
+        <div id="sliceControls" style="display:none; margin-top:16px;">
+          <div class="field-row">
+            <div class="field">
+              <label for="frameW">单帧宽度 (px)</label>
+              <input type="number" id="frameW" min="1" step="1" />
+            </div>
+            <div class="field">
+              <label for="frameH">单帧高度 (px)</label>
+              <input type="number" id="frameH" min="1" step="1" />
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label for="marginX">起始边距 X</label>
+              <input type="number" id="marginX" min="0" step="1" value="0" />
+            </div>
+            <div class="field">
+              <label for="marginY">起始边距 Y</label>
+              <input type="number" id="marginY" min="0" step="1" value="0" />
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label for="spacingX">帧间距 X</label>
+              <input type="number" id="spacingX" min="0" step="1" value="0" />
+            </div>
+            <div class="field">
+              <label for="spacingY">帧间距 Y</label>
+              <input type="number" id="spacingY" min="0" step="1" value="0" />
+            </div>
+          </div>
+          <div class="readout mono">
+            <span><span class="k">图片</span><span class="v" id="roImgSize">–</span></span>
+            <span><span class="k">列×行</span><span class="v" id="roGrid">–</span></span>
+            <span><span class="k">总帧数</span><span class="v" id="roTotal">–</span></span>
+            <span><span class="k">已启用</span><span class="v" id="roActive">–</span></span>
+          </div>
+          <div class="status" id="gridStatus" role="status"></div>
+        </div>
+      </div>
+
+      <div class="panel" id="bgPanel" style="display:none;">
+        <h2>一键去除背景<button id="btnBgUndo" style="display:none; margin-left:auto; text-transform:none; letter-spacing:normal; font-size:11px; padding:4px 9px;">撤销去背</button></h2>
+        <p class="hint">先点「在原图上取样」，然后<strong>直接在上方光台的图上点击</strong>取出背景色——可以点多次取多个颜色，用来应付渐变背景或残留杂边。调容差时下方光台、取景器、时间轴会<strong>实时预览</strong>（棋盘格＝已透明），满意了再点清除。<strong>分辨率不变</strong>，帧尺寸与切片网格不受影响，清除的区域是完全透明，可直接导出 PNG / GIF。</p>
+        <div class="conv-row">
+          <button id="btnBgPick" class="primary">在原图上取样</button>
+          <button id="btnBgCorners">取四角颜色</button>
+          <button id="btnBgClearSamples">清空取样</button>
+        </div>
+        <div class="bg-chips" id="bgSampleList"><span class="bg-empty">还没有取样颜色</span></div>
+        <div class="slider-row">
+          <label for="bgTol" class="mono" style="font-size:12px;color:var(--text-dim);white-space:nowrap;width:56px;">容差</label>
+          <input type="range" id="bgTol" min="0" max="120" value="18" />
+          <input type="number" class="mono val-num" id="bgTolNum" min="0" max="120" step="1" value="18" />
+        </div>
+        <label class="toggle-line" style="margin-top:10px;">
+          <input type="checkbox" id="bgConnected" />
+          仅清除与画布边缘相连的区域
+        </label>
+        <p class="hint" style="margin:-6px 0 12px;">勾选后只清掉从图片四边蔓延进来的背景，角色身上碰巧同色的像素会被保留——如果一键清除后人物身上被打出了洞，勾上它。</p>
+        <div class="readout mono" id="bgReadout" style="display:none;">
+          <span><span class="k">尺寸</span><span class="v" id="roBgSize">–</span></span>
+          <span><span class="k">将清除</span><span class="v" id="roBgCount">–</span></span>
+          <span><span class="k">剩余不透明</span><span class="v" id="roBgLeft">–</span></span>
+        </div>
+        <div class="conv-row" style="margin-bottom:0;">
+          <button id="btnBgApply" class="primary">一键清除背景</button>
+        </div>
+        <div class="status" id="bgStatus"></div>
+      </div>
+
+      <div class="panel" id="depixelPanel" style="display:none;">
+        <h2>完美像素 · 去杂色<button id="btnDepixelRestore" style="display:none; margin-left:auto; text-transform:none; letter-spacing:normal; font-size:11px; padding:4px 9px;">还原最初原图</button></h2>
+        <p class="hint"><strong>分辨率完全不变，一个像素都不挪</strong>（256×256 进、256×256 出），只把每个像素的颜色归到一套干净的像素画配色上。AI 出的图动辄两三万种颜色，大量是渐变和抗锯齿留下的杂色；这里把它们合并成你指定的色数，再按需清掉孤立的噪点像素。<br />注意：下方调色面板的「一键转为 64 色」<strong>对 AI 图是无效的</strong>——它只处理出现频率最高的 256 种颜色，剩下的像素原样不动。这里不受这个限制，全图每个像素都会处理。</p>
+        <div class="conv-row">
+          <button id="btnDepixel" class="primary">一键完美像素</button>
+          <label for="dpColors" style="font-size:12px;color:var(--text-dim);">目标色数</label>
+          <select id="dpColors">
+            <option value="16">16 色</option>
+            <option value="24">24 色</option>
+            <option value="32">32 色</option>
+            <option value="48">48 色</option>
+            <option value="64" selected>64 色</option>
+            <option value="96">96 色</option>
+            <option value="128">128 色</option>
+            <option value="256">256 色</option>
+          </select>
+          <label for="dpPalette" style="font-size:12px;color:var(--text-dim);">配色</label>
+          <select id="dpPalette">
+            <option value="adaptive" selected>自适应（本图配色）</option>
+            <option value="resurrect">Resurrect 64 标准色</option>
+          </select>
+          <label for="dpDespeckle" style="font-size:12px;color:var(--text-dim);">去噪点</label>
+          <select id="dpDespeckle">
+            <option value="0">关</option>
+            <option value="1" selected>弱（清孤立点）</option>
+            <option value="2">强</option>
+          </select>
+        </div>
+        <div class="readout mono" id="depixelReadout" style="display:none;">
+          <span><span class="k">尺寸</span><span class="v" id="roDpSize">–</span></span>
+          <span><span class="k">颜色</span><span class="v" id="roDpColors">–</span></span>
+          <span><span class="k">清掉噪点</span><span class="v" id="roDpSpeck">–</span></span>
+          <span><span class="k">像素块</span><span class="v" id="roDpBlock">–</span></span>
+          <span><span class="k">像素点网格</span><span class="v" id="roDpGrid">–</span></span>
+          <span><span class="k">相位</span><span class="v" id="roDpPhase">–</span></span>
+          <span><span class="k">周期强度</span><span class="v" id="roDpConf">–</span></span>
+        </div>
+        <details class="dp-adv">
+          <summary>进阶：网格对齐（会改变画面，非必要不用）</summary>
+          <p class="hint" style="margin:10px 0;">上面的去杂色不动几何，边缘的软过渡会保留。如果你还想让色块边缘变得绝对硬、每块严格一格纯色，可以用下面的网格对齐——它会自动测出「一个像素点实际占几个真实像素」（允许小数，如 7.3），再按这个格子重画。<strong>会改变画面观感</strong>，且原图网格不规整时可能出错，所以默认不开。</p>
+          <div class="conv-row">
+            <label for="dpOutMode" style="font-size:12px;color:var(--text-dim);">方式</label>
+            <select id="dpOutMode">
+              <option value="color" selected>只去杂色（默认，不动几何）</option>
+              <option value="same">对齐像素网格（原尺寸）</option>
+              <option value="down">缩到 1:1 真像素（改尺寸）</option>
+            </select>
+            <button id="btnDepixelDetect">仅检测网格</button>
+            <button id="btnDpAuto">恢复自动检测</button>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label for="dpBlockW">块宽（0 = 自动）</label>
+              <input type="number" id="dpBlockW" min="0" step="0.01" value="0" />
+            </div>
+            <div class="field">
+              <label for="dpBlockH">块高（0 = 自动）</label>
+              <input type="number" id="dpBlockH" min="0" step="0.01" value="0" />
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label for="dpPhaseX">相位 X（留空 = 自动）</label>
+              <input type="number" id="dpPhaseX" step="0.1" placeholder="自动" />
+            </div>
+            <div class="field">
+              <label for="dpPhaseY">相位 Y（留空 = 自动）</label>
+              <input type="number" id="dpPhaseY" step="0.1" placeholder="自动" />
+            </div>
+          </div>
+          <p class="hint" style="margin:0;">块大小允许小数，检测结果会自动回填方便微调。相位 = 第一条格线距左 / 上边缘的像素数，取值在 0 ~ 块大小之间；若结果整体错开半格，把相位加减半个块大小即可。「缩到 1:1 真像素」会改变图片尺寸，帧尺寸与切片网格需要重设。</p>
+        </details>
+        <div class="status" id="depixelStatus"></div>
+      </div>
+
+      <div class="panel" id="fitPanel" style="display:none;">
+        <h2>帧内归位 · 溢出修正<button id="btnFitUndo" style="display:none; margin-left:auto; text-transform:none; letter-spacing:normal; font-size:11px; padding:4px 9px;">撤销归位</button></h2>
+        <p class="hint">去背景之后，有些帧的主体会越过自己的格子边界，甚至骑在相邻帧上。这里先把整张图的不透明区域按连通块分组，<strong>按重心归属到所在的帧</strong>——所以骑过界的主体仍然完整属于它自己那一帧，隔壁帧不会把它抢过去。然后：<strong>先平移</strong>把它挪回本帧内，能放下就只平移、不缩放；<strong>平移仍放不下时才横向压缩</strong>——高度一个像素都不变，只把宽度等比缩小，并且<strong>左右留白相同、居中放置</strong>，不会只压超出的那一侧。分辨率与切片网格都不变。</p>
+        <div class="field-row">
+          <div class="field">
+            <label for="fitThreshold">不透明阈值</label>
+            <input type="number" id="fitThreshold" min="0" max="255" step="1" value="16" />
+          </div>
+          <div class="field">
+            <label for="fitMinArea">忽略碎片 (px)</label>
+            <input type="number" id="fitMinArea" min="0" step="1" value="4" />
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="fitMargin">帧内留白 (px)</label>
+            <input type="number" id="fitMargin" min="0" step="1" value="0" />
+          </div>
+          <div class="field">
+            <label for="fitSmooth">压缩采样</label>
+            <select id="fitSmooth">
+              <option value="0" selected>邻近（硬边，适合像素画）</option>
+              <option value="1">平滑（边缘柔和）</option>
+            </select>
+          </div>
+        </div>
+        <div class="conv-row">
+          <button id="btnFitAnalyze">分析各帧</button>
+          <button id="btnFitApply" class="primary">应用归位</button>
+        </div>
+        <div class="readout mono" id="fitReadout" style="display:none;">
+          <span><span class="k">帧数</span><span class="v" id="roFitTotal">–</span></span>
+          <span><span class="k">需平移</span><span class="v" id="roFitMove">–</span></span>
+          <span><span class="k">需压缩</span><span class="v" id="roFitSquash">–</span></span>
+          <span><span class="k">最强压缩</span><span class="v" id="roFitWorst">–</span></span>
+          <span><span class="k">高度超出</span><span class="v" id="roFitTall">–</span></span>
+        </div>
+        <div class="status" id="fitStatus"></div>
+      </div>
+
+      <div class="panel" id="alignPanel" style="display:none;">
+        <h2>主体对齐 · 消除抖动</h2>
+        <p class="hint">自动检测每帧主体的像素范围并平移对齐：垂直方向以最底部像素为基准，水平基准可选；对齐目标取各帧中值，个别夸张动作帧不会带偏整体。画布按需向外扩展，绝不裁切内容。若仍有晃动，试试切换水平基准。</p>
+        <label class="toggle-line">
+          <input type="checkbox" id="alignEnabled" />
+          启用底部对齐
+        </label>
+        <div class="field-row">
+          <div class="field">
+            <label for="alignXMode">水平基准</label>
+            <select id="alignXMode">
+              <option value="centroid" selected>主体质心（推荐）</option>
+              <option value="bbox">包围盒中心</option>
+              <option value="bottom">最底部像素中心</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="alignAxis">对齐方向</label>
+            <select id="alignAxis">
+              <option value="both" selected>水平 + 垂直</option>
+              <option value="y">仅垂直</option>
+              <option value="x">仅水平</option>
+            </select>
+          </div>
+        </div>
+        <div class="slider-row">
+          <label for="alignThreshold" class="mono" style="font-size:12px;color:var(--text-dim);white-space:nowrap;">不透明阈值</label>
+          <input type="range" id="alignThreshold" min="0" max="255" value="16" />
+          <span class="val mono" id="alignThresholdVal">16</span>
+        </div>
+        <div class="readout mono" id="alignReadout" style="display:none;">
+          <span><span class="k">对齐后单帧</span><span class="v" id="roAlignSize">–</span></span>
+          <span><span class="k">较原尺寸扩展</span><span class="v" id="roAlignPad">–</span></span>
+        </div>
+      </div>
+
+      <div class="panel" id="colorPanel" style="display:none;">
+        <h2>调色</h2>
+
+        <div class="pal-caption"><b>功能一</b> · 将原图颜色转为 64 色</div>
+        <p class="hint" style="margin-bottom:10px;">把整张序列帧就近映射到 Resurrect 64 标准色，或自适应到本图自己的最佳 64 色。全部帧同步生效。</p>
+        <div class="conv-row">
+          <select id="convMode">
+            <option value="resurrect">Resurrect 64（就近映射）</option>
+            <option value="adaptive">自适应 64 色（本图配色）</option>
+          </select>
+          <button id="btnConvert" class="primary">一键转为 64 色</button>
+        </div>
+
+        <hr class="sep" />
+
+        <div class="pal-caption"><b>功能二</b> · 局部调色（在图上涂选区域）</div>
+        <p class="hint" style="margin-bottom:10px;">在下方「第一帧画板」里用画笔涂出要调色的部位（例如服饰），<strong>只有涂中的像素才会被调整</strong>——同一颜色用在别处也不受影响。「魔棒同色」可一键把整张图里的同色像素纳入选区，再用画笔 / 橡皮修整。全部帧同步；光台上方的原图仅供查看切片网格，不可涂画。</p>
+        <div style="display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap; align-items:center;">
+          <button id="btnBrush" class="primary">画笔</button>
+          <button id="btnErase">橡皮</button>
+          <button id="btnWand">魔棒同色</button>
+          <button id="btnClearMask">清除选区</button>
+        </div>
+        <div class="slider-row">
+          <label for="brushSize" class="mono" style="font-size:12px;color:var(--text-dim);white-space:nowrap;width:56px;">笔刷</label>
+          <input type="range" id="brushSize" min="1" max="40" value="6" />
+          <span class="val mono" id="brushSizeVal" style="width:46px;">6 px</span>
+        </div>
+        <div class="mono" id="palCount" style="font-size:11px;color:var(--text-dim);margin:4px 0 6px;"></div>
+
+        <div class="slider-row" style="margin-top:6px;">
+          <label for="hueShift" class="mono" style="font-size:12px;color:var(--text-dim);white-space:nowrap;width:56px;">色相</label>
+          <input type="range" id="hueShift" min="-180" max="180" value="0" />
+          <input type="number" class="mono val-num" id="hueShiftNum" min="-180" max="180" step="1" value="0" />
+          <span class="val-unit mono">°</span>
+        </div>
+        <div class="slider-row">
+          <label for="satAdj" class="mono" style="font-size:12px;color:var(--text-dim);white-space:nowrap;width:56px;">饱和度</label>
+          <input type="range" id="satAdj" min="0" max="200" value="100" />
+          <input type="number" class="mono val-num" id="satAdjNum" min="0" max="200" step="1" value="100" />
+          <span class="val-unit mono">%</span>
+        </div>
+        <div class="slider-row">
+          <label for="litAdj" class="mono" style="font-size:12px;color:var(--text-dim);white-space:nowrap;width:56px;">明度</label>
+          <input type="range" id="litAdj" min="-100" max="100" value="0" />
+          <input type="number" class="mono val-num" id="litAdjNum" min="-100" max="100" step="1" value="0" />
+          <span class="val-unit mono"></span>
+        </div>
+        <div class="slider-row">
+          <label for="contrastAdj" class="mono" style="font-size:12px;color:var(--text-dim);white-space:nowrap;width:56px;">色阶</label>
+          <input type="range" id="contrastAdj" min="0" max="200" value="100" />
+          <input type="number" class="mono val-num" id="contrastAdjNum" min="0" max="200" step="1" value="100" />
+          <span class="val-unit mono">%</span>
+        </div>
+
+        <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
+          <button id="btnResetSliders">复位滑块</button>
+          <button id="btnColorReset">全部重置</button>
+        </div>
+        <div class="status" id="colorStatus"></div>
+      </div>
+    </div>
+
+    <!-- RIGHT: viewfinder + controls -->
+    <div>
+      <div class="panel">
+        <h2>取景器 · 循环预览</h2>
+        <div class="viewfinder">
+          <div class="monitor">
+            <canvas id="previewCanvas" width="128" height="128"></canvas>
+          </div>
+          <div class="mono" id="frameCounter" style="font-size:13px;color:var(--text-dim);">帧 – / –</div>
+          <div class="transport">
+            <button class="icon" id="btnPrev" title="上一帧">◀</button>
+            <button class="primary" id="btnPlay">▶ 播放</button>
+            <button class="icon" id="btnNext" title="下一帧">▶</button>
+          </div>
+          <div class="fps-row">
+            <label for="fps" class="mono" style="font-size:12px;color:var(--text-dim);white-space:nowrap;">帧率</label>
+            <input type="range" id="fps" min="1" max="60" value="12" />
+            <span class="val mono" id="fpsVal">12 fps</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;width:100%;justify-content:space-between;">
+            <div class="bg-swatches" id="bgSwatches" title="预览背景">
+              <button class="swatch active" data-bg="checker" style="background:conic-gradient(#bbb 90deg,#eee 90deg 180deg,#bbb 180deg 270deg,#eee 270deg);" title="棋盘格(透明)"></button>
+              <button class="swatch" data-bg="#0d0d0d" style="background:#0d0d0d;" title="黑底"></button>
+              <button class="swatch" data-bg="#ffffff" style="background:#ffffff;" title="白底"></button>
+            </div>
+            <div class="field" style="flex-direction:row;align-items:center;gap:6px;">
+              <label for="zoom" style="font-size:11px;">缩放</label>
+              <select id="zoom">
+                <option value="0">自动</option>
+                <option value="1">1×</option>
+                <option value="2">2×</option>
+                <option value="4">4×</option>
+                <option value="8">8×</option>
+                <option value="16">16×</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" id="filmstripWrap" style="display:none;">
+        <h2>时间轴 · 逐帧核对</h2>
+        <div class="filmstrip" id="filmstrip"></div>
+        <p class="filmstrip-hint">点击某一帧可将其从动画中排除 / 恢复（例如序列表末尾的空白格）</p>
+      </div>
+
+      <div class="panel" id="firstFrameBoardPanel" style="display:none;">
+        <h2>第一帧画板 · 批量调色</h2>
+        <div class="color-board">
+          <div class="board-stage-wrap" id="boardStageWrap">
+            <div class="color-board-stage" id="firstFrameStage">
+              <canvas id="firstFrameCanvas" width="160" height="160"></canvas>
+            </div>
+            <div id="boardCursorRing" class="cursor-ring"></div>
+          </div>
+          <div class="board-tools">
+            <label for="firstFrameSize">画板大小</label>
+            <select id="firstFrameSize">
+              <option value="460" selected>标准</option>
+              <option value="600">大</option>
+              <option value="760">超大</option>
+              <option value="960">工作台</option>
+            </select>
+            <label for="firstFrameZoom">图片缩放</label>
+            <select id="firstFrameZoom">
+              <option value="0" selected>自动</option>
+              <option value="2">2×</option>
+              <option value="4">4×</option>
+              <option value="8">8×</option>
+              <option value="16">16×</option>
+              <option value="32">32×</option>
+              <option value="64">64×</option>
+            </select>
+            <button id="btnFirstFrameFit">居中</button>
+          </div>
+          <p class="board-note">在这里放大涂第一帧：画笔 / 橡皮会把同一局部位置同步到全部帧；鼠标滚轮缩放图片，按住空格或鼠标中键拖动可挪动画板。</p>
+          <div class="mono" id="firstFrameBoardStatus" style="font-size:12px;color:var(--text-dim);">等待上传图片</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>导出</h2>
+
+        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:end; margin-bottom:8px;">
+          <div class="field" style="flex:1 1 84px;">
+            <label for="outFrameW">输出单帧宽</label>
+            <input type="number" id="outFrameW" min="1" step="1" />
+          </div>
+          <div class="field" style="flex:1 1 84px;">
+            <label for="outFrameH">输出单帧高</label>
+            <input type="number" id="outFrameH" min="1" step="1" />
+          </div>
+          <div class="field" style="flex:1 1 110px;">
+            <label for="outSizeMode">尺寸模式</label>
+            <select id="outSizeMode">
+              <option value="contain" selected>等比缩放 · 完整显示（留透明边）</option>
+              <option value="cover">等比缩放 · 裁切填满（会裁掉一部分）</option>
+              <option value="scale">拉伸填充（可能变形）</option>
+              <option value="crop">裁切 / 扩画布（1:1，不缩放）</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
+          <label id="outLockLabel" style="display:none;align-items:center;gap:5px;font-size:12px;color:var(--text-dim);white-space:nowrap;cursor:pointer;">
+            <input type="checkbox" id="outLockAspect" checked style="accent-color:var(--accent);width:15px;height:15px;" /> 锁比例
+          </label>
+          <div class="field" id="outAnchorRow" style="flex-direction:row;align-items:center;gap:6px;display:flex;">
+            <label for="outAnchor" style="font-size:12px;">裁切锚点</label>
+            <select id="outAnchor">
+              <option value="0,0">左上</option>
+              <option value="1,0">上中</option>
+              <option value="2,0">右上</option>
+              <option value="0,1">左中</option>
+              <option value="1,1" selected>居中</option>
+              <option value="2,1">右中</option>
+              <option value="0,2">左下</option>
+              <option value="1,2">下中</option>
+              <option value="2,2">右下</option>
+            </select>
+          </div>
+          <button id="btnOutReset">重置原始尺寸</button>
+        </div>
+        <div class="mono" id="outSizeHint" style="font-size:11px;color:var(--text-dim);margin-bottom:12px;"></div>
+
+        <div class="export-row" style="margin-top:0;">
+          <button id="btnExportPng">下载当前帧 PNG</button>
+          <button class="primary" id="btnExportGif">生成并下载 GIF</button>
+        </div>
+        <hr class="sep" />
+        <div style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+          <div class="field" style="flex:0 0 100px;">
+            <label for="framesPerRow">每行帧数</label>
+            <input type="number" id="framesPerRow" min="1" step="1" />
+          </div>
+          <button id="btnExportSheet" style="flex:1;">导出新序列帧图 PNG</button>
+        </div>
+        <div class="status" id="exportStatus"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------- state ----------
+  let img = null;
+  let imgW = 0, imgH = 0;
+  let hasLoadedOnce = false; // true once the first image has loaded; gates the slice-size defaults
+  let frames = [];       // {x,y,index,excluded}
+  let activeFrames = []; // filtered view of frames
+  let currentActiveIdx = 0;
+  let playing = false;
+  let rafId = null;
+  let lastTick = 0;
+  let previewBg = "checker";
+  let zoomOverride = 0; // 0 = auto
+  let alignEnabled = false;
+  let alignThreshold = 16;
+  let alignXMode = "centroid"; // centroid | bbox | bottom
+  let alignAxis = "both";      // both | y | x
+  let alignData = null; // {offsetByIndex: Map<index,{dx,dy}>, outW, outH}
+  let alignScratch = null;
+  let lastGrid = null;   // last slicing params, for redraws that keep exclusions
+  let palette = [];      // [[r,g,b],...] sorted by usage desc
+  let paletteCounts = [];
+  let pixelPal = null;   // Uint16Array imgW*imgH: source-palette idx per pixel, TP = transparent
+  let colorMap = [];     // per palette idx: null | [r,g,b] replacement (feature 1 convert)
+  let baseImageData = null;
+  let processedCanvas = null; // recolored copy of the sheet; null = no edits
+  let maskArr = null;    // Uint8 over sheet pixels: 1 = in the region selection
+  let maskCount = 0;
+  let maskTool = "brush"; // brush | erase | wand
+  let boardPainting = false;
+  let firstFrameBoardHeight = 460;
+  let firstFrameZoom = 0; // 0 = auto
+  let boardPanKey = false;
+  let boardPanning = false;
+  let boardPanLast = { x: 0, y: 0 };
+  let rebuildPending = false;
+  let outSizeCustom = false;   // user overrode the output frame size
+  let outSizeMode = "contain"; // contain | cover | scale | crop
+
+  // ---------- dom ----------
+  const dropzone = document.getElementById("dropzone");
+  const fileInput = document.getElementById("fileInput");
+  const loadStatus = document.getElementById("loadStatus");
+  const lighttable = document.getElementById("lighttable");
+  const btnChangeImage = document.getElementById("btnChangeImage");
+  const sheetScroll = document.getElementById("sheetScroll");
+  const sheetCanvas = document.getElementById("sheetCanvas");
+  const sheetCtx = sheetCanvas.getContext("2d");
+  const sliceControls = document.getElementById("sliceControls");
+
+  const frameWInput = document.getElementById("frameW");
+  const frameHInput = document.getElementById("frameH");
+  const marginXInput = document.getElementById("marginX");
+  const marginYInput = document.getElementById("marginY");
+  const spacingXInput = document.getElementById("spacingX");
+  const spacingYInput = document.getElementById("spacingY");
+
+  const roImgSize = document.getElementById("roImgSize");
+  const roGrid = document.getElementById("roGrid");
+  const roTotal = document.getElementById("roTotal");
+  const roActive = document.getElementById("roActive");
+  const gridStatus = document.getElementById("gridStatus");
+
+  const previewCanvas = document.getElementById("previewCanvas");
+  const previewCtx = previewCanvas.getContext("2d");
+  const frameCounter = document.getElementById("frameCounter");
+  const btnPlay = document.getElementById("btnPlay");
+  const btnPrev = document.getElementById("btnPrev");
+  const btnNext = document.getElementById("btnNext");
+  const fpsInput = document.getElementById("fps");
+  const fpsVal = document.getElementById("fpsVal");
+  const bgSwatches = document.getElementById("bgSwatches");
+  const zoomSelect = document.getElementById("zoom");
+
+  const firstFrameBoardPanel = document.getElementById("firstFrameBoardPanel");
+  const boardStageWrap = document.getElementById("boardStageWrap");
+  const firstFrameStage = document.getElementById("firstFrameStage");
+  const firstFrameCanvas = document.getElementById("firstFrameCanvas");
+  const firstFrameCtx = firstFrameCanvas.getContext("2d");
+  const firstFrameSizeSelect = document.getElementById("firstFrameSize");
+  const firstFrameZoomSelect = document.getElementById("firstFrameZoom");
+  const btnFirstFrameFit = document.getElementById("btnFirstFrameFit");
+  const firstFrameBoardStatus = document.getElementById("firstFrameBoardStatus");
+  const boardCursorRing = document.getElementById("boardCursorRing");
+
+  const filmstripWrap = document.getElementById("filmstripWrap");
+  const filmstrip = document.getElementById("filmstrip");
+
+  const alignPanel = document.getElementById("alignPanel");
+  const alignEnabledInput = document.getElementById("alignEnabled");
+  const alignXModeSelect = document.getElementById("alignXMode");
+  const alignAxisSelect = document.getElementById("alignAxis");
+  const alignThresholdInput = document.getElementById("alignThreshold");
+  const alignThresholdVal = document.getElementById("alignThresholdVal");
+  const alignReadout = document.getElementById("alignReadout");
+  const roAlignSize = document.getElementById("roAlignSize");
+  const roAlignPad = document.getElementById("roAlignPad");
+
+  const colorPanel = document.getElementById("colorPanel");
+  const maskCanvas = document.getElementById("maskCanvas");
+  const palCount = document.getElementById("palCount");
+  const convMode = document.getElementById("convMode");
+  const btnConvert = document.getElementById("btnConvert");
+  const btnBrush = document.getElementById("btnBrush");
+  const btnErase = document.getElementById("btnErase");
+  const btnWand = document.getElementById("btnWand");
+  const btnClearMask = document.getElementById("btnClearMask");
+  const brushSize = document.getElementById("brushSize");
+  const brushSizeVal = document.getElementById("brushSizeVal");
+  const btnResetSliders = document.getElementById("btnResetSliders");
+  const btnColorReset = document.getElementById("btnColorReset");
+  const hueShift = document.getElementById("hueShift");
+  const hueShiftNum = document.getElementById("hueShiftNum");
+  const satAdj = document.getElementById("satAdj");
+  const satAdjNum = document.getElementById("satAdjNum");
+  const litAdj = document.getElementById("litAdj");
+  const litAdjNum = document.getElementById("litAdjNum");
+  const contrastAdj = document.getElementById("contrastAdj");
+  const contrastAdjNum = document.getElementById("contrastAdjNum");
+  const colorStatus = document.getElementById("colorStatus");
+
+  const outFrameWInput = document.getElementById("outFrameW");
+  const outFrameHInput = document.getElementById("outFrameH");
+  const outSizeModeSelect = document.getElementById("outSizeMode");
+  const outLockAspect = document.getElementById("outLockAspect");
+  const outAnchorRow = document.getElementById("outAnchorRow");
+  const outAnchorSelect = document.getElementById("outAnchor");
+  const btnOutReset = document.getElementById("btnOutReset");
+  const outSizeHint = document.getElementById("outSizeHint");
+
+  const btnExportPng = document.getElementById("btnExportPng");
+  const btnExportGif = document.getElementById("btnExportGif");
+  const framesPerRowInput = document.getElementById("framesPerRow");
+  const btnExportSheet = document.getElementById("btnExportSheet");
+  const exportStatus = document.getElementById("exportStatus");
+
+  // ---------- image loading ----------
+  // listeners live on the lighttable (not just the dropzone) so drag-drop and
+  // the "更换图片" button keep working after an image is loaded and the
+  // dropzone itself is hidden.
+  dropzone.addEventListener("click", () => fileInput.click());
+  btnChangeImage.addEventListener("click", () => fileInput.click());
+  lighttable.addEventListener("dragover", (e) => { e.preventDefault(); lighttable.classList.add("drag"); });
+  lighttable.addEventListener("dragleave", () => lighttable.classList.remove("drag"));
+  lighttable.addEventListener("drop", (e) => {
+    e.preventDefault();
+    lighttable.classList.remove("drag");
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) loadFile(f);
+  });
+  fileInput.addEventListener("change", () => {
+    const f = fileInput.files && fileInput.files[0];
+    fileInput.value = ""; // selecting the same file again must still fire change
+    if (f) loadFile(f);
+  });
+
+  let loadToken = 0;
+  function loadFile(file) {
+    if (!file.type.startsWith("image/")) {
+      loadStatus.textContent = "请选择图片文件。";
+      return;
+    }
+    const token = ++loadToken;
+    loadStatus.textContent = "正在读取图片…";
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      if (token !== loadToken) return; // an older selection finished after a newer one
+      pause();
+      img = image;
+      imgW = image.naturalWidth;
+      imgH = image.naturalHeight;
+      // Keep the pristine upload for the explicit "restore original" action.
+      originalImg = image;
+      originalW = imgW;
+      originalH = imgH;
+      depixelInfo = null;
+      loadStatus.textContent = "";
+      onImageReady();
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      if (token === loadToken) loadStatus.textContent = "图片读取失败，请换一张图片重试。";
+    };
+    image.src = url;
+  }
+
+  function onImageReady() {
+    dropzone.style.display = "none";
+    btnChangeImage.style.display = "inline-flex";
+    sheetScroll.style.display = "block";
+    sliceControls.style.display = "block";
+    filmstripWrap.style.display = "block";
+    depixelPanel.style.display = "block";
+    bgPanel.style.display = "block";
+    fitPanel.style.display = "block";
+    sheetViewWrap.style.display = "inline-flex";
+    alignPanel.style.display = "block";
+    colorPanel.style.display = "block";
+    firstFrameBoardPanel.style.display = "block";
+
+    sheetCanvas.width = imgW;
+    sheetCanvas.height = imgH;
+    frameWInput.max = imgW;
+    frameHInput.max = imgH;
+
+    if (!hasLoadedOnce) {
+      // sensible default on the very first image: whole image as a single frame,
+      // user narrows it down. Re-selecting a different image later keeps whatever
+      // slice/export config is already set (recompute() clamps it to the new size).
+      frameWInput.value = imgW;
+      frameHInput.value = imgH;
+      marginXInput.value = 0;
+      marginYInput.value = 0;
+      spacingXInput.value = 0;
+      spacingYInput.value = 0;
+      hasLoadedOnce = true;
+    }
+
+    resetDepixelUI();
+    resetBgUI();
+    resetFitUI();
+    buildPalette();
+    recompute();
+  }
+
+  // ---------- grid computation ----------
+  const MAX_FRAMES = 2048; // cap DOM thumbnails and per-frame work on accidental 1px grids
+  function computeGrid(fw, fh, mx, my, sx, sy) {
+    const cols = Math.floor((imgW - mx - fw) / (fw + sx)) + 1;
+    const rows = Math.floor((imgH - my - fh) / (fh + sy)) + 1;
+    return { cols, rows };
+  }
+
+  function recompute() {
+    const fw = clampInt(frameWInput.value, 1, imgW);
+    const fh = clampInt(frameHInput.value, 1, imgH);
+    const mx = clampInt(marginXInput.value, 0, imgW - fw);
+    const my = clampInt(marginYInput.value, 0, imgH - fh);
+    const sx = clampInt(spacingXInput.value, 0, imgW);
+    const sy = clampInt(spacingYInput.value, 0, imgH);
+
+    frameWInput.value = fw; frameHInput.value = fh;
+    marginXInput.value = mx; marginYInput.value = my;
+    spacingXInput.value = sx; spacingYInput.value = sy;
+
+    const { cols, rows } = computeGrid(fw, fh, mx, my, sx, sy);
+
+    const tooMany = cols * rows > MAX_FRAMES;
+    gridStatus.textContent = tooMany
+      ? "检测到 " + (cols * rows).toLocaleString() + " 帧，超过 " + MAX_FRAMES
+        + " 帧上限。请调大单帧尺寸或帧间距后再预览、导出。"
+      : "";
+    frames = [];
+    if (!tooMany) {
+      let index = 0;
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          frames.push({
+            x: mx + c * (fw + sx),
+            y: my + r * (fh + sy),
+            index: index++,
+            excluded: false,
+          });
+        }
+      }
+    }
+    window.__fw = fw; window.__fh = fh;
+
+    roImgSize.textContent = imgW + " × " + imgH;
+    roGrid.textContent = cols + " × " + rows;
+    roTotal.textContent = String(cols * rows);
+
+    lastGrid = { fw, fh, mx, my, sx, sy, cols, rows };
+    drawSheetWithGrid(fw, fh, mx, my, sx, sy, cols, rows);
+    computeAlignment();
+    buildFilmstrip();
+    refreshActiveFrames();
+    resizePreviewCanvas();
+    applyFirstFrameBoardSize();
+    resizeFirstFrameBoard(true);
+    drawCurrentPreviewFrame();
+    drawFirstFrameBoard();
+  }
+
+  function clampInt(v, min, max) {
+    let n = parseInt(v, 10);
+    if (isNaN(n)) n = min;
+    return Math.min(Math.max(n, min), max);
+  }
+
+  function median(arr) {
+    const s = [...arr].sort((a, b) => a - b);
+    const m = s.length >> 1;
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+  }
+
+  // Drawing source, most-recent layer first: the live background-removal preview,
+  // then the recoloured sheet, then the original. Everything downstream (light
+  // table, filmstrip, viewfinder, export) goes through here, so the preview shows
+  // up in all of them without any of them knowing about it.
+  function paintSrc() { return bgPreviewCanvas || processedCanvas || img; }
+
+  function drawSheetWithGrid(fw, fh, mx, my, sx, sy, cols, rows) {
+    sheetCtx.clearRect(0, 0, imgW, imgH);
+    sheetCtx.drawImage(paintSrc(), 0, 0);
+    if (cols * rows > MAX_FRAMES) return;
+    sheetCtx.save();
+    sheetCtx.strokeStyle = "rgba(226,166,61,0.9)";
+    sheetCtx.lineWidth = Math.max(1, Math.round(Math.min(imgW, imgH) / 220));
+    sheetCtx.setLineDash([Math.max(3, sheetCtx.lineWidth * 2), Math.max(3, sheetCtx.lineWidth * 2)]);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const x = mx + c * (fw + sx);
+        const y = my + r * (fh + sy);
+        sheetCtx.strokeRect(x + 0.5, y + 0.5, fw - 1, fh - 1);
+      }
+    }
+    sheetCtx.restore();
+  }
+
+  [frameWInput, frameHInput, marginXInput, marginYInput, spacingXInput, spacingYInput].forEach((el) => {
+    el.addEventListener("input", recompute);
+  });
+
+  // ---------- perfect pixel: de-pixelate an AI "pixel art" render back to 1:1 ----------
+  // An AI-generated pixel-art image isn't on a grid: one logical pixel covers some
+  // non-integer number of real pixels, the first grid line starts at an arbitrary
+  // offset, and every block edge is anti-aliased. Two steps recover the true grid:
+  //
+  //   detectPeriod() — the column/row "change energy" profile of such an image is a
+  //     comb whose teeth sit on block boundaries. An FFT finds candidate periods;
+  //     a few direct DFT samples refine their frequency and phase.
+  //   resample()     — each cell collapses to the MODE of its interior colours, with
+  //     the cell edges inset to throw away the anti-aliased rim. Taking the mean
+  //     instead is what makes naive downscalers produce mud.
+
+  let originalImg = null;   // pristine upload, kept only as an escape hatch
+  let originalW = 0, originalH = 0;
+  let depixelInfo = null;   // set once the displayed sheet is a resampled result
+
+  const depixelPanel = document.getElementById("depixelPanel");
+  const btnDepixel = document.getElementById("btnDepixel");
+  const btnDepixelDetect = document.getElementById("btnDepixelDetect");
+  const btnDepixelRestore = document.getElementById("btnDepixelRestore");
+  const btnDpAuto = document.getElementById("btnDpAuto");
+  const depixelReadout = document.getElementById("depixelReadout");
+  const depixelStatus = document.getElementById("depixelStatus");
+  const dpBlockW = document.getElementById("dpBlockW");
+  const dpBlockH = document.getElementById("dpBlockH");
+  const dpPhaseX = document.getElementById("dpPhaseX");
+  const dpPhaseY = document.getElementById("dpPhaseY");
+  const dpColors = document.getElementById("dpColors");
+  const dpPalette = document.getElementById("dpPalette");
+  const dpDespeckle = document.getElementById("dpDespeckle");
+  const dpOutMode = document.getElementById("dpOutMode");
+  const roDpBlock = document.getElementById("roDpBlock");
+  const roDpGrid = document.getElementById("roDpGrid");
+  const roDpSpeck = document.getElementById("roDpSpeck");
+  const roDpPhase = document.getElementById("roDpPhase");
+  const roDpConf = document.getElementById("roDpConf");
+  const roDpSize = document.getElementById("roDpSize");
+  const roDpColors = document.getElementById("roDpColors");
+
+  // mean absolute channel change between neighbouring columns (axis 0) / rows (axis 1)
+  function edgeProfile(data, w, h, axis) {
+    const n = axis === 0 ? w : h;
+    const prof = new Float64Array(n);
+    if (axis === 0) {
+      for (let y = 0; y < h; y++) {
+        const row = y * w;
+        for (let x = 1; x < w; x++) {
+          const i = (row + x) * 4, j = i - 4;
+          prof[x] += Math.abs(data[i] - data[j]) + Math.abs(data[i + 1] - data[j + 1])
+                   + Math.abs(data[i + 2] - data[j + 2]) + Math.abs(data[i + 3] - data[j + 3]);
+        }
+      }
+      for (let x = 0; x < n; x++) prof[x] /= h;
+    } else {
+      for (let y = 1; y < h; y++) {
+        const row = y * w, prev = row - w;
+        let s = 0;
+        for (let x = 0; x < w; x++) {
+          const i = (row + x) * 4, j = (prev + x) * 4;
+          s += Math.abs(data[i] - data[j]) + Math.abs(data[i + 1] - data[j + 1])
+             + Math.abs(data[i + 2] - data[j + 2]) + Math.abs(data[i + 3] - data[j + 3]);
+        }
+        prof[y] = s / w;
+      }
+    }
+    return prof;
+  }
+
+  // profile with its DC level removed — without this the DFT leaks the (large,
+  // strictly positive) mean into long-period bins and every big period scores high
+  function centerProfile(prof) {
+    let sum = 0;
+    for (let i = 0; i < prof.length; i++) sum += prof[i];
+    if (sum <= 1e-9) return null;
+    const mean = sum / prof.length;
+    const out = new Float64Array(prof.length);
+    for (let i = 0; i < prof.length; i++) out[i] = prof[i] - mean;
+    return { arr: out, total: sum, raw: prof };
+  }
+
+  // How comb-like the profile really is at period p: fold every column into one
+  // cell and compare the brightest band against the rest. ~1 means the colour
+  // changes ignore this period; 5+ means they sit squarely on its grid lines.
+  //
+  // This is what the DFT magnitude alone can't tell us. Slow variation in how busy
+  // the artwork is leaks real energy into long periods, so the DFT's global peak is
+  // often nowhere near the true block size — but those long periods score ~1 here.
+  // It also cleanly rejects MULTIPLES of the true period (2p folds the real grid
+  // lines into two bands, one of which pollutes the background), while SUBmultiples
+  // (p/2, p/3) keep scoring high — which is exactly why the caller, having filtered
+  // on this score, then takes the LARGEST surviving period.
+  function combScore(raw, p) {
+    const n = raw.length;
+    // Never use more bins than the period is wide. Columns are integers, so a
+    // 2px period with 4 bins leaves half of them permanently empty — those zeros
+    // drag the background down and inflate the score of exactly the submultiples
+    // this function exists to reject.
+    const B = Math.max(2, Math.min(48, Math.floor(p)));
+    // Below four bins there is one background bin to compare against and the integer
+    // columns fold into it very unevenly, so the ratio is noise — and it reads HIGH,
+    // which would let a submultiple outrank the true period. Report "can't tell"
+    // and let the DFT magnitude decide these on its own.
+    if (B < 4) return 1;
+    const sum = new Float64Array(B), cnt = new Float64Array(B);
+    for (let x = 0; x < n; x++) {
+      let j = Math.floor((x % p) / p * B);
+      if (j < 0) j = 0; else if (j >= B) j = B - 1;
+      sum[j] += raw[x]; cnt[j]++;
+    }
+    const avg = new Float64Array(B);
+    for (let j = 0; j < B; j++) avg[j] = cnt[j] ? sum[j] / cnt[j] : -1;
+    let jb = 0;
+    for (let j = 1; j < B; j++) if (avg[j] > avg[jb]) jb = j;
+    if (avg[jb] <= 0) return 1;
+    // the anti-aliased rim spills into a neighbour, so on anything but a very
+    // narrow fold the band is two bins wide
+    let jn = -1;
+    if (B > 6) {
+      const jl = (jb + B - 1) % B, jr = (jb + 1) % B;
+      jn = avg[jl] >= avg[jr] ? jl : jr;
+    }
+    let on = avg[jb], onN = 1, off = 0, offN = 0;
+    if (jn >= 0 && avg[jn] >= 0) { on += avg[jn]; onN++; }
+    for (let j = 0; j < B; j++) {
+      if (j === jb || j === jn || avg[j] < 0) continue;
+      off += avg[j]; offN++;
+    }
+    if (!offN || off <= 1e-9) return 1;
+    return (on / onN) / (off / offN);
+  }
+
+  // single DFT bin at period p. Uses an incremental rotor rather than two trig calls
+  // per sample; double precision drift over a few thousand steps is ~1e-13.
+  function dftBin(ctr, p) {
+    const arr = ctr.arr, n = arr.length;
+    const t = -2 * Math.PI / p;
+    const cs = Math.cos(t), sn = Math.sin(t);
+    let cr = 1, ci = 0, re = 0, im = 0;
+    for (let x = 0; x < n; x++) {
+      const v = arr[x];
+      re += v * cr; im += v * ci;
+      const nr = cr * cs - ci * sn;
+      ci = cr * sn + ci * cs;
+      cr = nr;
+    }
+    // teeth at x = phase + k*p give arg(X) = -2*pi*phase/p, hence the negated im
+    let phase = p * Math.atan2(-im, re) / (2 * Math.PI);
+    phase = ((phase % p) + p) % p;
+    return { p, r: Math.hypot(re, im) / ctr.total, phase };
+  }
+
+  // Radix-2 FFT of a zero-padded edge profile. Padding to at least twice its
+  // length samples each spectral peak at half-bin spacing; the much smaller
+  // direct-DFT refinement below handles the remaining sub-bin precision.
+  function fftProfile(ctr) {
+    const n = ctr.arr.length;
+    let size = 1;
+    while (size < n * 2) size *= 2;
+    const re = new Float64Array(size), im = new Float64Array(size);
+    re.set(ctr.arr);
+
+    for (let i = 1, j = 0; i < size; i++) {
+      let bit = size >> 1;
+      while (j & bit) { j ^= bit; bit >>= 1; }
+      j ^= bit;
+      if (i < j) {
+        const tmp = re[i]; re[i] = re[j]; re[j] = tmp;
+      }
+    }
+    for (let len = 2; len <= size; len *= 2) {
+      const half = len >> 1, angle = -2 * Math.PI / len;
+      const stepR = Math.cos(angle), stepI = Math.sin(angle);
+      for (let start = 0; start < size; start += len) {
+        let wr = 1, wi = 0;
+        for (let j = 0; j < half; j++) {
+          const a = start + j, b = a + half;
+          const tr = re[b] * wr - im[b] * wi;
+          const ti = re[b] * wi + im[b] * wr;
+          re[b] = re[a] - tr; im[b] = im[a] - ti;
+          re[a] += tr; im[a] += ti;
+          const nextR = wr * stepR - wi * stepI;
+          wi = wr * stepI + wi * stepR;
+          wr = nextR;
+        }
+      }
+    }
+    return { re, im, size };
+  }
+
+  const DP_MIN_PERIOD = 1.8;
+
+  // sharpen a candidate period until the accumulated drift across the whole image
+  // is well under one cell — a period that is 1% off smears the grid by dozens of
+  // pixels over a few hundred cells, which is the difference between crisp and mush
+  function refinePeriod(ctr, p0, half) {
+    let pick = dftBin(ctr, p0);
+    for (let pass = 0; pass < 3; pass++) {
+      const sub = half / 8;
+      let best = pick;
+      for (let p = pick.p - half; p <= pick.p + half + 1e-12; p += sub) {
+        if (p < DP_MIN_PERIOD) continue;
+        const c = dftBin(ctr, p);
+        if (c.r > best.r) best = c;
+      }
+      pick = best;
+      half = sub;
+    }
+    return pick;
+  }
+
+  function detectPeriod(ctr, maxPeriod) {
+    const n = ctr.arr.length;
+    const pMax = Math.min(maxPeriod, n / 6);
+    if (pMax <= DP_MIN_PERIOD) return null;
+
+    // The FFT replaces the former O(n * candidates) direct-DFT sweep. Its bins
+    // are uniformly spaced in frequency, so narrow peaks remain visible even
+    // for large block periods.
+    const { re, im, size } = fftProfile(ctr);
+    const cands = [];
+    const kLo = Math.ceil(size / pMax), kHi = Math.floor(size / DP_MIN_PERIOD);
+    for (let k = kLo; k <= kHi; k++) {
+      const p = size / k;
+      let phase = p * Math.atan2(-im[k], re[k]) / (2 * Math.PI);
+      phase = ((phase % p) + p) % p;
+      cands.push({ p, r: Math.hypot(re[k], im[k]) / ctr.total, phase });
+    }
+    if (cands.length < 3) return null;
+
+    let best = cands[0];
+    for (const c of cands) if (c.r > best.r) best = c;
+
+    const peaks = [];
+    for (let i = 1; i < cands.length - 1; i++) {
+      const c = cands[i];
+      if (c.r >= best.r * 0.25 && c.r >= cands[i - 1].r && c.r >= cands[i + 1].r) peaks.push(c);
+    }
+    if (!peaks.length) peaks.push(best);
+    peaks.sort((a, b) => b.r - a.r);
+
+    const tries = peaks.slice(0, 20).map((c) => c.p);
+    // for a razor-sharp comb every harmonic has equal magnitude, so the fundamental
+    // may not be a peak the sweep ranked highly — probe the multiples explicitly
+    for (const c of peaks.slice(0, 6)) for (const k of [2, 3]) {
+      if (c.p * k <= pMax) tries.push(c.p * k);
+    }
+
+    let bestScored = null;
+    const scored = [];
+    for (const p0 of tries) {
+      const ref = refinePeriod(ctr, p0, p0 * p0 / size * 1.5);
+      ref.score = combScore(ctr.raw, ref.p);
+      scored.push(ref);
+      if (!bestScored || ref.score > bestScored.score) bestScored = ref;
+    }
+    if (!bestScored) return null;
+
+    // Every valid grid for this image is the true period divided by some integer, so
+    // the answer is the LONGEST period that is still valid. Validity takes two
+    // different measurements because neither one alone is sufficient:
+    //
+    //  1. comb score rejects unrelated periods. The artwork's own busyness varies
+    //     slowly across the image, which leaks real energy into long periods and is
+    //     what makes the raw DFT peak land nowhere near the block size. Those score
+    //     ~1 here, because the colour changes don't sit on their grid lines.
+    //  2. DFT magnitude rejects MULTIPLES of the true period, collapsing by one to
+    //     two orders of magnitude at 2p and 3p (half their grid lines fall mid-cell,
+    //     where nothing changes). The comb score cannot see this — on a large sharp
+    //     block it puts 2p within half a percent of p.
+    //
+    // What survives both is the true period together with its submultiples, which
+    // stay strong on both measures since folding at p/2 keeps every real grid line
+    // aligned. The longest of those is the fundamental.
+    let bestScore = 0;
+    for (const c of scored) if (c.score > bestScore) bestScore = c.score;
+    let valid = scored.filter((c) => c.score >= Math.max(bestScore * 0.8, 1.12));
+    if (!valid.length) valid = scored;
+
+    let bestR = 0;
+    for (const c of valid) if (c.r > bestR) bestR = c.r;
+    let pick = null;
+    for (const c of valid) {
+      if (c.r >= bestR * 0.6 && (!pick || c.p > pick.p)) pick = c;
+    }
+    return pick || bestScored;
+  }
+
+  // grid lines at phase + k*p, clipped to [0, len]; a leading/trailing sliver
+  // shorter than a third of a cell is absorbed by its neighbour instead of
+  // becoming a garbage output pixel
+  function cellEdges(len, p, phase) {
+    let first = phase % p;
+    if (first < 0) first += p;
+    const list = [];
+    for (let e = first; e < len - 1e-6; e += p) list.push(e);
+    if (!list.length) return [0, len];
+    // a leading/trailing sliver becomes its own pixel only if it covers more than
+    // half a cell; otherwise it is absorbed by its neighbour rather than turning
+    // into a smeared extra row or column at the edge
+    if (list[0] > 0.5 * p) list.unshift(0); else list[0] = 0;
+    if (len - list[list.length - 1] > 0.5 * p) list.push(len);
+    else list[list.length - 1] = len;
+    return list.length >= 2 ? list : [0, len];
+  }
+
+  // whole source pixels strictly inside the cell, minus an anti-aliasing margin
+  function insetRange(a, b, len) {
+    const inset = Math.min((b - a) * 0.28, 1.25);
+    let s = Math.ceil(a + inset - 1e-6);
+    let e = Math.floor(b - inset + 1e-6);
+    if (e <= s) { s = Math.floor((a + b) / 2); e = s + 1; } // cell too thin to inset
+    s = Math.max(0, Math.min(len - 1, s));
+    e = Math.max(s + 1, Math.min(len, e));
+    return [s, e];
+  }
+
+  function resample(srcData, w, h, ex, ey) {
+    const outW = ex.length - 1, outH = ey.length - 1;
+    const out = new ImageData(outW, outH);
+    const od = out.data;
+    const buckets = new Map();
+    const xr = [];
+    for (let cx = 0; cx < outW; cx++) xr.push(insetRange(ex[cx], ex[cx + 1], w));
+    for (let cy = 0; cy < outH; cy++) {
+      const [y0, y1] = insetRange(ey[cy], ey[cy + 1], h);
+      for (let cx = 0; cx < outW; cx++) {
+        const x0 = xr[cx][0], x1 = xr[cx][1];
+        buckets.clear();
+        let total = 0, opaque = 0, bestN = 0, bestBucket = null;
+        for (let y = y0; y < y1; y++) {
+          const row = y * w;
+          for (let x = x0; x < x1; x++) {
+            const i = (row + x) * 4;
+            total++;
+            if (srcData[i + 3] < 128) continue;
+            opaque++;
+            const r = srcData[i], g = srcData[i + 1], b = srcData[i + 2];
+            // 5 bits per channel: near-identical shades from the render's gradients
+            // land in one bucket, genuinely different colours stay apart
+            const key = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
+            let e = buckets.get(key);
+            if (e) { e[0]++; e[1] += r; e[2] += g; e[3] += b; }
+            else { e = [1, r, g, b]; buckets.set(key, e); }
+            if (e[0] > bestN) { bestN = e[0]; bestBucket = e; }
+          }
+        }
+        const oi = (cy * outW + cx) * 4;
+        if (!bestBucket || opaque * 2 < total) { od[oi + 3] = 0; continue; }
+        od[oi] = Math.round(bestBucket[1] / bestBucket[0]);
+        od[oi + 1] = Math.round(bestBucket[2] / bestBucket[0]);
+        od[oi + 2] = Math.round(bestBucket[3] / bestBucket[0]);
+        od[oi + 3] = 255;
+      }
+    }
+    return out;
+  }
+
+  // Speckle removal, run AFTER quantization so "same colour" is an exact test.
+  // A pixel whose colour almost nothing around it shares is noise from the render,
+  // not art, so it takes the most common colour among its neighbours. Reads from a
+  // snapshot so one replacement can't cascade into the next.
+  // strength 1 clears only fully isolated pixels; 2 also clears pairs, which bites
+  // into genuine 1px detail like outlines and dithering — hence the choice.
+  function despeckle(imageData, strength) {
+    if (!strength) return 0;
+    const w = imageData.width, h = imageData.height, d = imageData.data;
+    const src = new Uint8ClampedArray(d);
+    const minKeep = strength >= 2 ? 2 : 1;
+    const key = (i) => src[i * 4 + 3] < 8 ? -1
+      : ((src[i * 4] << 16) | (src[i * 4 + 1] << 8) | src[i * 4 + 2]) >>> 0;
+    let changed = 0;
+    const tally = new Map();
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        const me = key(i);
+        if (me < 0) continue; // transparent pixels are shape, not noise
+        tally.clear();
+        let same = 0, bestK = -1, bestN = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (!dx && !dy) continue;
+            const nx = x + dx, ny = y + dy;
+            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+            const k = key(ny * w + nx);
+            if (k < 0) continue;
+            if (k === me) { same++; continue; }
+            const n = (tally.get(k) || 0) + 1;
+            tally.set(k, n);
+            if (n > bestN) { bestN = n; bestK = k; }
+          }
+        }
+        if (same >= minKeep || bestK < 0 || bestN < 2) continue;
+        d[i * 4] = (bestK >> 16) & 255;
+        d[i * 4 + 1] = (bestK >> 8) & 255;
+        d[i * 4 + 2] = bestK & 255;
+        changed++;
+      }
+    }
+    return changed;
+  }
+
+  // integer, gap-free source spans for the cell edges: every source pixel belongs to
+  // exactly one cell, which is what makes the repainted blocks hard-edged
+  function edgeToInt(edges, len) {
+    const b = new Int32Array(edges.length);
+    for (let i = 0; i < edges.length; i++) b[i] = Math.round(edges[i]);
+    b[0] = 0;
+    b[b.length - 1] = len;
+    for (let i = 1; i < b.length; i++) if (b[i] < b[i - 1]) b[i] = b[i - 1];
+    return b;
+  }
+
+  // Paint each cell's single colour back over the exact source pixels it came from.
+  // The sheet keeps its original dimensions — so frame size, slice grid and every
+  // downstream setting stay valid — while each block becomes one flat colour with a
+  // hard edge, i.e. a genuine pixel point that merely happens to be drawn large.
+  function expandCells(cells, ex, ey, w, h) {
+    const bx = edgeToInt(ex, w), by = edgeToInt(ey, h);
+    const out = new ImageData(w, h);
+    const od = out.data, cd = cells.data, cw = cells.width;
+    for (let cy = 0; cy < cells.height; cy++) {
+      for (let cx = 0; cx < cw; cx++) {
+        const s = (cy * cw + cx) * 4;
+        const r = cd[s], g = cd[s + 1], b = cd[s + 2], a = cd[s + 3];
+        for (let y = by[cy]; y < by[cy + 1]; y++) {
+          let d = (y * w + bx[cx]) * 4;
+          for (let x = bx[cx]; x < bx[cx + 1]; x++) {
+            od[d] = r; od[d + 1] = g; od[d + 2] = b; od[d + 3] = a;
+            d += 4;
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  function countColors(imageData) {
+    const d = imageData.data, n = imageData.width * imageData.height;
+    const set = new Set();
+    for (let i = 0; i < n; i++) {
+      if (d[i * 4 + 3] < 8) continue;
+      set.add(((d[i * 4] << 16) | (d[i * 4 + 1] << 8) | d[i * 4 + 2]) >>> 0);
+    }
+    return set.size;
+  }
+
+  function reduceColors(imageData, k) {
+    const d = imageData.data, n = imageData.width * imageData.height;
+    const counts = new Map();
+    for (let i = 0; i < n; i++) {
+      if (d[i * 4 + 3] < 8) continue;
+      const key = ((d[i * 4] << 16) | (d[i * 4 + 1] << 8) | d[i * 4 + 2]) >>> 0;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    if (counts.size <= k) return;
+    const entries = [...counts.entries()];
+    const pal = medianCut(
+      entries.map(([key]) => [(key >> 16) & 255, (key >> 8) & 255, key & 255]),
+      entries.map(([, c]) => c), k);
+    const cache = new Map();
+    for (let i = 0; i < n; i++) {
+      if (d[i * 4 + 3] < 8) continue;
+      const key = ((d[i * 4] << 16) | (d[i * 4 + 1] << 8) | d[i * 4 + 2]) >>> 0;
+      let nc = cache.get(key);
+      if (!nc) {
+        nc = pal[nearestIndexIn([(key >> 16) & 255, (key >> 8) & 255, key & 255], pal)];
+        cache.set(key, nc);
+      }
+      d[i * 4] = nc[0]; d[i * 4 + 1] = nc[1]; d[i * 4 + 2] = nc[2];
+    }
+  }
+
+  // swap the working sheet for a differently-sized one, carrying the slice grid
+  // across by the size ratio so a configured sheet survives the resample
+  function setWorkingImage(source, newW, newH) {
+    const g = lastGrid;
+    const rx = imgW / newW, ry = imgH / newH;
+    // A preview was computed from the previous image. Keeping it would cover
+    // the new working image and could make a later Apply use stale pixels.
+    clearTimeout(bgTimer);
+    bgSamples = [];
+    bgPreviewCanvas = null;
+    renderBgSamples();
+    bgReadout.style.display = "none";
+    setBgPicking(false);
+    img = source;
+    imgW = newW; imgH = newH;
+    sheetCanvas.width = imgW;
+    sheetCanvas.height = imgH;
+    frameWInput.max = imgW;
+    frameHInput.max = imgH;
+    if (g) {
+      frameWInput.value = Math.min(imgW, Math.max(1, Math.round(g.fw / rx)));
+      frameHInput.value = Math.min(imgH, Math.max(1, Math.round(g.fh / ry)));
+      marginXInput.value = Math.max(0, Math.round(g.mx / rx));
+      marginYInput.value = Math.max(0, Math.round(g.my / ry));
+      spacingXInput.value = Math.max(0, Math.round(g.sx / rx));
+      spacingYInput.value = Math.max(0, Math.round(g.sy / ry));
+    }
+    outSizeCustom = false;
+    buildPalette(); // also clears the mask, colour map and slider state
+    recompute();
+  }
+
+  function resetDepixelUI() {
+    depixelInfo = null;
+    depixelReadout.style.display = "none";
+    btnDepixelRestore.style.display = "none";
+    depixelStatus.textContent = "";
+    depixelStatus.classList.remove("busy");
+    // only the grid-detection fields reset with a new image; the colour targets are
+    // the user's standing preference and survive
+    dpBlockW.value = 0; dpBlockH.value = 0;
+    dpPhaseX.value = ""; dpPhaseY.value = "";
+  }
+
+  function setDepixelBusy(msg) {
+    depixelStatus.textContent = msg;
+    depixelStatus.classList.add("busy");
+  }
+  function setDepixelDone(msg) {
+    depixelStatus.textContent = msg;
+    depixelStatus.classList.remove("busy");
+  }
+
+  function runDepixel(convert) {
+    if (!img) return;
+    setDepixelBusy(convert ? "正在检测像素网格并重采样…" : "正在检测像素网格…");
+    // the analysis is a synchronous ~0.3–1s block; two frames guarantee the busy
+    // status actually paints before the main thread stalls
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      try { doDepixel(convert); }
+      catch (err) { setDepixelDone("处理失败：" + (err && err.message ? err.message : err)); }
+    }));
+  }
+
+  // "only clean up the colours": no grid, no geometry, not a single pixel moves —
+  // just collapse the render's thousands of near-identical shades onto one small
+  // palette, which is what removes the speckle and gradient noise
+  function doColorOnly(src, sw, sh) {
+    const limit = Number(dpColors.value) || 64;
+    const before = countColors(src);
+    const out = new ImageData(new Uint8ClampedArray(src.data), sw, sh);
+
+    if (dpPalette.value === "resurrect") {
+      // snap every pixel to the fixed palette, caching per distinct source colour so
+      // a 30k-colour image still costs one nearest-colour search per colour, not per
+      // pixel
+      const d = out.data, cache = new Map();
+      for (let i = 0, n = sw * sh; i < n; i++) {
+        if (d[i * 4 + 3] < 8) continue;
+        const k = ((d[i * 4] << 16) | (d[i * 4 + 1] << 8) | d[i * 4 + 2]) >>> 0;
+        let nc = cache.get(k);
+        if (!nc) {
+          nc = nearestIn([(k >> 16) & 255, (k >> 8) & 255, k & 255], RESURRECT_64);
+          cache.set(k, nc);
+        }
+        d[i * 4] = nc[0]; d[i * 4 + 1] = nc[1]; d[i * 4 + 2] = nc[2];
+      }
+      if (limit < 64) reduceColors(out, limit);
+    } else {
+      reduceColors(out, limit);
+    }
+
+    const specks = despeckle(out, Number(dpDespeckle.value) || 0);
+    const colors = countColors(out);
+
+    const dest = document.createElement("canvas");
+    dest.width = sw; dest.height = sh;
+    dest.getContext("2d").putImageData(out, 0, 0);
+
+    depixelReadout.style.display = "flex";
+    roDpSize.textContent = sw + " × " + sh + "（未改变）";
+    roDpColors.textContent = before + " → " + colors + " 色";
+    roDpSpeck.textContent = specks ? specks + " px" : "0";
+    roDpBlock.textContent = "未检测";
+    roDpGrid.textContent = "未对齐";
+    roDpPhase.textContent = "–";
+    roDpConf.textContent = "–";
+
+    setWorkingImage(dest, sw, sh);
+    depixelInfo = { colorOnly: true };
+    btnDepixelRestore.style.display = "inline-flex";
+    setDepixelDone("已去杂色：尺寸仍是 " + sw + " × " + sh + "，像素位置一个都没动，"
+      + before + " 色归并为 " + colors + " 色"
+      + (specks ? "，另清掉 " + specks + " 个噪点像素" : "")
+      + "。切片 / 对齐 / 预览 / 导出都已切换到这张图；「还原原图」可随时退回。");
+  }
+
+  function doDepixel(convert) {
+    // Work from the CURRENT sheet, not the pristine upload. Re-deriving from the
+    // original would silently throw away everything done since — most visibly the
+    // background removal, which would come straight back.
+    const sw = imgW, sh = imgH;
+    const c = document.createElement("canvas");
+    c.width = sw; c.height = sh;
+    const cctx = c.getContext("2d", { willReadFrequently: true });
+    cctx.drawImage(bgBaseSrc(), 0, 0);
+    const src = cctx.getImageData(0, 0, sw, sh);
+
+    if (convert && dpOutMode.value === "color") { doColorOnly(src, sw, sh); return; }
+
+    const ctrX = centerProfile(edgeProfile(src.data, sw, sh, 0));
+    const ctrY = centerProfile(edgeProfile(src.data, sw, sh, 1));
+    if (!ctrX || !ctrY) {
+      setDepixelDone("整张图没有任何颜色变化，无法检测网格。");
+      return;
+    }
+
+    const maxP = Math.max(DP_MIN_PERIOD, Math.min(96, Math.min(sw, sh) / 6));
+    const manW = Number(dpBlockW.value) || 0;
+    const manH = Number(dpBlockH.value) || 0;
+    const fixed = (ctr, p) => { const c = dftBin(ctr, p); c.score = combScore(ctr.raw, p); return c; };
+    let dx = manW >= DP_MIN_PERIOD ? fixed(ctrX, manW) : detectPeriod(ctrX, maxP);
+    let dy = manH >= DP_MIN_PERIOD ? fixed(ctrY, manH) : detectPeriod(ctrY, maxP);
+    if (!dx || !dy) {
+      setDepixelDone("图片太小或没有可辨认的网格，请在高级设置里手动指定块宽 / 块高。");
+      return;
+    }
+
+    // square-lock: near-equal axes almost always mean square pixels, and averaging
+    // the two estimates (weighted by how periodic each axis really is) beats
+    // trusting either one alone
+    if (!manW && !manH && Math.abs(dx.p - dy.p) <= 0.06 * Math.max(dx.p, dy.p)) {
+      const p = (dx.p * dx.r + dy.p * dy.r) / (dx.r + dy.r);
+      dx = fixed(ctrX, p);
+      dy = fixed(ctrY, p);
+    }
+
+    const phaseX = dpPhaseX.value.trim() === "" ? dx.phase : Number(dpPhaseX.value);
+    const phaseY = dpPhaseY.value.trim() === "" ? dy.phase : Number(dpPhaseY.value);
+    if (!isFinite(phaseX) || !isFinite(phaseY)) {
+      setDepixelDone("相位必须是数字，留空表示自动。");
+      return;
+    }
+
+    const ex = cellEdges(sw, dx.p, phaseX);
+    const ey = cellEdges(sh, dy.p, phaseY);
+    const outW = ex.length - 1, outH = ey.length - 1;
+
+    // detected values are written back so the user can nudge them and re-run
+    dpBlockW.value = dx.p.toFixed(3);
+    dpBlockH.value = dy.p.toFixed(3);
+    dpPhaseX.value = phaseX.toFixed(2);
+    dpPhaseY.value = phaseY.toFixed(2);
+
+    // comb score 1 = the colour changes ignore this grid entirely, so map it onto a
+    // 0–100% readout where 4x background reads as 75%
+    const score = Math.min(dx.score, dy.score);
+    // both measures have to hold up: a weak comb means the changes don't sit on the
+    // grid, a weak magnitude means the grid isn't actually periodic
+    const weak = score < 1.35 || Math.min(dx.r, dy.r) < 0.10;
+    depixelReadout.style.display = "flex";
+    roDpBlock.textContent = dx.p.toFixed(2) + " × " + dy.p.toFixed(2) + " px";
+    roDpPhase.textContent = phaseX.toFixed(2) + " / " + phaseY.toFixed(2);
+    roDpConf.textContent = Math.max(0, Math.round((1 - 1 / Math.max(score, 1)) * 100)) + "%";
+    const keepSize = dpOutMode.value !== "down";
+    roDpGrid.textContent = outW + " × " + outH + " 格";
+    roDpSize.textContent = keepSize ? sw + " × " + sh + "（原尺寸）" : outW + " × " + outH;
+
+    if (!convert) {
+      roDpColors.textContent = "–";
+      setDepixelDone(weak
+        ? "周期性很弱，这张图可能本来就是 1:1 真像素，或网格被打散了——转换前建议先手动指定块大小。"
+        : "检测完成：原图每 " + dx.p.toFixed(2) + " × " + dy.p.toFixed(2)
+          + " 个真实像素是 1 个像素点，整张图共 " + outW + " × " + outH + " 个像素点。"
+          + (keepSize ? "转换后尺寸不变，仍是 " + sw + " × " + sh + "。" : "转换后缩为 " + outW + " × " + outH + "。"));
+      return;
+    }
+
+    if (outW < 1 || outH < 1 || outW > sw || outH > sh) {
+      setDepixelDone("推算出的输出尺寸不合理（" + outW + " × " + outH + "），请检查块大小。");
+      return;
+    }
+
+    // one pixel per cell first — colour reduction works on the real palette, not on
+    // the same colour repeated across every pixel of a block
+    const cells = resample(src.data, sw, sh, ex, ey);
+    const limit = Number(dpColors.value) || 0;
+    if (limit > 0) reduceColors(cells, limit);
+    const colors = countColors(cells);
+    const final = keepSize ? expandCells(cells, ex, ey, sw, sh) : cells;
+
+    const dest = document.createElement("canvas");
+    dest.width = final.width; dest.height = final.height;
+    dest.getContext("2d").putImageData(final, 0, 0);
+
+    setWorkingImage(dest, final.width, final.height);
+    depixelInfo = { p: dx.p, q: dy.p, phaseX, phaseY, outW, outH, keepSize };
+    btnDepixelRestore.style.display = "inline-flex";
+    roDpColors.textContent = colors + " 色";
+    setDepixelDone((weak ? "⚠ 周期性较弱，结果可能不准，建议手动指定块大小后重试。" : "")
+      + (keepSize
+        ? "已完美像素化：尺寸仍是 " + sw + " × " + sh + "，" + outW + " × " + outH
+          + " 个像素点每个都压成了一格纯色（" + colors + " 色）。帧尺寸与切片网格不受影响。"
+        : "已缩为 " + outW + " × " + outH + " 的 1:1 真像素图（" + colors + " 色）。"
+          + "图片尺寸已改变，请重设帧尺寸与切片网格。")
+      + (limit ? "颜色已缩减到 " + limit + " 以内。" : "")
+      + "「还原原图」可随时退回。"
+      // the调色 panel indexes at most 256 source colours, so anything beyond that
+      // silently falls outside its reach
+      + (colors > 256 ? " ⚠ 颜色超过 256，下方调色面板只会处理占比最高的 256 色，建议在高级设置里开启颜色缩减。" : ""));
+  }
+
+  btnDepixel.addEventListener("click", () => runDepixel(true));
+  btnDepixelDetect.addEventListener("click", () => runDepixel(false));
+  btnDpAuto.addEventListener("click", () => {
+    dpBlockW.value = 0; dpBlockH.value = 0;
+    dpPhaseX.value = ""; dpPhaseY.value = "";
+    setDepixelDone("已恢复自动检测，再点一次「一键完美像素」即可重新分析。");
+  });
+  btnDepixelRestore.addEventListener("click", () => {
+    if (!originalImg || !depixelInfo) return;
+    // this is a full rewind to the uploaded file, not a one-step undo — say so
+    setWorkingImage(originalImg, originalW, originalH);
+    depixelInfo = null;
+    btnDepixelRestore.style.display = "none";
+    depixelReadout.style.display = "none";
+    setDepixelDone("已退回最初上传的原图 " + originalW + " × " + originalH
+      + "——包括去背景、归位在内的全部处理都已撤销。");
+  });
+
+  // ---------- background removal ----------
+  let bgSamples = [];          // [[r,g,b], …] colours the user clicked on the sheet
+  let bgPreviewCanvas = null;  // non-destructive preview; committed only on apply
+  let bgPicking = false;
+  let bgPending = false;
+  let bgUndo = null;           // working image as it was before the last apply
+
+  const bgPanel = document.getElementById("bgPanel");
+  const btnBgPick = document.getElementById("btnBgPick");
+  const btnBgCorners = document.getElementById("btnBgCorners");
+  const btnBgClearSamples = document.getElementById("btnBgClearSamples");
+  const btnBgApply = document.getElementById("btnBgApply");
+  const btnBgUndo = document.getElementById("btnBgUndo");
+  const bgSampleList = document.getElementById("bgSampleList");
+  const bgTol = document.getElementById("bgTol");
+  const bgTolNum = document.getElementById("bgTolNum");
+  const bgConnected = document.getElementById("bgConnected");
+  const bgReadout = document.getElementById("bgReadout");
+  const bgStatus = document.getElementById("bgStatus");
+  const roBgSize = document.getElementById("roBgSize");
+  const roBgCount = document.getElementById("roBgCount");
+  const roBgLeft = document.getElementById("roBgLeft");
+  const sheetFit = document.getElementById("sheetFit");
+  const sheetViewWrap = document.getElementById("sheetViewWrap");
+
+  sheetFit.addEventListener("change", () => {
+    sheetScroll.classList.toggle("actual", sheetFit.value === "actual");
+  });
+
+  // colorDist is redmean-weighted and squared; /10 puts it back on a roughly 0-255
+  // scale so the tolerance slider reads like an ordinary colour difference
+  function bgDist(a, b) { return Math.sqrt(colorDist(a, b) / 10); }
+
+  // the un-previewed sheet: colour edits count as part of the image, the background
+  // preview does not (it is what we are recomputing)
+  function bgBaseSrc() { return processedCanvas || img; }
+
+  function samplePixel(x, y) {
+    const c = document.createElement("canvas");
+    c.width = 1; c.height = 1;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(bgBaseSrc(), x, y, 1, 1, 0, 0, 1, 1);
+    const d = ctx.getImageData(0, 0, 1, 1).data;
+    return d[3] < 8 ? null : [d[0], d[1], d[2]];
+  }
+
+  function addBgSample(c) {
+    if (!c) return false;
+    if (bgSamples.some((s) => s[0] === c[0] && s[1] === c[1] && s[2] === c[2])) return false;
+    bgSamples.push(c);
+    return true;
+  }
+
+  function renderBgSamples() {
+    bgSampleList.innerHTML = "";
+    if (!bgSamples.length) {
+      const e = document.createElement("span");
+      e.className = "bg-empty";
+      e.textContent = "还没有取样颜色";
+      bgSampleList.appendChild(e);
+      return;
+    }
+    bgSamples.forEach((c, i) => {
+      const chip = document.createElement("span");
+      chip.className = "bg-chip";
+      const sw = document.createElement("span");
+      sw.className = "sw";
+      sw.style.background = rgbToHex(c);
+      const tx = document.createElement("span");
+      tx.className = "mono";
+      tx.textContent = rgbToHex(c);
+      const rm = document.createElement("button");
+      rm.textContent = "×";
+      rm.title = "移除这个取样色";
+      rm.addEventListener("click", () => {
+        bgSamples.splice(i, 1);
+        renderBgSamples();
+        refreshBgPreview();
+      });
+      chip.append(sw, tx, rm);
+      bgSampleList.appendChild(chip);
+    });
+  }
+
+  // Which pixels count as background. Decisions are cached per distinct colour —
+  // a 1000x1000 sheet holds far fewer distinct colours than pixels, so this turns
+  // millions of distance tests into a few thousand.
+  function buildBgMask(data, w, h, samples, tol, connectedOnly) {
+    const n = w * h;
+    const match = new Uint8Array(n);
+    const cache = new Map();
+    for (let i = 0; i < n; i++) {
+      if (data[i * 4 + 3] < 8) continue; // already transparent
+      const k = ((data[i * 4] << 16) | (data[i * 4 + 1] << 8) | data[i * 4 + 2]) >>> 0;
+      let v = cache.get(k);
+      if (v === undefined) {
+        const c = [(k >> 16) & 255, (k >> 8) & 255, k & 255];
+        v = 0;
+        for (const s of samples) if (bgDist(c, s) <= tol) { v = 1; break; }
+        cache.set(k, v);
+      }
+      match[i] = v;
+    }
+    if (!connectedOnly) return match;
+
+    // keep only what the background can actually reach from the border, so a
+    // same-coloured patch enclosed by the character isn't punched out
+    const keep = new Uint8Array(n);
+    const stack = new Int32Array(n); // each pixel is pushed at most once
+    let sp = 0;
+    const push = (i) => { if (match[i] && !keep[i]) { keep[i] = 1; stack[sp++] = i; } };
+    for (let x = 0; x < w; x++) { push(x); push((h - 1) * w + x); }
+    for (let y = 0; y < h; y++) { push(y * w); push(y * w + w - 1); }
+    while (sp > 0) {
+      const i = stack[--sp];
+      const x = i % w, y = (i / w) | 0;
+      if (x > 0) push(i - 1);
+      if (x < w - 1) push(i + 1);
+      if (y > 0) push(i - w);
+      if (y < h - 1) push(i + w);
+    }
+    return keep;
+  }
+
+  function refreshBgPreview() {
+    if (!img) return;
+    if (!bgSamples.length) {
+      bgPreviewCanvas = null;
+      bgReadout.style.display = "none";
+      redrawAll(true);
+      return;
+    }
+    const c = document.createElement("canvas");
+    c.width = imgW; c.height = imgH;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(bgBaseSrc(), 0, 0);
+    const id = ctx.getImageData(0, 0, imgW, imgH);
+    const mask = buildBgMask(id.data, imgW, imgH, bgSamples,
+      Number(bgTol.value), bgConnected.checked);
+
+    let cleared = 0, opaque = 0;
+    for (let i = 0, n = imgW * imgH; i < n; i++) {
+      if (mask[i]) { id.data[i * 4 + 3] = 0; cleared++; }
+      else if (id.data[i * 4 + 3] >= 8) opaque++;
+    }
+    ctx.putImageData(id, 0, 0);
+    bgPreviewCanvas = c;
+
+    const total = imgW * imgH;
+    bgReadout.style.display = "flex";
+    roBgSize.textContent = imgW + " × " + imgH;
+    roBgCount.textContent = cleared.toLocaleString() + " px（" + (cleared / total * 100).toFixed(1) + "%）";
+    roBgLeft.textContent = opaque.toLocaleString() + " px";
+    redrawAll(true);
+  }
+
+  // Slider drags fire far faster than a multi-megapixel rescan can finish. Up to a
+  // couple of megapixels a pass fits in a frame, so preview live; beyond that one
+  // pass costs several frames and queueing them just builds lag, so wait for the
+  // drag to settle instead.
+  let bgTimer = null;
+  function scheduleBgPreview() {
+    if (imgW * imgH > 2e6) {
+      clearTimeout(bgTimer);
+      bgTimer = setTimeout(refreshBgPreview, 140);
+      return;
+    }
+    if (bgPending) return;
+    bgPending = true;
+    requestAnimationFrame(() => { bgPending = false; refreshBgPreview(); });
+  }
+
+  function setBgPicking(on) {
+    bgPicking = on;
+    sheetCanvas.classList.toggle("picking", on);
+    btnBgPick.textContent = on ? "取样中…点击结束" : "在原图上取样";
+    btnBgPick.classList.toggle("primary", !on);
+    if (on) bgStatus.textContent = "在上方光台的图上点击背景区域取色，可连点多个位置；按 Esc 或再点一次按钮结束。";
+  }
+
+  sheetCanvas.addEventListener("click", (e) => {
+    if (!bgPicking || !img) return;
+    const r = sheetCanvas.getBoundingClientRect();
+    // the canvas is letterboxed by CSS, so map through its displayed size
+    const x = Math.floor((e.clientX - r.left) / r.width * imgW);
+    const y = Math.floor((e.clientY - r.top) / r.height * imgH);
+    if (x < 0 || y < 0 || x >= imgW || y >= imgH) return;
+    const c = samplePixel(x, y);
+    if (!c) { bgStatus.textContent = "这里已经是透明的，换个位置取样。"; return; }
+    if (addBgSample(c)) {
+      renderBgSamples();
+      refreshBgPreview();
+      bgStatus.textContent = "已取样 " + rgbToHex(c) + "（" + x + ", " + y + "）；共 " + bgSamples.length + " 个取样色。";
+    } else {
+      bgStatus.textContent = "这个颜色已经取过了。";
+    }
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && bgPicking) setBgPicking(false);
+  });
+
+  btnBgPick.addEventListener("click", () => setBgPicking(!bgPicking));
+
+  btnBgCorners.addEventListener("click", () => {
+    if (!img) return;
+    let added = 0;
+    for (const [x, y] of [[0, 0], [imgW - 1, 0], [0, imgH - 1], [imgW - 1, imgH - 1]]) {
+      if (addBgSample(samplePixel(x, y))) added++;
+    }
+    renderBgSamples();
+    refreshBgPreview();
+    bgStatus.textContent = added ? "已从四角取到 " + added + " 个新颜色。" : "四角的颜色都已取过（或已透明）。";
+  });
+
+  btnBgClearSamples.addEventListener("click", () => {
+    bgSamples = [];
+    renderBgSamples();
+    refreshBgPreview();
+    bgStatus.textContent = "已清空取样，预览恢复原图。";
+  });
+
+  bgTol.addEventListener("input", () => { bgTolNum.value = bgTol.value; scheduleBgPreview(); });
+  bgTolNum.addEventListener("input", () => {
+    const v = clampNum(bgTolNum.value, 0, 120, 18);
+    bgTol.value = v;
+    scheduleBgPreview();
+  });
+  bgConnected.addEventListener("change", scheduleBgPreview);
+
+  btnBgApply.addEventListener("click", () => {
+    if (!bgSamples.length || !bgPreviewCanvas) {
+      bgStatus.textContent = "请先取样至少一个背景色。";
+      return;
+    }
+    const canvas = bgPreviewCanvas;
+    bgUndo = { src: bgBaseSrc(), w: imgW, h: imgH };
+    bgPreviewCanvas = null; // the preview becomes the image itself
+    setBgPicking(false);
+    setWorkingImage(canvas, imgW, imgH);
+    bgSamples = [];
+    renderBgSamples();
+    bgReadout.style.display = "none";
+    btnBgUndo.style.display = "inline-flex";
+    bgStatus.textContent = "背景已清除，尺寸仍是 " + imgW + " × " + imgH + "，帧尺寸与切片网格未变。"
+      + "还有残留可以继续取样再清一次。";
+  });
+
+  btnBgUndo.addEventListener("click", () => {
+    if (!bgUndo) return;
+    const u = bgUndo;
+    bgUndo = null;
+    bgPreviewCanvas = null;
+    bgSamples = [];
+    renderBgSamples();
+    bgReadout.style.display = "none";
+    btnBgUndo.style.display = "none";
+    setWorkingImage(u.src, u.w, u.h);
+    bgStatus.textContent = "已撤销上一次去背。";
+  });
+
+  function resetBgUI() {
+    bgSamples = [];
+    bgPreviewCanvas = null;
+    bgUndo = null;
+    setBgPicking(false);
+    renderBgSamples();
+    bgReadout.style.display = "none";
+    btnBgUndo.style.display = "none";
+    bgStatus.textContent = "";
+    sheetFit.value = "fit";
+    sheetScroll.classList.remove("actual");
+  }
+
+  // ---------- per-frame fit: pull an overflowing subject back into its cell ----------
+  let fitUndo = null;
+
+  const fitPanel = document.getElementById("fitPanel");
+  const fitThreshold = document.getElementById("fitThreshold");
+  const fitMinArea = document.getElementById("fitMinArea");
+  const fitMargin = document.getElementById("fitMargin");
+  const fitSmooth = document.getElementById("fitSmooth");
+  const btnFitAnalyze = document.getElementById("btnFitAnalyze");
+  const btnFitApply = document.getElementById("btnFitApply");
+  const btnFitUndo = document.getElementById("btnFitUndo");
+  const fitReadout = document.getElementById("fitReadout");
+  const fitStatus = document.getElementById("fitStatus");
+  const roFitTotal = document.getElementById("roFitTotal");
+  const roFitMove = document.getElementById("roFitMove");
+  const roFitSquash = document.getElementById("roFitSquash");
+  const roFitWorst = document.getElementById("roFitWorst");
+  const roFitTall = document.getElementById("roFitTall");
+
+  // Label every connected blob of opaque pixels across the whole sheet at once,
+  // recording bounds, area and centroid for each.
+  function labelComponents(data, w, h, thr) {
+    const n = w * h;
+    const label = new Int32Array(n).fill(-1);
+    const stack = new Int32Array(n); // each pixel is claimed at most once
+    const comps = [];
+    for (let s = 0; s < n; s++) {
+      if (label[s] !== -1 || data[s * 4 + 3] <= thr) continue;
+      const id = comps.length;
+      let sp = 0;
+      label[s] = id;
+      stack[sp++] = s;
+      let minX = w, minY = h, maxX = -1, maxY = -1, cnt = 0, sumX = 0, sumY = 0;
+      while (sp > 0) {
+        const i = stack[--sp];
+        const x = i % w, y = (i / w) | 0;
+        cnt++; sumX += x; sumY += y;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (!dx && !dy) continue;
+            const nx = x + dx, ny = y + dy;
+            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+            const j = ny * w + nx;
+            if (label[j] !== -1 || data[j * 4 + 3] <= thr) continue;
+            label[j] = id;
+            stack[sp++] = j;
+          }
+        }
+      }
+      comps.push({ minX, minY, maxX, maxY, cnt, cx: sumX / cnt, cy: sumY / cnt });
+    }
+    return comps;
+  }
+
+  // A blob belongs to whichever cell holds its CENTROID, not to every cell it
+  // happens to touch. This is the rule that makes overhang work: a subject spilling
+  // out of cell B into cell A still belongs to B, so A doesn't swallow it and B
+  // measures it whole. Blobs landing in a margin or gap go to the nearest cell.
+  // gap between two bounding boxes; 0 when they touch or overlap
+  function bboxGap(a, b) {
+    const dx = Math.max(0, a.minX - b.maxX, b.minX - a.maxX);
+    const dy = Math.max(0, a.minY - b.maxY, b.minY - a.maxY);
+    return Math.hypot(dx, dy);
+  }
+
+  function assignComponents(comps, fw, fh, minArea) {
+    const kept = comps.filter((c) => c.cnt >= minArea); // drop background-removal dust
+    const owned = new Map(); // frame index -> merged bounds
+
+    const frameOf = (cx, cy) => {
+      for (const f of frames) {
+        if (cx >= f.x && cx < f.x + fw && cy >= f.y && cy < f.y + fh) return f;
+      }
+      let best = null, bd = Infinity;
+      for (const f of frames) {
+        const dx = cx - (f.x + fw / 2), dy = cy - (f.y + fh / 2);
+        const d = dx * dx + dy * dy;
+        if (d < bd) { bd = d; best = f; }
+      }
+      return best;
+    };
+
+    // The largest blob whose centroid lands in a cell is that frame's actual subject.
+    const anchors = new Map(); // frame index -> that subject's component
+    for (const c of kept) {
+      const f = frameOf(c.cx, c.cy);
+      if (!f) continue;
+      const prev = anchors.get(f.index);
+      if (!prev || c.cnt > prev.cnt) anchors.set(f.index, c);
+    }
+    const anchorList = [...anchors.entries()].map(([idx, c]) => ({ idx, c }));
+
+    for (const c of kept) {
+      const f = frameOf(c.cx, c.cy);
+      let target = f ? f.index : null;
+      // Everything that ISN'T a frame's subject — a sword trail, loose feathers, a
+      // detached wing tip — is a fragment, and a fragment has to follow the subject
+      // it belongs to instead of being judged on its own centroid. Judging fragments
+      // independently is exactly what strands a trail in the previous frame when its
+      // midpoint happens to land there. Distance is measured between bounding boxes,
+      // so a long thin trail attaches to whatever it actually reaches.
+      if (anchorList.length && !(f && anchors.get(f.index) === c)) {
+        let bestGap = Infinity, bestMid = Infinity;
+        for (const a of anchorList) {
+          const g = bboxGap(c, a.c);
+          const mid = Math.hypot(c.cx - a.c.cx, c.cy - a.c.cy);
+          if (g < bestGap - 1e-9 || (Math.abs(g - bestGap) < 1e-9 && mid < bestMid)) {
+            bestGap = g; bestMid = mid; target = a.idx;
+          }
+        }
+      }
+      if (target == null) continue;
+      const prev = owned.get(target);
+      owned.set(target, prev ? {
+        minX: Math.min(prev.minX, c.minX), minY: Math.min(prev.minY, c.minY),
+        maxX: Math.max(prev.maxX, c.maxX), maxY: Math.max(prev.maxY, c.maxY),
+      } : { minX: c.minX, minY: c.minY, maxX: c.maxX, maxY: c.maxY });
+    }
+    return owned;
+  }
+
+  function fitOptions() {
+    const fw = window.__fw || 1, fh = window.__fh || 1;
+    return {
+      thr: clampInt(fitThreshold.value, 0, 255),
+      minArea: clampInt(fitMinArea.value, 0, 100000),
+      margin: clampInt(fitMargin.value, 0, Math.floor(Math.min(fw, fh) / 2)),
+      smooth: fitSmooth.value === "1",
+    };
+  }
+
+  // Work out, per frame, where its subject should end up. Translation is preferred
+  // and only ever moves as far as it must; scaling is the fallback for a subject
+  // genuinely wider than its cell.
+  function planFrameFit(opts) {
+    const fw = window.__fw, fh = window.__fh;
+    if (!img || !frames.length || !fw || !fh) return null;
+
+    const c = document.createElement("canvas");
+    c.width = imgW; c.height = imgH;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(paintSrc(), 0, 0);
+    const data = ctx.getImageData(0, 0, imgW, imgH).data;
+
+    const comps = labelComponents(data, imgW, imgH, opts.thr);
+
+    // A sheet whose background is still opaque is ONE blob spanning everything: only
+    // the frame holding its centroid gets anything, every other frame reads as empty,
+    // and that one frame is squashed to fit the entire sheet. Detect it up front —
+    // silently flattening the user's sheet is far worse than refusing.
+    let biggest = 0;
+    for (const c of comps) if (c.cnt > biggest) biggest = c.cnt;
+    const bgLeft = biggest > imgW * imgH * 0.5;
+
+    const owned = assignComponents(comps, fw, fh, opts.minArea);
+
+    const plans = [];
+    let moved = 0, squashed = 0, tall = 0, worst = 1, widest = 0;
+    for (const f of frames) {
+      const o = owned.get(f.index);
+      if (!o) { plans.push({ f, empty: true }); continue; }
+      const bb = { x: o.minX, y: o.minY, w: o.maxX - o.minX + 1, h: o.maxY - o.minY + 1 };
+
+      const tx = f.x + opts.margin, ty = f.y + opts.margin;
+      const tw = Math.max(1, fw - opts.margin * 2), th = Math.max(1, fh - opts.margin * 2);
+
+      // height is never scaled — the request is explicit that it stays put
+      const scaleX = bb.w > tw ? tw / bb.w : 1;
+      const drawW = Math.max(1, Math.round(bb.w * scaleX));
+      const drawH = bb.h;
+
+      // squashed subjects sit centred so the trimmed margin is equal on both sides;
+      // untouched ones move the minimum distance needed to get back inside
+      const dx = scaleX < 1
+        ? tx + Math.round((tw - drawW) / 2)
+        : Math.max(tx, Math.min(bb.x, tx + tw - drawW));
+      const loY = ty, hiY = ty + th - drawH;
+      const dy = hiY < loY ? loY : Math.max(loY, Math.min(bb.y, hiY));
+
+      const didMove = dx !== bb.x || dy !== bb.y;
+      if (scaleX < 1) { squashed++; worst = Math.min(worst, scaleX); }
+      else if (didMove) moved++;
+      if (drawH > th) tall++;
+      if (bb.w > widest) widest = bb.w;
+
+      plans.push({ f, bb, dx, dy, drawW, drawH, scaleX, didMove });
+    }
+    return {
+      plans, moved, squashed, tall, worst, widest, bgLeft,
+      total: frames.length, frameW: fw,
+    };
+  }
+
+  // the two ways this feature silently does nothing useful, both worth naming
+  function fitBlocker(r) {
+    if (r.bgLeft) {
+      return "⛔ 背景还没去除：整张图连成了一个主体，所以只有一帧会被判定为「有内容」，其余帧会被清空。"
+        + "请先用上面的「一键去除背景」把背景清成透明，再回来归位。";
+    }
+    if (r.total < 2) {
+      const guess = imgH > 0 ? Math.round(imgW / imgH) : 0;
+      return "⛔ 当前整张图只有 1 帧（单帧宽度 = " + r.frameW + "），没有「超出帧范围」可言。"
+        + "请先在最上方「光台」里把单帧宽度设成真正的一帧大小"
+        + (guess > 1 && imgW % imgH === 0 ? "——这张图看起来是 " + guess + " 帧并排，单帧宽度应为 " + imgH + "。" : "。");
+    }
+    return null;
+  }
+
+  function showFitReport(r, applied) {
+    fitReadout.style.display = "flex";
+    roFitTotal.textContent = String(r.total);
+    roFitMove.textContent = String(r.moved);
+    roFitSquash.textContent = String(r.squashed);
+    roFitWorst.textContent = r.squashed ? Math.round(r.worst * 100) + "%" : "–";
+    roFitTall.textContent = String(r.tall);
+
+    const blocked = fitBlocker(r);
+    if (blocked) { fitStatus.textContent = blocked; return; }
+
+    const verb = applied ? "已处理" : "分析完成";
+    fitStatus.textContent = verb + "：共 " + r.total + " 帧，帧宽 " + r.frameW
+      + "，最宽主体 " + r.widest + " px。"
+      + r.moved + " 帧只需平移，" + r.squashed + " 帧需要横向压缩"
+      + (r.squashed ? "（最强压到 " + Math.round(r.worst * 100) + "% 宽）" : "")
+      + "，" + (r.total - r.moved - r.squashed) + " 帧无需改动。"
+      + (r.tall ? " ⚠ 其中 " + r.tall + " 帧主体高度超出帧高——按要求高度不做缩放，这些帧会从顶部对齐并裁掉底部超出，建议调大帧高。" : "");
+  }
+
+  btnFitAnalyze.addEventListener("click", () => {
+    const r = planFrameFit(fitOptions());
+    if (!r) { fitStatus.textContent = "请先上传图片并设定帧尺寸。"; return; }
+    showFitReport(r, false);
+  });
+
+  btnFitApply.addEventListener("click", () => {
+    const opts = fitOptions();
+    const r = planFrameFit(opts);
+    if (!r) { fitStatus.textContent = "请先上传图片并设定帧尺寸。"; return; }
+    // refuse rather than flatten the sheet — this is not recoverable by eye
+    const blocked = fitBlocker(r);
+    if (blocked) { showFitReport(r, false); return; }
+    const fw = window.__fw, fh = window.__fh;
+    const src = paintSrc();
+
+    const out = document.createElement("canvas");
+    out.width = imgW; out.height = imgH;
+    const octx = out.getContext("2d");
+    octx.imageSmoothingEnabled = opts.smooth;
+    if (opts.smooth) octx.imageSmoothingQuality = "high";
+
+    for (const p of r.plans) {
+      if (p.empty) continue;
+      octx.save();
+      // clip to the cell so a subject taller than its frame can't bleed into the
+      // neighbouring one after being repositioned
+      octx.beginPath();
+      octx.rect(p.f.x, p.f.y, fw, fh);
+      octx.clip();
+      octx.drawImage(src, p.bb.x, p.bb.y, p.bb.w, p.bb.h, p.dx, p.dy, p.drawW, p.drawH);
+      octx.restore();
+    }
+
+    fitUndo = { src, w: imgW, h: imgH };
+    setWorkingImage(out, imgW, imgH);
+    btnFitUndo.style.display = "inline-flex";
+    showFitReport(r, true);
+  });
+
+  btnFitUndo.addEventListener("click", () => {
+    if (!fitUndo) return;
+    const u = fitUndo;
+    fitUndo = null;
+    btnFitUndo.style.display = "none";
+    setWorkingImage(u.src, u.w, u.h);
+    fitStatus.textContent = "已撤销归位。";
+  });
+
+  function resetFitUI() {
+    fitUndo = null;
+    btnFitUndo.style.display = "none";
+    fitReadout.style.display = "none";
+    fitStatus.textContent = "";
+  }
+
+  // ---------- subject alignment (footprint alignment) ----------
+  function ensureAlignScratch() {
+    if (!alignScratch) alignScratch = document.createElement("canvas");
+    return alignScratch;
+  }
+
+  function computeAlignment() {
+    const fw = window.__fw, fh = window.__fh;
+    if (!alignEnabled || !frames.length || !fw || !fh) {
+      alignData = null;
+      alignReadout.style.display = "none";
+      return;
+    }
+
+    const scratch = ensureAlignScratch();
+    scratch.width = fw; scratch.height = fh;
+    const actx = scratch.getContext("2d", { willReadFrequently: true });
+
+    const anchorByIndex = new Map();
+    frames.forEach((f) => {
+      actx.clearRect(0, 0, fw, fh);
+      actx.drawImage(img, f.x, f.y, fw, fh, 0, 0, fw, fh);
+      const data = actx.getImageData(0, 0, fw, fh).data;
+      let minX = fw, maxX = -1, maxY = -1, sumX = 0, cnt = 0;
+      for (let y = 0; y < fh; y++) {
+        const rowBase = y * fw;
+        for (let x = 0; x < fw; x++) {
+          const a = data[(rowBase + x) * 4 + 3];
+          if (a > alignThreshold) {
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+            sumX += x; cnt++;
+          }
+        }
+      }
+      if (maxX < 0) return;
+      // "footprint": centroid of the subject's bottom 3 rows of opaque pixels
+      let sumBX = 0, cntB = 0;
+      for (let y = Math.max(0, maxY - 2); y <= maxY; y++) {
+        const rowBase = y * fw;
+        for (let x = 0; x < fw; x++) {
+          if (data[(rowBase + x) * 4 + 3] > alignThreshold) { sumBX += x; cntB++; }
+        }
+      }
+      const cx = alignXMode === "bbox" ? (minX + maxX) / 2
+               : alignXMode === "bottom" ? (cntB ? sumBX / cntB : sumX / cnt)
+               : sumX / cnt;
+      anchorByIndex.set(f.index, { cx, bottomY: maxY });
+    });
+
+    const activeAnchors = frames
+      .filter((f) => !f.excluded)
+      .map((f) => anchorByIndex.get(f.index))
+      .filter(Boolean);
+
+    if (!activeAnchors.length) {
+      alignData = null;
+      alignReadout.style.display = "none";
+      return;
+    }
+
+    // median target: a single exaggerated frame won't drag the whole sequence
+    const targetX = median(activeAnchors.map((a) => a.cx));
+    const targetY = median(activeAnchors.map((a) => a.bottomY));
+
+    const rawByIndex = new Map();
+    frames.forEach((f) => {
+      const a = anchorByIndex.get(f.index);
+      rawByIndex.set(f.index, a
+        ? {
+            dx: alignAxis === "y" ? 0 : Math.round(targetX - a.cx),
+            dy: alignAxis === "x" ? 0 : Math.round(targetY - a.bottomY),
+          }
+        : { dx: 0, dy: 0 });
+    });
+
+    let minDx = 0, maxDx = 0, minDy = 0, maxDy = 0;
+    rawByIndex.forEach((o) => {
+      minDx = Math.min(minDx, o.dx); maxDx = Math.max(maxDx, o.dx);
+      minDy = Math.min(minDy, o.dy); maxDy = Math.max(maxDy, o.dy);
+    });
+    const padLeft = Math.max(0, -minDx), padTop = Math.max(0, -minDy);
+    const outW = fw + padLeft + Math.max(0, maxDx);
+    const outH = fh + padTop + Math.max(0, maxDy);
+
+    const offsetByIndex = new Map();
+    rawByIndex.forEach((o, idx) => offsetByIndex.set(idx, { dx: o.dx + padLeft, dy: o.dy + padTop }));
+
+    alignData = { offsetByIndex, outW, outH };
+
+    alignReadout.style.display = "flex";
+    roAlignSize.textContent = outW + " × " + outH;
+    roAlignPad.textContent = "+" + (outW - fw) + " / +" + (outH - fh);
+  }
+
+  function getOutSize() {
+    if (alignEnabled && alignData) return { w: alignData.outW, h: alignData.outH };
+    return { w: window.__fw || 1, h: window.__fh || 1 };
+  }
+
+  function getFrameOffset(f) {
+    if (alignEnabled && alignData) return alignData.offsetByIndex.get(f.index) || { dx: 0, dy: 0 };
+    return { dx: 0, dy: 0 };
+  }
+
+  // ---------- output frame size (scale or crop) ----------
+  // the natural per-frame size (after alignment); the output may scale or crop from it
+  function getExportFrameSize() {
+    const o = getOutSize();
+    if (!outSizeCustom) return { w: o.w, h: o.h };
+    let w = parseInt(outFrameWInput.value, 10);
+    let h = parseInt(outFrameHInput.value, 10);
+    if (!(w > 0)) w = o.w;
+    if (!(h > 0)) h = o.h;
+    return { w: Math.min(w, 8192), h: Math.min(h, 8192) };
+  }
+
+  function anchorOffset(cell, content, a) {
+    if (a === 0) return 0;                     // start
+    if (a === 2) return cell - content;        // end
+    return Math.round((cell - content) / 2);   // center
+  }
+
+  // draw one frame into ctx at cell (cellX,cellY,cw,ch), honoring scale/crop mode.
+  // clipped to the cell so crop-mode overflow never bleeds into neighbouring cells.
+  function drawFrameInto(ctx, f, cellX, cellY, cw, ch) {
+    const out = getOutSize();
+    const off = getFrameOffset(f);
+    const fw = window.__fw, fh = window.__fh;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(cellX, cellY, cw, ch);
+    ctx.clip();
+    if (outSizeMode === "scale") {
+      // stretch to fill: independent x/y factors, so a target of a different
+      // aspect ratio distorts the frame
+      const sx = cw / out.w, sy = ch / out.h;
+      ctx.drawImage(paintSrc(), f.x, f.y, fw, fh,
+        cellX + off.dx * sx, cellY + off.dy * sy, fw * sx, fh * sy);
+    } else if (outSizeMode === "cover" || outSizeMode === "contain") {
+      // One factor drives both axes, so neither mode ever distorts. The choice is
+      // only about what happens to the aspect-ratio mismatch:
+      //   cover  = take the LARGER factor — fills the cell, surplus on the long
+      //            axis falls outside the clip, i.e. that content is cropped away
+      //   contain = take the SMALLER factor — the whole frame fits, and the short
+      //            axis is left as transparent padding
+      const s = outSizeMode === "cover"
+        ? Math.max(cw / out.w, ch / out.h)
+        : Math.min(cw / out.w, ch / out.h);
+      const [ax, ay] = (outAnchorSelect.value || "1,1").split(",").map(Number);
+      const ox = anchorOffset(cw, out.w * s, ax);
+      const oy = anchorOffset(ch, out.h * s, ay);
+      ctx.drawImage(paintSrc(), f.x, f.y, fw, fh,
+        cellX + ox + off.dx * s, cellY + oy + off.dy * s, fw * s, fh * s);
+    } else { // crop / pad at 1:1, positioned by anchor
+      const [ax, ay] = (outAnchorSelect.value || "1,1").split(",").map(Number);
+      const ox = anchorOffset(cw, out.w, ax);
+      const oy = anchorOffset(ch, out.h, ay);
+      ctx.drawImage(paintSrc(), f.x, f.y, fw, fh,
+        cellX + ox + off.dx, cellY + oy + off.dy, fw, fh);
+    }
+    ctx.restore();
+  }
+
+  function syncOutputSizeFields() {
+    const o = getOutSize();
+    if (!outSizeCustom) {
+      outFrameWInput.value = o.w;
+      outFrameHInput.value = o.h;
+    }
+    const es = getExportFrameSize();
+    // Spell out what the aspect-ratio mismatch actually costs. "Some of my image got
+    // cut off" should be visible here before exporting, not discovered afterwards.
+    let modeTxt;
+    if (outSizeMode === "scale") {
+      const distort = Math.abs(o.w / o.h - es.w / es.h) > 1e-6;
+      modeTxt = "拉伸填充" + (distort ? "，⚠ 比例不同会变形" : "");
+    } else if (outSizeMode === "crop") {
+      modeTxt = "1:1 裁切 / 扩画布，不缩放";
+    } else {
+      const fx = es.w / o.w, fy = es.h / o.h;
+      const s = outSizeMode === "cover" ? Math.max(fx, fy) : Math.min(fx, fy);
+      const dw = Math.round(o.w * s), dh = Math.round(o.h * s);
+      const gapW = es.w - dw, gapH = es.h - dh;
+      modeTxt = "等比缩放 " + (s * 100).toFixed(1) + "%，实际画面 " + dw + "×" + dh;
+      if (outSizeMode === "cover") {
+        const cutW = Math.round(-gapW / s), cutH = Math.round(-gapH / s);
+        modeTxt += cutW > 0 ? "，⚠ 左右共裁掉原图 " + cutW + " px"
+          : cutH > 0 ? "，⚠ 上下共裁掉原图 " + cutH + " px" : "，无裁切";
+      } else {
+        modeTxt += gapW > 0 ? "，左右共留 " + gapW + " px 透明边"
+          : gapH > 0 ? "，上下共留 " + gapH + " px 透明边" : "，正好填满";
+      }
+    }
+    outSizeHint.textContent = "原始单帧 " + o.w + "×" + o.h + " → 输出 " + es.w + "×" + es.h
+      + "（" + modeTxt + "；取景器预览与 GIF、PNG 导出一致）";
+  }
+
+  function refreshOutputPreview() {
+    syncOutputSizeFields();
+    resizePreviewCanvas();
+    drawCurrentPreviewFrame();
+  }
+
+  outFrameWInput.addEventListener("input", () => {
+    outSizeCustom = true;
+    if (outLockAspect.checked && outSizeMode === "scale") {
+      const o = getOutSize();
+      const w = parseInt(outFrameWInput.value, 10);
+      if (w > 0) outFrameHInput.value = Math.max(1, Math.round(w * o.h / o.w));
+    }
+    refreshOutputPreview();
+  });
+  outFrameHInput.addEventListener("input", () => {
+    outSizeCustom = true;
+    if (outLockAspect.checked && outSizeMode === "scale") {
+      const o = getOutSize();
+      const h = parseInt(outFrameHInput.value, 10);
+      if (h > 0) outFrameWInput.value = Math.max(1, Math.round(h * o.w / o.h));
+    }
+    refreshOutputPreview();
+  });
+  outSizeModeSelect.addEventListener("change", () => {
+    outSizeMode = outSizeModeSelect.value;
+    outAnchorRow.style.display = outSizeMode === "scale" ? "none" : "flex";
+    outLockAspect.parentElement.style.display = outSizeMode === "scale" ? "flex" : "none";
+    refreshOutputPreview();
+  });
+  outAnchorSelect.addEventListener("change", drawCurrentPreviewFrame);
+  btnOutReset.addEventListener("click", () => {
+    outSizeCustom = false;
+    refreshOutputPreview();
+  });
+
+  function realignAndRedraw() {
+    computeAlignment();
+    buildFilmstrip();
+    refreshActiveFrames();
+    resizePreviewCanvas();
+    drawCurrentPreviewFrame();
+  }
+
+  alignEnabledInput.addEventListener("change", () => {
+    alignEnabled = alignEnabledInput.checked;
+    realignAndRedraw();
+  });
+  alignThresholdInput.addEventListener("input", () => {
+    alignThreshold = Number(alignThresholdInput.value);
+    alignThresholdVal.textContent = String(alignThreshold);
+    if (alignEnabled) realignAndRedraw();
+  });
+  alignXModeSelect.addEventListener("change", () => {
+    alignXMode = alignXModeSelect.value;
+    if (alignEnabled) realignAndRedraw();
+  });
+  alignAxisSelect.addEventListener("change", () => {
+    alignAxis = alignAxisSelect.value;
+    if (alignEnabled) realignAndRedraw();
+  });
+
+  // ---------- color replacement: image colors → Resurrect 64 ----------
+  function rgbToHex(c) {
+    return "#" + c.map((v) => v.toString(16).padStart(2, "0")).join("");
+  }
+  function hexToRgb(h) {
+    return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+  }
+
+  const TP = 0xffff; // pixelPal sentinel: transparent or not in the extracted palette
+  // RESURRECT-64 pixel-art palette (Kerrie Lake), official Lospec hex order
+  const RESURRECT_64 = [
+    "2e222f", "3e3546", "625565", "966c6c", "ab947a", "694f62", "7f708a", "9babb2",
+    "c7dcd0", "ffffff", "6e2727", "b33831", "ea4f36", "f57d4a", "ae2334", "e83b3b",
+    "fb6b1d", "f79617", "f9c22b", "7a3045", "9e4539", "cd683d", "e6904e", "fbb954",
+    "4c3e24", "676633", "a2a947", "d5e04b", "fbff86", "165a4c", "239063", "1ebc73",
+    "91db69", "cddf6c", "313638", "374e4a", "547e64", "92a984", "b2ba90", "0b5e65",
+    "0b8a8f", "0eaf9b", "30e1b9", "8ff8e2", "323353", "484a77", "4d65b4", "4d9be6",
+    "8fd3ff", "45293f", "6b3e75", "905ea9", "a884f3", "eaaded", "753c54", "a24b6f",
+    "cf657f", "ed8099", "831c5d", "c32454", "f04f78", "f68181", "fca790", "fdcbb0",
+  ].map((h) => hexToRgb("#" + h));
+
+  // extract the image's EXACT distinct opaque colors (the "replace-from" side)
+  function buildPalette() {
+    const c = document.createElement("canvas");
+    c.width = imgW; c.height = imgH;
+    const cctx = c.getContext("2d", { willReadFrequently: true });
+    cctx.drawImage(img, 0, 0);
+    baseImageData = cctx.getImageData(0, 0, imgW, imgH);
+    const data = baseImageData.data;
+
+    const counts = new Map(); // packed rgb -> pixel count (alpha >= 8)
+    for (let i = 0; i < imgW * imgH; i++) {
+      if (data[i * 4 + 3] < 8) continue;
+      const key = ((data[i * 4] << 16) | (data[i * 4 + 1] << 8) | data[i * 4 + 2]) >>> 0;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+
+    let entries = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+    const CAP = 256; // Uint16 index headroom; a genuine 64-color PNG stays well under
+    const truncated = entries.length > CAP;
+    if (truncated) entries = entries.slice(0, CAP);
+
+    palette = entries.map(([k]) => [(k >> 16) & 255, (k >> 8) & 255, k & 255]);
+    paletteCounts = entries.map(([, n]) => n);
+
+    const keyToIdx = new Map();
+    entries.forEach(([k], i) => keyToIdx.set(k, i));
+
+    pixelPal = new Uint16Array(imgW * imgH).fill(TP);
+    for (let i = 0; i < imgW * imgH; i++) {
+      if (data[i * 4 + 3] < 8) continue;
+      const key = ((data[i * 4] << 16) | (data[i * 4 + 1] << 8) | data[i * 4 + 2]) >>> 0;
+      const idx = keyToIdx.get(key);
+      if (idx !== undefined) pixelPal[i] = idx;
+    }
+
+    colorMap = new Array(palette.length).fill(null);
+    processedCanvas = null;
+    maskArr = new Uint8Array(imgW * imgH);
+    maskCount = 0;
+    maskCanvas.width = imgW;
+    maskCanvas.height = imgH;
+    resetSliders();
+    renderMaskOverlay();
+    updateRegionStatus();
+  }
+
+  function rgb2hsl(c) {
+    const r = c[0] / 255, g = c[1] / 255, b = c[2] / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    let h = 0, s = 0; const l = (max + min) / 2;
+    if (max !== min) {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+      else if (max === g) h = (b - r) / d + 2;
+      else h = (r - g) / d + 4;
+      h *= 60;
+    }
+    return { h, s, l };
+  }
+  function hsl2rgb(h, s, l) {
+    h = ((h % 360) + 360) % 360;
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+    const m = l - c / 2;
+    let r, g, b;
+    if (h < 60) { r = c; g = x; b = 0; }
+    else if (h < 120) { r = x; g = c; b = 0; }
+    else if (h < 180) { r = 0; g = c; b = x; }
+    else if (h < 240) { r = 0; g = x; b = c; }
+    else if (h < 300) { r = x; g = 0; b = c; }
+    else { r = c; g = 0; b = x; }
+    return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
+  }
+
+  // perceptual "redmean" distance — better nearest-color than plain euclidean
+  function colorDist(a, b) {
+    const rmean = (a[0] + b[0]) / 2;
+    const dr = a[0] - b[0], dg = a[1] - b[1], db = a[2] - b[2];
+    return (2 + rmean / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rmean) / 256) * db * db;
+  }
+  function nearestIn(c, pal) {
+    return pal[nearestIndexIn(c, pal)];
+  }
+  function nearestIndexIn(c, pal) {
+    let bi = 0, bd = Infinity;
+    for (let i = 0; i < pal.length; i++) {
+      const d = colorDist(c, pal[i]);
+      if (d < bd) { bd = d; bi = i; }
+    }
+    return bi;
+  }
+
+  // median-cut down to k representative colors, weighted by pixel counts
+  function medianCut(colors, counts, k) {
+    if (colors.length <= k) return colors.map((c) => c.slice());
+    const rangeOf = (box) => {
+      const mn = [255, 255, 255], mx = [0, 0, 0];
+      for (const e of box) for (let j = 0; j < 3; j++) {
+        if (e.c[j] < mn[j]) mn[j] = e.c[j];
+        if (e.c[j] > mx[j]) mx[j] = e.c[j];
+      }
+      return [mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]];
+    };
+    let boxes = [colors.map((c, i) => ({ c, n: counts[i] }))];
+    while (boxes.length < k) {
+      let bi = -1, bestR = -1, bestCh = 0;
+      for (let i = 0; i < boxes.length; i++) {
+        if (boxes[i].length < 2) continue;
+        const r = rangeOf(boxes[i]);
+        const ch = r[0] >= r[1] ? (r[0] >= r[2] ? 0 : 2) : (r[1] >= r[2] ? 1 : 2);
+        if (r[ch] > bestR) { bestR = r[ch]; bi = i; bestCh = ch; }
+      }
+      if (bi < 0) break;
+      const box = boxes[bi];
+      box.sort((a, b) => a.c[bestCh] - b.c[bestCh]);
+      let tot = 0; for (const e of box) tot += e.n;
+      let acc = 0, cut = 1;
+      for (let i = 0; i < box.length; i++) {
+        acc += box[i].n;
+        if (acc >= tot / 2) { cut = Math.min(Math.max(i, 1), box.length - 1); break; }
+      }
+      boxes.splice(bi, 1, box.slice(0, cut), box.slice(cut));
+    }
+    return boxes.filter((b) => b.length).map((box) => {
+      let sr = 0, sg = 0, sb = 0, sn = 0;
+      for (const e of box) { sr += e.c[0] * e.n; sg += e.c[1] * e.n; sb += e.c[2] * e.n; sn += e.n; }
+      return [Math.round(sr / sn), Math.round(sg / sn), Math.round(sb / sn)];
+    });
+  }
+
+  // feature 1 — one-click: map EVERY image color to a 64-color target set at once
+  btnConvert.addEventListener("click", () => {
+    if (!palette.length) return;
+    const mode = convMode.value;
+    if (mode === "adaptive" && palette.length <= 64) {
+      colorMap = new Array(palette.length).fill(null);
+      applyColorMap();
+      colorStatus.textContent = "本图仅 " + palette.length + " 色，已在 64 色以内，无需缩减。";
+      return;
+    }
+    const targetPal = mode === "resurrect" ? RESURRECT_64 : medianCut(palette, paletteCounts, 64);
+    colorMap = palette.map((c) => nearestIn(c, targetPal).slice());
+    applyColorMap();
+    const label = mode === "resurrect" ? "Resurrect 64 标准色" : "自适应 64 色";
+    const usedCount = new Set(colorMap.map((c) => c.join(","))).size;
+    colorStatus.textContent = "已将整表 " + palette.length + " 色转换为" + label +
+      "（实际用到 " + usedCount + " 色，全部帧同步生效）。";
+  });
+
+  // rebuild the recolored sheet: layer 1 = global 64-color map, layer 2 = region HSL adjust
+  // skipFilmstrip: true drops the (DOM-heavy) thumbnail rebuild — used while
+  // actively dragging a brush/slider, where the light-table + board + preview
+  // updating live matters far more than the small thumbnails staying in sync.
+  function applyColorMap(skipFilmstrip) {
+    const hasGlobal = colorMap.some(Boolean);
+    const s = readSliders();
+    const hasRegion = maskCount > 0 && !isIdentity(s);
+    if (!hasGlobal && !hasRegion) {
+      processedCanvas = null;
+      redrawAll(skipFilmstrip);
+      return;
+    }
+    if (!processedCanvas) {
+      processedCanvas = document.createElement("canvas");
+      processedCanvas.width = imgW;
+      processedCanvas.height = imgH;
+    }
+    const out = new ImageData(new Uint8ClampedArray(baseImageData.data), imgW, imgH);
+    const d = out.data;
+    if (hasGlobal) {
+      for (let i = 0; i < imgW * imgH; i++) {
+        const p = pixelPal[i];
+        if (p === TP) continue;
+        const m = colorMap[p];
+        if (!m) continue;
+        d[i * 4] = m[0]; d[i * 4 + 1] = m[1]; d[i * 4 + 2] = m[2];
+      }
+    }
+    if (hasRegion) {
+      // mean lightness over the selected opaque pixels (their post-layer-1 color)
+      let sumL = 0, cnt = 0;
+      for (let i = 0; i < imgW * imgH; i++) {
+        if (!maskArr[i] || d[i * 4 + 3] < 8) continue;
+        sumL += rgb2hsl([d[i * 4], d[i * 4 + 1], d[i * 4 + 2]]).l; cnt++;
+      }
+      const meanL = cnt ? sumL / cnt : 0.5;
+      for (let i = 0; i < imgW * imgH; i++) {
+        if (!maskArr[i] || d[i * 4 + 3] < 8) continue;
+        const nc = transformColor([d[i * 4], d[i * 4 + 1], d[i * 4 + 2]], meanL, s);
+        d[i * 4] = nc[0]; d[i * 4 + 1] = nc[1]; d[i * 4 + 2] = nc[2];
+      }
+    }
+    processedCanvas.getContext("2d").putImageData(out, 0, 0);
+    redrawAll(skipFilmstrip);
+  }
+
+  // throttled to once per animation frame; always takes the fast (no-filmstrip) path —
+  // callers doing a one-off change should call applyColorMap() directly instead.
+  function scheduleRebuild() {
+    if (rebuildPending) return;
+    rebuildPending = true;
+    requestAnimationFrame(() => { rebuildPending = false; applyColorMap(true); });
+  }
+
+  // repaint everything from the (possibly recolored) sheet without resetting exclusions
+  function redrawAll(skipFilmstrip) {
+    if (!img || !lastGrid) return;
+    drawSheetWithGrid(lastGrid.fw, lastGrid.fh, lastGrid.mx, lastGrid.my, lastGrid.sx, lastGrid.sy, lastGrid.cols, lastGrid.rows);
+    if (!skipFilmstrip) {
+      buildFilmstrip();
+      updateFilmstripHighlight();
+    }
+    drawCurrentPreviewFrame();
+    drawFirstFrameBoard();
+  }
+
+  // ---------- feature 2: region (mask) HSL / level adjustment ----------
+  function readSliders() {
+    return {
+      dh: Number(hueShift.value),
+      sat: Number(satAdj.value),
+      dl: Number(litAdj.value),
+      contrast: Number(contrastAdj.value),
+    };
+  }
+  function isIdentity(s) {
+    return s.dh === 0 && s.sat === 100 && s.dl === 0 && s.contrast === 100;
+  }
+  // mirror each range slider's value into its editable number box (skipped while
+  // that box has focus, so it doesn't fight with the user mid-keystroke)
+  function updateSliderLabels() {
+    if (document.activeElement !== hueShiftNum) hueShiftNum.value = hueShift.value;
+    if (document.activeElement !== satAdjNum) satAdjNum.value = satAdj.value;
+    if (document.activeElement !== litAdjNum) litAdjNum.value = litAdj.value;
+    if (document.activeElement !== contrastAdjNum) contrastAdjNum.value = contrastAdj.value;
+  }
+  function resetSliders() {
+    hueShift.value = 0; satAdj.value = 100; litAdj.value = 0; contrastAdj.value = 100;
+    updateSliderLabels();
+  }
+
+  function clampNum(v, min, max, fallback) {
+    let n = parseFloat(v);
+    if (isNaN(n)) n = fallback;
+    return Math.min(max, Math.max(min, n));
+  }
+
+  // typing a precise value drives the matching range slider (and vice versa via updateSliderLabels)
+  function bindNumberInput(numEl, rangeEl, min, max, fallback) {
+    numEl.addEventListener("input", () => {
+      const raw = numEl.value;
+      if (raw === "" || raw === "-") return; // still mid-typing
+      rangeEl.value = clampNum(raw, min, max, fallback);
+      if (maskCount) { scheduleRebuild(); updateRegionStatus(); }
+    });
+    numEl.addEventListener("change", () => {
+      const n = clampNum(numEl.value, min, max, fallback);
+      numEl.value = n;
+      rangeEl.value = n;
+      if (maskCount) applyColorMap();
+    });
+    numEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") numEl.blur();
+    });
+  }
+  bindNumberInput(hueShiftNum, hueShift, -180, 180, 0);
+  bindNumberInput(satAdjNum, satAdj, 0, 200, 100);
+  bindNumberInput(litAdjNum, litAdj, -100, 100, 0);
+  bindNumberInput(contrastAdjNum, contrastAdj, 0, 200, 100);
+
+  // transform one color: hue shift, saturation scale, contrast around the region's
+  // mean lightness (the "色阶" spread), plus a lightness offset
+  function transformColor(c, meanL, s) {
+    const hsl = rgb2hsl(c);
+    const sat2 = Math.min(1, Math.max(0, hsl.s * (s.sat / 100)));
+    const l2 = Math.min(1, Math.max(0, meanL + (hsl.l - meanL) * (s.contrast / 100) + s.dl / 100));
+    return hsl2rgb(hsl.h + s.dh, sat2, l2);
+  }
+
+  // paint the translucent selection highlight over the sheet.
+  // NOTE: only call this when the mask actually changes (painting/erasing) —
+  // it's an O(imgW*imgH) pixel rebuild, too heavy to run on plain mouse hover.
+  function renderMaskOverlay() {
+    if (!maskArr) return;
+    const mctx = maskCanvas.getContext("2d");
+    const od = mctx.createImageData(imgW, imgH);
+    const p = od.data;
+    for (let i = 0; i < imgW * imgH; i++) {
+      if (maskArr[i]) { p[i * 4] = 226; p[i * 4 + 1] = 122; p[i * 4 + 2] = 30; p[i * 4 + 3] = 120; }
+    }
+    mctx.putImageData(od, 0, 0);
+  }
+
+  // ---------- brush cursor ring (cheap CSS overlay, not a canvas repaint) ----------
+  // only the enlarged first-frame board is paintable — the light table (sheet view)
+  // is view/reference only, so it gets no ring and no paint handlers.
+  let lastBoardMoveEvt = null;
+
+  function positionRing(ring, rect, clientX, clientY, diameterCss) {
+    if (maskTool === "wand") { ring.style.display = "none"; return; }
+    ring.style.width = diameterCss + "px";
+    ring.style.height = diameterCss + "px";
+    ring.style.left = (clientX - rect.left) + "px";
+    ring.style.top = (clientY - rect.top) + "px";
+    ring.style.display = "block";
+  }
+
+  function updateBoardCursorRing(e) {
+    lastBoardMoveEvt = e;
+    const fw = window.__fw;
+    if (!maskArr || !fw) { boardCursorRing.style.display = "none"; return; }
+    const rect = boardStageWrap.getBoundingClientRect();
+    const pxPerImg = firstFrameCanvas.width / fw;
+    const dia = Math.max(4, 2 * Number(brushSize.value) * pxPerImg);
+    positionRing(boardCursorRing, rect, e.clientX, e.clientY, dia);
+  }
+
+  function updateRegionStatus() {
+    updateSliderLabels();
+    const base = palette.length ? "图片实际颜色 " + palette.length + " 色 · " : "";
+    palCount.textContent = base + "选区 " + maskCount + " 像素";
+    if (!maskCount) {
+      colorStatus.textContent = palette.length ? "在下方「第一帧画板」里用画笔涂出要调色的部位（或点「魔棒同色」一键选同色）。" : "";
+    } else {
+      const s = readSliders();
+      colorStatus.textContent = isIdentity(s)
+        ? "已选 " + maskCount + " 像素，拖动下面的滑块开始调整。"
+        : "已对选区应用调整，全部帧同步。";
+    }
+  }
+
+  // enlarged first-frame board: brush there, apply the same local selection to every frame
+  function getBoardFrame() {
+    return frames[0] || null;
+  }
+
+  function applyFirstFrameBoardSize() {
+    firstFrameStage.style.setProperty("--board-height", firstFrameBoardHeight + "px");
+    firstFrameStage.style.setProperty("--board-max-height", Math.max(firstFrameBoardHeight, 960) + "px");
+    requestAnimationFrame(() => {
+      centerFirstFrameBoard();
+      syncBoardPanCursor();
+    });
+  }
+
+  // recenter: true resets the view to dead-center (initial load / re-slice).
+  // recenter: false (default) preserves the current view's center, for zoom in/out.
+  function resizeFirstFrameBoard(recenter) {
+    const fw = window.__fw, fh = window.__fh;
+    if (!fw || !fh) return;
+    const target = 360;
+    const autoScale = Math.max(1, Math.min(16, Math.floor(target / Math.max(fw, fh)) || 1));
+    const scale = firstFrameZoom || autoScale;
+    const oldW = firstFrameCanvas.width || 1;
+    const oldH = firstFrameCanvas.height || 1;
+    const oldCx = firstFrameStage.scrollLeft + firstFrameStage.clientWidth / 2;
+    const oldCy = firstFrameStage.scrollTop + firstFrameStage.clientHeight / 2;
+    firstFrameCanvas.width = fw * scale;
+    firstFrameCanvas.height = fh * scale;
+    firstFrameCtx.imageSmoothingEnabled = false;
+    drawFirstFrameBoard();
+    requestAnimationFrame(() => {
+      if (recenter) {
+        centerFirstFrameBoard();
+      } else {
+        firstFrameStage.scrollLeft = oldCx * firstFrameCanvas.width / oldW - firstFrameStage.clientWidth / 2;
+        firstFrameStage.scrollTop = oldCy * firstFrameCanvas.height / oldH - firstFrameStage.clientHeight / 2;
+      }
+      syncBoardPanCursor();
+    });
+  }
+
+  function drawFirstFrameBoard() {
+    const fw = window.__fw, fh = window.__fh;
+    const f = getBoardFrame();
+    if (!fw || !fh || !f) return;
+    const scaleX = firstFrameCanvas.width / fw;
+    firstFrameCtx.clearRect(0, 0, firstFrameCanvas.width, firstFrameCanvas.height);
+    firstFrameCtx.drawImage(paintSrc(), f.x, f.y, fw, fh, 0, 0, firstFrameCanvas.width, firstFrameCanvas.height);
+
+    if (maskArr) {
+      const overlay = document.createElement("canvas");
+      overlay.width = fw;
+      overlay.height = fh;
+      const octx = overlay.getContext("2d");
+      const od = octx.createImageData(fw, fh);
+      const p = od.data;
+      for (let y = 0; y < fh; y++) {
+        for (let x = 0; x < fw; x++) {
+          const si = (f.y + y) * imgW + (f.x + x);
+          if (!maskArr[si]) continue;
+          const di = (y * fw + x) * 4;
+          p[di] = 226; p[di + 1] = 122; p[di + 2] = 30; p[di + 3] = 120;
+        }
+      }
+      octx.putImageData(od, 0, 0);
+      firstFrameCtx.drawImage(overlay, 0, 0, fw, fh, 0, 0, firstFrameCanvas.width, firstFrameCanvas.height);
+    }
+
+    firstFrameBoardStatus.textContent = "第一帧 " + fw + "×" + fh + " · 当前选区 " + maskCount + " 像素 · 显示约 "
+      + Math.round(scaleX) + "×";
+  }
+
+  function evtToBoardXY(e) {
+    const fw = window.__fw, fh = window.__fh;
+    const rect = firstFrameCanvas.getBoundingClientRect();
+    return {
+      x: Math.floor((e.clientX - rect.left) * fw / rect.width),
+      y: Math.floor((e.clientY - rect.top) * fh / rect.height),
+    };
+  }
+
+  function setMaskAtSheetPixel(x, y, v) {
+    if (x < 0 || y < 0 || x >= imgW || y >= imgH) return;
+    const i = y * imgW + x;
+    if (baseImageData.data[i * 4 + 3] < 8) return;
+    if (maskArr[i] !== v) {
+      maskArr[i] = v;
+      maskCount += v ? 1 : -1;
+    }
+  }
+
+  function paintBoardAt(e, erase) {
+    const fw = window.__fw, fh = window.__fh;
+    const { x, y } = evtToBoardXY(e);
+    if (x < 0 || y < 0 || x >= fw || y >= fh) return;
+    const rad = Number(brushSize.value);
+    const v = erase ? 0 : 1;
+    for (let dy = -rad; dy <= rad; dy++) {
+      for (let dx = -rad; dx <= rad; dx++) {
+        if (dx * dx + dy * dy > rad * rad) continue;
+        const lx = x + dx, ly = y + dy;
+        if (lx < 0 || ly < 0 || lx >= fw || ly >= fh) continue;
+        frames.forEach((fr) => setMaskAtSheetPixel(fr.x + lx, fr.y + ly, v));
+      }
+    }
+  }
+
+  function wandBoardAt(e) {
+    const fw = window.__fw, fh = window.__fh;
+    const f = getBoardFrame();
+    if (!f) return;
+    const { x, y } = evtToBoardXY(e);
+    if (x < 0 || y < 0 || x >= fw || y >= fh) return;
+    const i0 = (f.y + y) * imgW + (f.x + x);
+    if (baseImageData.data[i0 * 4 + 3] < 8) {
+      colorStatus.textContent = "点到透明处了，请点第一帧主体部分。";
+      return;
+    }
+    const p0 = pixelPal[i0];
+    if (p0 === TP) return;
+    let added = 0;
+    for (let i = 0; i < imgW * imgH; i++) {
+      if (pixelPal[i] === p0 && !maskArr[i]) { maskArr[i] = 1; maskCount++; added++; }
+    }
+    colorStatus.textContent = "第一帧魔棒纳入 " + added + " 个同色像素（" + rgbToHex(palette[p0]) + "），全部帧同步。";
+  }
+
+  function setTool(t) {
+    maskTool = t;
+    btnBrush.classList.toggle("primary", t === "brush");
+    btnErase.classList.toggle("primary", t === "erase");
+    btnWand.classList.toggle("primary", t === "wand");
+    if (lastBoardMoveEvt) updateBoardCursorRing(lastBoardMoveEvt);
+  }
+  btnBrush.addEventListener("click", () => setTool("brush"));
+  btnErase.addEventListener("click", () => setTool("erase"));
+  btnWand.addEventListener("click", () => setTool("wand"));
+  brushSize.addEventListener("input", () => {
+    brushSizeVal.textContent = brushSize.value + " px";
+    if (lastBoardMoveEvt) updateBoardCursorRing(lastBoardMoveEvt);
+  });
+
+  function centerFirstFrameBoard() {
+    firstFrameStage.scrollLeft = Math.max(0, (firstFrameCanvas.width - firstFrameStage.clientWidth) / 2);
+    firstFrameStage.scrollTop = Math.max(0, (firstFrameCanvas.height - firstFrameStage.clientHeight) / 2);
+  }
+
+  function syncBoardPanCursor() {
+    const canPan = firstFrameCanvas.width > firstFrameStage.clientWidth || firstFrameCanvas.height > firstFrameStage.clientHeight;
+    firstFrameStage.classList.toggle("can-pan", canPan && boardPanKey);
+  }
+
+  function startBoardPan(e) {
+    boardPanning = true;
+    boardPanLast = { x: e.clientX, y: e.clientY };
+    firstFrameStage.classList.add("panning");
+  }
+
+  function moveBoardPan(e) {
+    const dx = e.clientX - boardPanLast.x;
+    const dy = e.clientY - boardPanLast.y;
+    firstFrameStage.scrollLeft -= dx;
+    firstFrameStage.scrollTop -= dy;
+    boardPanLast = { x: e.clientX, y: e.clientY };
+  }
+
+  firstFrameCanvas.addEventListener("mousedown", (e) => {
+    if (!maskArr || !frames.length) return;
+    e.preventDefault();
+    if (e.button === 1 || boardPanKey) {
+      startBoardPan(e);
+      return;
+    }
+    updateBoardCursorRing(e);
+    if (maskTool === "wand") {
+      wandBoardAt(e);
+    } else {
+      boardPainting = true;
+      paintBoardAt(e, maskTool === "erase");
+    }
+    renderMaskOverlay();
+    scheduleRebuild();
+    updateRegionStatus();
+  });
+  // hover: only move the cursor ring — no canvas repaint
+  firstFrameCanvas.addEventListener("mousemove", (e) => {
+    if (!frames.length) return;
+    updateBoardCursorRing(e);
+  });
+  firstFrameCanvas.addEventListener("mouseleave", () => {
+    boardCursorRing.style.display = "none";
+  });
+  // plain scroll zooms the board (no modifier key needed); panning is via space/middle-drag instead
+  firstFrameStage.addEventListener("wheel", (e) => {
+    if (!frames.length) return;
+    e.preventDefault();
+    const levels = [0, 2, 4, 8, 16, 32, 64];
+    const cur = levels.indexOf(firstFrameZoom);
+    const next = Math.max(0, Math.min(levels.length - 1, cur + (e.deltaY < 0 ? 1 : -1)));
+    firstFrameZoom = levels[next];
+    firstFrameZoomSelect.value = String(firstFrameZoom);
+    resizeFirstFrameBoard();
+  }, { passive: false });
+  firstFrameSizeSelect.addEventListener("change", () => {
+    firstFrameBoardHeight = Number(firstFrameSizeSelect.value) || 460;
+    applyFirstFrameBoardSize();
+  });
+  firstFrameZoomSelect.addEventListener("change", () => {
+    firstFrameZoom = Number(firstFrameZoomSelect.value);
+    resizeFirstFrameBoard();
+  });
+  btnFirstFrameFit.addEventListener("click", centerFirstFrameBoard);
+  window.addEventListener("mousemove", (e) => {
+    if (boardPanning) {
+      moveBoardPan(e);
+      return;
+    }
+    if (!boardPainting) return;
+    updateBoardCursorRing(e);
+    paintBoardAt(e, maskTool === "erase");
+    renderMaskOverlay();
+    scheduleRebuild();
+  });
+  window.addEventListener("mouseup", () => {
+    const wasEditing = boardPainting;
+    if (boardPainting) { boardPainting = false; updateRegionStatus(); }
+    if (boardPanning) {
+      boardPanning = false;
+      firstFrameStage.classList.remove("panning");
+    }
+    // the drag used the fast (filmstrip-skipping) rebuild path — do one full
+    // sync now that the stroke is done, so thumbnails catch up.
+    if (wasEditing) applyColorMap();
+  });
+  window.addEventListener("keydown", (e) => {
+    if (e.code !== "Space" || boardPanKey) return;
+    const tag = document.activeElement && document.activeElement.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+    e.preventDefault();
+    boardPanKey = true;
+    syncBoardPanCursor();
+  });
+  window.addEventListener("keyup", (e) => {
+    if (e.code !== "Space") return;
+    boardPanKey = false;
+    syncBoardPanCursor();
+  });
+
+  [hueShift, satAdj, litAdj, contrastAdj].forEach((sl) => {
+    sl.addEventListener("input", () => {
+      updateSliderLabels();
+      if (maskCount) { scheduleRebuild(); updateRegionStatus(); }
+    });
+    // fires once when the handle is released — do the full sync (incl. filmstrip) then
+    sl.addEventListener("change", () => {
+      if (maskCount) applyColorMap();
+    });
+  });
+
+  btnClearMask.addEventListener("click", () => {
+    if (!maskArr) return;
+    maskArr.fill(0); maskCount = 0;
+    renderMaskOverlay();
+    applyColorMap();
+    updateRegionStatus();
+    colorStatus.textContent = "已清除选区。";
+  });
+
+  btnResetSliders.addEventListener("click", () => {
+    resetSliders();
+    applyColorMap();
+    updateRegionStatus();
+  });
+
+  btnColorReset.addEventListener("click", () => {
+    colorMap = new Array(palette.length).fill(null);
+    if (maskArr) { maskArr.fill(0); maskCount = 0; renderMaskOverlay(); }
+    resetSliders();
+    applyColorMap();
+    updateRegionStatus();
+    colorStatus.textContent = "已恢复全部原始颜色并清除选区。";
+  });
+
+  // ---------- filmstrip ----------
+  function buildFilmstrip() {
+    filmstrip.innerHTML = "";
+    const fw = window.__fw, fh = window.__fh;
+    const out = getOutSize();
+    frames.forEach((f) => {
+      const cell = document.createElement("div");
+      cell.className = "frame-thumb";
+      cell.dataset.index = f.index;
+
+      const c = document.createElement("canvas");
+      const scale = Math.min(60 / out.w, 60 / out.h, 4) || 1;
+      c.width = Math.max(1, Math.round(out.w * scale));
+      c.height = Math.max(1, Math.round(out.h * scale));
+      const cctx = c.getContext("2d");
+      cctx.imageSmoothingEnabled = false;
+      const off = getFrameOffset(f);
+      cctx.drawImage(paintSrc(), f.x, f.y, fw, fh, off.dx * scale, off.dy * scale, fw * scale, fh * scale);
+      cell.appendChild(c);
+
+      const idx = document.createElement("span");
+      idx.className = "idx mono";
+      idx.textContent = f.index;
+      cell.appendChild(idx);
+
+      if (f.excluded) cell.classList.add("excluded");
+
+      cell.addEventListener("click", () => {
+        f.excluded = !f.excluded;
+        if (alignEnabled) {
+          realignAndRedraw();
+        } else {
+          cell.classList.toggle("excluded", f.excluded);
+          refreshActiveFrames();
+        }
+      });
+
+      filmstrip.appendChild(cell);
+    });
+  }
+
+  function refreshActiveFrames() {
+    activeFrames = frames.filter((f) => !f.excluded);
+    if (!activeFrames.length && playing) pause();
+    roActive.textContent = String(activeFrames.length);
+    if (currentActiveIdx >= activeFrames.length) currentActiveIdx = 0;
+    if (activeFrames.length && document.activeElement !== framesPerRowInput) {
+      framesPerRowInput.max = activeFrames.length;
+      if (!framesPerRowInput.value || Number(framesPerRowInput.value) > activeFrames.length) {
+        framesPerRowInput.value = activeFrames.length;
+      }
+    }
+    updateFilmstripHighlight();
+    updateFrameCounter();
+    drawCurrentPreviewFrame();
+    syncOutputSizeFields();
+  }
+
+  function updateFilmstripHighlight() {
+    const cells = filmstrip.children;
+    const current = activeFrames[currentActiveIdx];
+    for (const cell of cells) {
+      cell.classList.toggle("current", current && Number(cell.dataset.index) === current.index);
+    }
+  }
+
+  function updateFrameCounter() {
+    if (!activeFrames.length) {
+      frameCounter.textContent = "无可用帧";
+      return;
+    }
+    frameCounter.textContent = "帧 " + (currentActiveIdx + 1) + " / " + activeFrames.length;
+  }
+
+  // ---------- preview viewfinder ----------
+  function resizePreviewCanvas() {
+    const out = getExportFrameSize();
+    const box = 240;
+    const longest = Math.max(out.w, out.h, 1);
+    let scale = zoomOverride;
+    if (!scale) {
+      // Magnify small frames by whole pixels — that is what keeps pixel art crisp.
+      // But a frame LARGER than the monitor has to shrink: the old rule floored to a
+      // minimum of 1x, so a 1000x1000 frame rendered at 1:1 and flooded the panel.
+      scale = longest <= box ? Math.max(1, Math.floor(box / longest)) : box / longest;
+    }
+    // guard the backing store: a 1000px frame at 16x would be a 16000x16000 canvas,
+    // i.e. ~1GB, for something the monitor can only ever show a corner of
+    scale = Math.min(scale, 4096 / longest);
+    previewCanvas.width = Math.max(1, Math.round(out.w * scale));
+    previewCanvas.height = Math.max(1, Math.round(out.h * scale));
+    // resizing a canvas resets its context, so this must come after; nearest
+    // neighbour is right when magnifying and aliases badly when shrinking
+    previewCtx.imageSmoothingEnabled = scale < 1;
+  }
+
+  function drawCurrentPreviewFrame() {
+    const fw = window.__fw, fh = window.__fh;
+    if (!fw || !fh) return;
+    previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+    if (previewBg !== "checker") {
+      previewCtx.fillStyle = previewBg;
+      previewCtx.fillRect(0, 0, previewCanvas.width, previewCanvas.height);
+    }
+    const f = activeFrames[currentActiveIdx];
+    if (!f) return;
+    const out = getExportFrameSize();
+    const scaleX = previewCanvas.width / out.w, scaleY = previewCanvas.height / out.h;
+    previewCtx.save();
+    previewCtx.scale(scaleX, scaleY);
+    drawFrameInto(previewCtx, f, 0, 0, out.w, out.h);
+    previewCtx.restore();
+  }
+
+  function stepFrame(delta) {
+    if (!activeFrames.length) return;
+    currentActiveIdx = (currentActiveIdx + delta + activeFrames.length) % activeFrames.length;
+    updateFilmstripHighlight();
+    updateFrameCounter();
+    drawCurrentPreviewFrame();
+  }
+
+  btnPrev.addEventListener("click", () => { pause(); stepFrame(-1); });
+  btnNext.addEventListener("click", () => { pause(); stepFrame(1); });
+
+  function play() {
+    if (!activeFrames.length) return;
+    playing = true;
+    btnPlay.textContent = "❚❚ 暂停";
+    lastTick = performance.now();
+    rafId = requestAnimationFrame(tick);
+  }
+  function pause() {
+    playing = false;
+    btnPlay.textContent = "▶ 播放";
+    if (rafId) cancelAnimationFrame(rafId);
+  }
+  btnPlay.addEventListener("click", () => (playing ? pause() : play()));
+
+  function tick(now) {
+    if (!playing) return;
+    const fps = Number(fpsInput.value) || 12;
+    const interval = 1000 / fps;
+    if (now - lastTick >= interval) {
+      lastTick = now;
+      stepFrame(1);
+    }
+    rafId = requestAnimationFrame(tick);
+  }
+
+  fpsInput.addEventListener("input", () => {
+    fpsVal.textContent = fpsInput.value + " fps";
+  });
+
+  bgSwatches.addEventListener("click", (e) => {
+    const btn = e.target.closest(".swatch");
+    if (!btn) return;
+    [...bgSwatches.children].forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    previewBg = btn.dataset.bg;
+    drawCurrentPreviewFrame();
+  });
+
+  zoomSelect.addEventListener("change", () => {
+    zoomOverride = Number(zoomSelect.value);
+    resizePreviewCanvas();
+    drawCurrentPreviewFrame();
+  });
+
+  // ---------- export: current frame PNG ----------
+  btnExportPng.addEventListener("click", () => {
+    if (!activeFrames.length) return;
+    const f = activeFrames[currentActiveIdx];
+    const es = getExportFrameSize();
+    const c = document.createElement("canvas");
+    c.width = es.w; c.height = es.h;
+    const cctx = c.getContext("2d");
+    cctx.imageSmoothingEnabled = false;
+    drawFrameInto(cctx, f, 0, 0, es.w, es.h);
+    c.toBlob((blob) => {
+      if (!blob) {
+        exportStatus.textContent = "导出 PNG 失败：浏览器未能生成文件，请缩小输出尺寸后重试。";
+        return;
+      }
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "frame_" + f.index + ".png";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    }, "image/png");
+  });
+
+  btnExportSheet.addEventListener("click", () => {
+    if (!activeFrames.length) return;
+    const es = getExportFrameSize();
+    const perRow = clampInt(framesPerRowInput.value, 1, activeFrames.length);
+    const rows = Math.ceil(activeFrames.length / perRow);
+    const sheet = document.createElement("canvas");
+    sheet.width = es.w * perRow;
+    sheet.height = es.h * rows;
+    const sctx = sheet.getContext("2d");
+    sctx.imageSmoothingEnabled = false;
+    activeFrames.forEach((f, i) => {
+      const col = i % perRow, row = Math.floor(i / perRow);
+      drawFrameInto(sctx, f, col * es.w, row * es.h, es.w, es.h);
+    });
+    sheet.toBlob((blob) => {
+      if (!blob) {
+        exportStatus.classList.remove("busy");
+        exportStatus.textContent = "导出序列帧图失败：画布可能过大，请减少每行帧数或缩小输出尺寸。";
+        return;
+      }
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = alignEnabled ? "aligned_sheet.png" : "sheet.png";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      exportStatus.classList.remove("busy");
+      exportStatus.textContent = "已导出新序列帧图：" + perRow + " × " + rows + " 帧，单帧 " + es.w + "×" + es.h + "（" + (outSizeMode === "scale" ? "拉伸" : outSizeMode === "cover" ? "裁切填满" : outSizeMode === "contain" ? "完整显示" : "裁切") + "）。";
+    }, "image/png");
+  });
+
+  // ---------- export: GIF ----------
+  btnExportGif.addEventListener("click", async () => {
+    if (!activeFrames.length) {
+      exportStatus.textContent = "至少需要保留一帧。";
+      return;
+    }
+    btnExportGif.disabled = true;
+    exportStatus.classList.add("busy");
+    exportStatus.textContent = "正在生成 GIF…";
+    await new Promise((r) => setTimeout(r, 20)); // let UI paint
+    try {
+      const es = getExportFrameSize();
+      const fps = Number(fpsInput.value) || 12;
+      const delayCs = Math.max(1, Math.round(100 / fps));
+      const scratch = document.createElement("canvas");
+      scratch.width = es.w; scratch.height = es.h;
+      const sctx = scratch.getContext("2d", { willReadFrequently: true });
+      sctx.imageSmoothingEnabled = false;
+
+      const gifFrames = activeFrames.map((f) => {
+        sctx.clearRect(0, 0, es.w, es.h);
+        drawFrameInto(sctx, f, 0, 0, es.w, es.h);
+        const data = sctx.getImageData(0, 0, es.w, es.h);
+        return quantizeFrame(data);
+      });
+
+      const bytes = encodeGIF({ width: es.w, height: es.h, frames: gifFrames, delayCs, loop: 0 });
+      const blob = new Blob([bytes], { type: "image/gif" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "animation.gif";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      exportStatus.classList.remove("busy");
+      exportStatus.textContent = "已生成 " + gifFrames.length + " 帧的 GIF（" + (blob.size / 1024).toFixed(1) + " KB）。";
+    } catch (err) {
+      exportStatus.classList.remove("busy");
+      exportStatus.textContent = "生成失败：" + err.message;
+      console.error(err);
+    } finally {
+      btnExportGif.disabled = false;
+    }
+  });
+
+  // ---------- color quantization (per frame) ----------
+  // Returns { width, height, indices: Uint8Array, palette: [[r,g,b],...], transparentIndex: number|null }
+  function quantizeFrame(imageData) {
+    const { data, width, height } = imageData;
+    const n = width * height;
+    const colorCount = new Map(); // packed RGB integer -> count
+    let hasTransparent = false;
+
+    for (let i = 0; i < n; i++) {
+      const a = data[i * 4 + 3];
+      if (a < 128) { hasTransparent = true; continue; }
+      const r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2];
+      const key = (r << 16) | (g << 8) | b;
+      colorCount.set(key, (colorCount.get(key) || 0) + 1);
+    }
+
+    const maxOpaque = hasTransparent ? 255 : 256;
+    let paletteColors; // array of [r,g,b]
+    let colorToIndex = new Map();
+
+    const uniqueKeys = [...colorCount.keys()];
+    if (uniqueKeys.length <= maxOpaque) {
+      paletteColors = uniqueKeys.map((k) => [(k >> 16) & 255, (k >> 8) & 255, k & 255]);
+      uniqueKeys.forEach((k, i) => colorToIndex.set(k, i));
+    } else {
+      // Median cut over the whole colour set, weighted by pixel counts, then
+      // remap every colour to its nearest representative.
+      //
+      // Do NOT reduce by popularity here. On continuous-tone art (a shaded
+      // render rather than flat pixel art) a 256x256 frame easily holds ~12k
+      // distinct colours across ~13k opaque pixels, so every count sits at
+      // 3-12 and "most popular" is pure noise. The top 255 then covers under
+      // 10% of the pixels and is dominated by whichever large smooth region
+      // repeats most, wiping entire hues out of the palette — every green
+      // could vanish, leaving those pixels to snap to the nearest survivor
+      // (a brown), which reads as the whole frame turning red.
+      const colors = uniqueKeys.map((k) => [(k >> 16) & 255, (k >> 8) & 255, k & 255]);
+      const counts = uniqueKeys.map((k) => colorCount.get(k));
+      paletteColors = medianCut(colors, counts, maxOpaque);
+      for (let i = 0; i < uniqueKeys.length; i++) {
+        colorToIndex.set(uniqueKeys[i], nearestIndexIn(colors[i], paletteColors));
+      }
+    }
+
+    let transparentIndex = null;
+    if (hasTransparent) {
+      transparentIndex = paletteColors.length;
+      paletteColors.push([0, 0, 0]);
+    }
+
+    const indices = new Uint8Array(n);
+    for (let i = 0; i < n; i++) {
+      const a = data[i * 4 + 3];
+      if (a < 128) {
+        indices[i] = transparentIndex;
+      } else {
+        const key = (data[i * 4] << 16) | (data[i * 4 + 1] << 8) | data[i * 4 + 2];
+        indices[i] = colorToIndex.get(key);
+      }
+    }
+
+    return { width, height, indices, palette: paletteColors, transparentIndex };
+  }
+
+  // ---------- GIF89a encoder (local color table per frame, LZW) ----------
+  function encodeGIF({ width, height, frames, delayCs, loop }) {
+    const out = [];
+    const pushByte = (b) => out.push(b & 0xff);
+    const pushBytes = (arr) => { for (const b of arr) pushByte(b); };
+    const pushStr = (s) => { for (let i = 0; i < s.length; i++) pushByte(s.charCodeAt(i)); };
+    const pushShort = (v) => { pushByte(v & 0xff); pushByte((v >> 8) & 0xff); };
+
+    pushStr("GIF89a");
+    pushShort(width);
+    pushShort(height);
+    pushByte(0x00); // no global color table
+    pushByte(0x00); // background color index
+    pushByte(0x00); // pixel aspect ratio
+
+    if (frames.length > 1) {
+      pushByte(0x21); pushByte(0xff); pushByte(0x0b);
+      pushStr("NETSCAPE2.0");
+      pushByte(0x03); pushByte(0x01);
+      pushShort(loop || 0);
+      pushByte(0x00);
+    }
+
+    for (const fr of frames) {
+      const numColors = fr.palette.length;
+      // floor of 4 entries: the LZW minimum code size is 2, so 2-bit indices are
+      // in play even for a 1- or 2-colour frame. A 2-entry table would leave
+      // indices 2..3 undefined and trips up strict decoders.
+      const tableEntries = Math.max(4, nextPow2AtLeast2(numColors));
+      const sizeField = Math.log2(tableEntries) - 1;
+      const minCodeSize = Math.max(2, sizeField + 1);
+
+      // Graphic Control Extension
+      pushByte(0x21); pushByte(0xf9); pushByte(0x04);
+      const hasTrans = fr.transparentIndex !== null;
+      const packed = (0x02 << 2) | (hasTrans ? 0x01 : 0x00); // disposal=2 (restore to bg), no user input
+      pushByte(packed);
+      pushShort(delayCs);
+      pushByte(hasTrans ? fr.transparentIndex : 0);
+      pushByte(0x00);
+
+      // Image Descriptor
+      pushByte(0x2c);
+      pushShort(0); pushShort(0);
+      pushShort(fr.width); pushShort(fr.height);
+      pushByte(0x80 | sizeField); // local color table flag + size
+
+      // Local Color Table (padded to tableEntries)
+      for (let i = 0; i < tableEntries; i++) {
+        const c = fr.palette[i] || [0, 0, 0];
+        pushByte(c[0]); pushByte(c[1]); pushByte(c[2]);
+      }
+
+      // Image Data
+      pushByte(minCodeSize);
+      const lzwBytes = lzwEncode(minCodeSize, fr.indices);
+      for (let i = 0; i < lzwBytes.length; i += 255) {
+        const chunk = lzwBytes.slice(i, i + 255);
+        pushByte(chunk.length);
+        pushBytes(chunk);
+      }
+      pushByte(0x00);
+    }
+
+    pushByte(0x3b);
+    return new Uint8Array(out);
+  }
+
+  function nextPow2AtLeast2(n) {
+    let p = 2;
+    while (p < n) p *= 2;
+    return p;
+  }
+
+  function lzwEncode(minCodeSize, pixels) {
+    const clearCode = 1 << minCodeSize;
+    const eoiCode = clearCode + 1;
+    let codeSize, nextCode, dict;
+
+    function resetDict() {
+      dict = new Map();
+      for (let i = 0; i < clearCode; i++) dict.set(String(i), i);
+      codeSize = minCodeSize + 1;
+      nextCode = eoiCode + 1;
+    }
+    resetDict();
+
+    const bytes = [];
+    let bitBuffer = 0, bitCount = 0;
+    function emit(code) {
+      bitBuffer |= code << bitCount;
+      bitCount += codeSize;
+      while (bitCount >= 8) {
+        bytes.push(bitBuffer & 0xff);
+        bitBuffer >>= 8;
+        bitCount -= 8;
+      }
+    }
+
+    emit(clearCode);
+    if (pixels.length === 0) {
+      emit(eoiCode);
+      if (bitCount > 0) bytes.push(bitBuffer & 0xff);
+      return bytes;
+    }
+
+    let w = String(pixels[0]);
+    for (let i = 1; i < pixels.length; i++) {
+      const k = pixels[i];
+      const wk = w + "," + k;
+      if (dict.has(wk)) {
+        w = wk;
+      } else {
+        emit(dict.get(w));
+        if (nextCode < 4096) {
+          // Widen BEFORE claiming the new code, never after. A GIF decoder builds
+          // its table one entry behind the encoder, so it widens one emitted code
+          // later than a post-increment test would; bumping after the increment
+          // makes the encoder write n+1-bit codes while the decoder still reads n
+          // bits, and the whole stream desyncs.
+          if (nextCode > (1 << codeSize) - 1 && codeSize < 12) {
+            codeSize++;
+          }
+          dict.set(wk, nextCode);
+          nextCode++;
+        } else {
+          emit(clearCode);
+          resetDict();
+        }
+        w = String(k);
+      }
+    }
+    emit(dict.get(w));
+    emit(eoiCode);
+    if (bitCount > 0) bytes.push(bitBuffer & 0xff);
+    return bytes;
+  }
+})();
+</script>

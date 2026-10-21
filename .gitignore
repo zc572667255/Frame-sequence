@@ -1,0 +1,9 @@
+# your own work and local state: projects (with their assets and backups) and the
+# app registry (recent projects, settings, local paths) stay on this computer
+/projects/
+/data/
+
+node_modules/
+*.log
+Thumbs.db
+.DS_Store

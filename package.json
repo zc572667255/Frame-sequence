@@ -1,0 +1,15 @@
+{
+  "name": "guangtai-studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "光台 · 序列帧工作室：无限画布 + 节点流程的序列帧处理、像素绘制与调帧工具",
+  "type": "module",
+  "scripts": {
+    "start": "node server/server.js --open",
+    "serve": "node server/server.js",
+    "check": "node scripts/check.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
