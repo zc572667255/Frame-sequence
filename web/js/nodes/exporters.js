@@ -50,11 +50,41 @@ export function frameDurations(v, fps) {
   return v.frames.map((f) => Math.round(f.duration || fallback));
 }
 
+// How much of what is drawn is see-through (glows, soft fades): the share of
+// visible pixels with partial alpha, sampled over up to 8 frames. GIF only has
+// on/off transparency, so a high share means the GIF will look rough.
+export function softAlphaShare(v) {
+  const n = v.frames.length, step = Math.max(1, Math.floor(n / 8));
+  let soft = 0, seen = 0;
+  for (let i = 0; i < n; i += step) {
+    const c = v.frames[i].canvas;
+    const d = c.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, c.width, c.height).data;
+    const stride = Math.max(4, Math.floor(d.length / 4 / 40000)) * 4;   // at most ~40k samples a frame
+    for (let k = 3; k < d.length; k += stride) {
+      const a = d[k];
+      if (!a) continue;
+      seen++;
+      if (a < 250) soft++;
+    }
+  }
+  return seen ? soft / seen : 0;
+}
+
+// p.gifMatte: a colour (#rrggbb) to lay every frame on before it becomes a GIF,
+// so see-through parts blend into it instead of breaking up; null keeps
+// transparency
 export function exportGif(v, p) {
   const s = outputSize(p, v);
   const durs = frameDurations(v, p.fps);
   const frames = v.frames.map((_f, i) => {
-    const c = renderFrame(v, i, p);
+    let c = renderFrame(v, i, p);
+    if (p.gifMatte) {
+      const m = createCanvas(s.w, s.h), mg = m.getContext("2d");
+      mg.fillStyle = p.gifMatte;
+      mg.fillRect(0, 0, s.w, s.h);
+      mg.drawImage(c, 0, 0);
+      c = m;
+    }
     const q = quantizeFrame(c.getContext("2d").getImageData(0, 0, s.w, s.h));
     q.delayCs = Math.max(1, Math.round(durs[i] / 10));
     return q;

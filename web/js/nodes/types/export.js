@@ -2,7 +2,7 @@ import { defineNode } from "../registry.js";
 import { makeStage } from "../view.js";
 import { el, downloadBlob, fmtBytes } from "../../core/util.js";
 import { describeOutput } from "../../imaging/output.js";
-import { outputSize, renderSheet, sheetGrid, SHEET_LAYOUTS, exportGif, exportWebp, exportSheet, exportPngZip } from "../exporters.js";
+import { outputSize, renderSheet, sheetGrid, SHEET_LAYOUTS, exportGif, exportWebp, exportSheet, exportPngZip, softAlphaShare } from "../exporters.js";
 import { openModal } from "../../ui/modal.js";
 
 async function run(ctx, label, fn) {
@@ -19,10 +19,10 @@ async function run(ctx, label, fn) {
 }
 
 const actions = {
-  gif: (ctx) => run(ctx, "GIF", (v, p) => {
-    const blob = exportGif(v, p);
+  gif: (ctx, matte) => run(ctx, "GIF", (v, p) => {
+    const blob = exportGif(v, { ...p, gifMatte: matte || null });
     downloadBlob(blob, (p.name || "animation") + ".gif");
-    ctx.toast("已生成 " + v.frames.length + " 帧的 GIF（" + fmtBytes(blob.size) + "）。", "ok");
+    ctx.toast("已生成 " + v.frames.length + " 帧的 GIF（" + fmtBytes(blob.size) + "）" + (matte ? "，底色 " + matte : "") + "。", "ok");
   }),
   webp: (ctx) => run(ctx, "WebP", async (v, p) => {
     const blob = await exportWebp(v, p);
@@ -43,6 +43,29 @@ const actions = {
     ctx.toast("已打包 " + v.frames.length + " 张 PNG（" + fmtBytes(blob.size) + "）。", "ok");
   }),
 };
+
+// GIF from the card: GIF transparency is all or nothing, so frames with a lot
+// of see-through (glows, soft fades) are checked first and the choice offered:
+// WebP instead, a background colour to lay them on, or GIF as it is
+function gifDialog(ctx) {
+  const v = ctx.input("src");
+  if (!v || !v.frames.length) { ctx.toast("没有可导出的帧。", "warn"); return; }
+  const share = softAlphaShare(v);
+  if (share < 0.03) { actions.gif(ctx); return; }
+  const matte = el("input", { type: "color", value: ctx.params().gifMatteColor || "#000000", style: { width: "48px", height: "26px", verticalAlign: "middle" } });
+  const m = openModal("导出 GIF", {
+    buttons: [
+      { label: "改导出 WebP", primary: true, action: () => { actions.webp(ctx); } },
+      { label: "垫底色导出 GIF", action: () => { ctx.set({ gifMatteColor: matte.value }); actions.gif(ctx, matte.value); } },
+      { label: "仍然导出 GIF", action: () => { actions.gif(ctx); } },
+    ],
+  });
+  m.body.append(
+    el("p", null, "这段动画有 " + Math.round(share * 100) + "% 的可见像素是半透明的（光效、辉光、渐隐）。"),
+    el("p", { class: "f-hint" }, "GIF 只有全透明和不透明两种，半透明的部分会变成硬边和杂色。WebP 动画支持半透明，大多数游戏引擎和浏览器都能用。"),
+    el("p", null, "或者把每帧垫在一个底色上再导出 GIF（适合背景固定的场合）：", matte),
+  );
+}
 
 // 序列图 from the card: choose the layout first, with the result in numbers and
 // a preview; the choice is kept on the node
@@ -93,7 +116,7 @@ defineNode({
   mount(ctx) {
     const stage = makeStage();
     const bar = el("div", { class: "transport" },
-      el("button", { class: "btn small primary", onclick: () => actions.gif(ctx) }, "GIF"),
+      el("button", { class: "btn small primary", onclick: () => gifDialog(ctx) }, "GIF"),
       el("button", { class: "btn small primary", onclick: () => actions.webp(ctx) }, "WebP"),
       el("button", { class: "btn small", onclick: () => sheetDialog(ctx) }, "序列图"),
       el("button", { class: "btn small", onclick: () => actions.zip(ctx) }, "PNG 包"),
@@ -168,7 +191,7 @@ defineNode({
     out.select("WebP 质量", "webpQuality", [[1, "无损（推荐）"], [0.95, "有损 · 95"], [0.9, "有损 · 90"], [0.8, "有损 · 80"], [0.7, "有损 · 70"]], { wide: true });
     out.hint("WebP 和 GIF 的区别：WebP 是全彩、支持半透明边缘、文件更小；GIF 每帧最多 256 色、透明只有开 / 关两档，但几乎所有软件都能播。纯像素画两者画质一样。");
     f.buttons(
-      ["生成 GIF", () => actions.gif(ctx), { primary: true }],
+      ["生成 GIF", () => gifDialog(ctx), { primary: true }],
       ["生成 WebP", () => actions.webp(ctx), { primary: true }],
       ["序列帧图 + JSON", () => sheetDialog(ctx)],
       ["PNG 序列（zip）", () => actions.zip(ctx)],

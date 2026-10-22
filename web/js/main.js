@@ -250,12 +250,33 @@ class App {
       "-",
       { label: "重命名当前项目…", action: () => this.renameProject() },
       { label: "历史版本…", action: () => this.backupsDialog() },
+      { label: "清理未使用素材…", action: () => err(this.cleanAssets()) },
       { label: "在资源管理器中显示", action: () => this.revealCurrent() },
       { label: "从最近列表移除", hint: "文件保留", action: () => err(this.forgetProject(cur)) },
       { label: "删除项目…", danger: true, action: () => this.trashProject() },
       "-",
       { label: "打开旧版单页工具", hint: "/legacy", action: () => window.open("/legacy", "_blank") },
     ]);
+  }
+
+  // Old versions of edited frames stay in assets/ after saving. Move the ones
+  // nothing uses — not the project, its backups or this page's undo history —
+  // to the trash.
+  async cleanAssets() {
+    if (document.querySelector(".editor-root")) { this.toast("先关闭像素编辑器（保存或放弃改动）再清理。", "warn"); return; }
+    const id = this.store.projectId;
+    // what's on screen must be on disk first
+    this.store.flushSave();
+    for (let i = 0; i < 100 && (this.store._inflight || this.store.saveState === "dirty"); i++) await new Promise((r) => setTimeout(r, 50));
+    const keep = new Set();
+    for (const s of [JSON.stringify(this.store.doc), ...this.store.undoStack, ...this.store.redoStack]) {
+      for (const m of String(s).matchAll(/[0-9a-f]{40}\.(?:png|webp|jpg|gif|wav|mp3|ogg)/g)) keep.add(m[0]);
+    }
+    const r = await api.unusedAssets(id, [...keep]);
+    if (!r.count) { this.toast("没有未使用的素材（共 " + r.total + " 个，都在用）。", "ok"); return; }
+    if (!confirm("找到 " + r.count + " 个未使用的素材（" + fmtBytes(r.bytes) + "），是编辑时被替换掉的旧版本。\n\n当前项目、历史版本和撤销记录里用到的都会保留。\n清理后这些文件会移到 data/trash，不会直接删除。要清理吗？")) return;
+    const done = await api.cleanAssets(id, [...keep]);
+    this.toast("已清理 " + done.count + " 个素材（" + fmtBytes(done.bytes) + "），移到了 " + done.movedTo, "ok");
   }
 
   renameProject() {

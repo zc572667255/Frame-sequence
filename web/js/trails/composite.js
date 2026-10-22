@@ -4,7 +4,7 @@
 // Depth: every trail is a layer, drawn at its place in the layer stack. Sticks
 // marked "back" (角色后方) instead go under every layer, so one swing can pass
 // behind the character part of the way.
-import { canvasFromImageData } from "../core/util.js";
+import { createCanvas } from "../core/util.js";
 import { renderTrail, builtinTexture, builtinBrush, normalizeTrail, trailState } from "./model.js";
 
 const textures = new Map(); // asset id -> canvas (once loaded)
@@ -42,35 +42,93 @@ export async function loadTextures(trails, loadAsset) {
 
 export function setTexture(assetId, canvas) { textures.set(assetId, canvas); }
 
-// Small LRU of rendered trails: the editor re-renders on every pointer move, the
-// trail rarely changes between them.
+// Rendered trails, kept cropped to what they cover: { c, x, y, s } — the canvas
+// (null when empty), where it goes, and its scale (2 for a draft). The editor
+// re-renders on every pointer move and the trail rarely changes between them.
+// An LRU bounded by pixels as well as entries, so a long animation on a big
+// canvas doesn't pile up hundreds of megabytes of whole-frame canvases.
 const cache = new Map();
+let cachePixels = 0;
+const MAX_PIXELS = 24e6, MAX_ENTRIES = 256;
+const pixels = (v) => (v && v.c ? v.c.width * v.c.height : 0);
 function cached(key, make) {
   if (cache.has(key)) { const v = cache.get(key); cache.delete(key); cache.set(key, v); return v; }
   const v = make();
   cache.set(key, v);
-  if (cache.size > 128) cache.delete(cache.keys().next().value);
+  cachePixels += pixels(v);
+  while ((cachePixels > MAX_PIXELS || cache.size > MAX_ENTRIES) && cache.size > 1) {
+    const old = cache.keys().next().value;
+    cachePixels -= pixels(cache.get(old));
+    cache.delete(old);
+  }
   return v;
 }
 
-// canvas with one trail state (trails/model.js trailState), for one depth
-export function trailCanvas(trail, state, w, h, z) {
+// the part of a rendering that has anything in it, as { c, x, y }
+function crop(img) {
+  if (img instanceof ImageData) {
+    const { width: w, height: h, data: d } = img;
+    let x0 = w, y0 = h, x1 = -1, y1 = -1;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      if (!d[(y * w + x) * 4 + 3]) continue;
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+    }
+    if (x1 < 0) return { c: null, x: 0, y: 0 };
+    const c = createCanvas(x1 - x0 + 1, y1 - y0 + 1);
+    c.getContext("2d").putImageData(img, -x0, -y0, x0, y0, x1 - x0 + 1, y1 - y0 + 1);
+    return { c, x: x0, y: y0 };
+  }
+  // glow canvases know the box they drew in
+  const bb = img.bbox;
+  if (!bb) return { c: img, x: 0, y: 0 };
+  const x0 = Math.max(0, Math.floor(bb.x0)), y0 = Math.max(0, Math.floor(bb.y0));
+  const x1 = Math.min(img.width, Math.ceil(bb.x0 + bb.w)), y1 = Math.min(img.height, Math.ceil(bb.y0 + bb.h));
+  if (x1 <= x0 || y1 <= y0) return { c: null, x: 0, y: 0 };
+  const c = createCanvas(x1 - x0, y1 - y0);
+  c.getContext("2d").drawImage(img, x0, y0, x1 - x0, y1 - y0, 0, 0, x1 - x0, y1 - y0);
+  return { c, x: x0, y: y0 };
+}
+
+// every stick of a state scaled by k (for a half-size draft)
+const scaleState = (st, k) => {
+  const sc = (q) => ({ ...q, a: [q.a[0] * k, q.a[1] * k], b: [q.b[0] * k, q.b[1] * k] });
+  return { ...st, sticks: st.sticks.map(sc), run: st.run && st.run.map(sc) };
+};
+
+// one trail state (trails/model.js trailState) for one depth, as { c, x, y, s }
+// or null (nothing yet: textures still loading). draft: a glow trail at half
+// size, quick enough to follow the pointer while sticks or sliders move.
+export function trailCanvas(trail, state, w, h, z, draft = false) {
   if (!state) return null;
   const tex = textureFor(trail), brush = brushFor(trail);
   if (!tex || !brush) return null;
-  const key = JSON.stringify([textureKey(trail), brushKey(trail), state, trail.style, trail.smooth, trail.flip, trail.rotate, trail.turn, trail.bow, trail.plane, trail.squash, trail.tilt, trail.autoDepth, w, h, z]);
+  const half = draft && trail.style && trail.style.colorMode === "glow";
+  const key = JSON.stringify([textureKey(trail), brushKey(trail), state, trail.style, trail.smooth, trail.flip, trail.rotate, trail.turn, trail.bow, trail.plane, trail.squash, trail.tilt, trail.autoDepth, w, h, z, half]);
   return cached(key, () => {
-    const img = renderTrail(trail, state, w, h, { tex, brush }, z);
-    return !img ? null : img instanceof ImageData ? canvasFromImageData(img) : img;
+    // a draft also uses half the subdivisions (many costs go with the number of
+    // sections rather than with pixels) and leaves out the per-pixel finishing
+    // passes — erosion, tearing, cel shading — which read pixels back and are
+    // too fine to judge while dragging anyway
+    const draftTrail = half ? { ...trail, style: { ...trail.style, fineness: Math.max(4, Math.round((trail.style.fineness || 20) / 2)), erode: 0, tear: 0, cel: 0 } } : trail;
+    const img = half
+      ? renderTrail(draftTrail, scaleState(state, 0.5), Math.ceil(w / 2), Math.ceil(h / 2), { tex, brush }, z)
+      : renderTrail(trail, state, w, h, { tex, brush }, z);
+    return img ? { ...crop(img), s: half ? 2 : 1 } : { c: null, x: 0, y: 0, s: 1 };
   });
+}
+
+// draw an entry from trailCanvas into g, mapping document pixels by (sx, sy)
+// from (ox, oy)
+export function drawTrailCanvas(g, e, ox = 0, oy = 0, sx = 1, sy = 1) {
+  if (!e || !e.c) return;
+  g.drawImage(e.c, ox + e.x * e.s * sx, oy + e.y * e.s * sy, e.c.width * e.s * sx, e.c.height * e.s * sy);
 }
 
 // one trail of frame fi at depth z (frameIds: the animation's frame order)
 export function drawTrail(g, raw, frameIds, fi, z, w, h) {
   if (!raw) return;
   const t = normalizeTrail(raw);
-  const c = trailCanvas(t, trailState(t, frameIds, fi), w, h, z);
-  if (c) g.drawImage(c, 0, 0);
+  drawTrailCanvas(g, trailCanvas(t, trailState(t, frameIds, fi), w, h, z));
 }
 
 // A whole frame in stack order: "back" parts of visible trail layers, then each

@@ -334,6 +334,54 @@ export function createWorkspace(appRoot) {
     return path.join((await entry(id)).path, "assets", assetId);
   }
 
+  // Assets nothing refers to any more: not the project file, not any of its
+  // backups (restoring one must still find its images), and not `keep` — names
+  // the page still holds, e.g. in its undo history. Old versions of edited
+  // frames pile up otherwise, since saving only ever adds files.
+  const ASSET_NAME = /[0-9a-f]{40}\.(?:png|webp|jpg|gif|wav|mp3|ogg)/g;
+  async function unusedAssets(id, keep = []) {
+    const e = await entry(id);
+    const used = new Set((Array.isArray(keep) ? keep : []).filter((k) => typeof k === "string" && ASSET_RE.test(k)));
+    const texts = [];
+    try { texts.push(await readFile(path.join(e.path, PROJECT_FILE), "utf8")); } catch { throw httpError(409, "读不到项目文件，先保存一次再试"); }
+    const bdir = path.join(e.path, "backups");
+    let bnames = [];
+    try { bnames = await readdir(bdir); } catch { /* no backups yet */ }
+    for (const n of bnames) if (n.endsWith(".gtproj")) texts.push(await readFile(path.join(bdir, n), "utf8"));
+    for (const t of texts) for (const m of t.matchAll(ASSET_NAME)) used.add(m[0]);
+    const dir = path.join(e.path, "assets");
+    let names = [];
+    try { names = await readdir(dir); } catch { /* no assets */ }
+    const files = [];
+    let bytes = 0;
+    for (const n of names) {
+      if (!ASSET_RE.test(n) || used.has(n)) continue;
+      files.push(n);
+      bytes += (await stat(path.join(dir, n))).size;
+    }
+    return { count: files.length, bytes, total: names.length, files };
+  }
+
+  // never unlinks: the unused files move to data/trash/<project>-assets-<time>
+  async function cleanAssets(id, keep) {
+    const e = await entry(id);
+    const r = await unusedAssets(id, keep);
+    if (!r.count) return { count: 0, bytes: 0 };
+    const dest = path.join(trashDir, path.basename(e.path) + "-assets-" + stamp());
+    await mkdir(dest, { recursive: true });
+    for (const n of r.files) {
+      const src = path.join(e.path, "assets", n), to = path.join(dest, n);
+      try {
+        await rename(src, to);
+      } catch (err) {
+        if (err.code !== "EXDEV") throw err;
+        await copyFile(src, to);
+        await rm(src, { force: true });
+      }
+    }
+    return { count: r.count, bytes: r.bytes, movedTo: dest };
+  }
+
   // ---------- settings ----------
   async function getSettings() { return (await registry()).settings; }
   async function putSettings(patch) {
@@ -345,6 +393,6 @@ export function createWorkspace(appRoot) {
 
   return {
     list, create, open, load, save, backups, readBackup, saveAs, forget, trash, projectDir,
-    putAsset, assetFile, getSettings, putSettings, defaultParent, fileOf,
+    putAsset, assetFile, unusedAssets, cleanAssets, getSettings, putSettings, defaultParent, fileOf,
   };
 }

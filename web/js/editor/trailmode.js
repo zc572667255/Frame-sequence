@@ -13,7 +13,7 @@ import { el, uid, blobToCanvas, canvasToBlob } from "../core/util.js";
 import { putBlobAsset, getAssetCanvas } from "../core/assets.js";
 import { showMenu } from "../ui/menu.js";
 import { STYLE_DEFAULTS, BUILTIN_PRESETS, BUILTIN_BRUSHES, SHAPES, newTrail, normalizeTrail, trailState, stickReversed } from "../trails/model.js";
-import { trailCanvas, textureFor, brushFor, loadTextures, setTexture, drawTrail } from "../trails/composite.js";
+import { trailCanvas, drawTrailCanvas, textureFor, brushFor, loadTextures, setTexture, drawTrail } from "../trails/composite.js";
 import { TRAIL_PRESETS, BAND_LOOK } from "./trailbrush.js";
 import { GLOW_PRESETS, GLOW_DEFAULTS, glowStyle } from "../trails/glow.js";
 import { styleThumb } from "./thumbs.js";
@@ -366,8 +366,11 @@ export class TrailMode {
   drawOne(g, raw, z, ox, oy, iw, ih) {
     if (!raw) return;
     const doc = this.doc, t = normalizeTrail(raw);
-    const c = trailCanvas(t, trailState(t, this.frameIds(), this.ed.fi), doc.w, doc.h, z);
-    if (c) g.drawImage(c, ox, oy, iw, ih);
+    // while a stick or a slider is moving, glow trails render at half size to
+    // keep up; the full one follows on release
+    const draft = !!(this.drag || this.live);
+    const c = trailCanvas(t, trailState(t, this.frameIds(), this.ed.fi), doc.w, doc.h, z, draft);
+    if (c) drawTrailCanvas(g, c, ox, oy, iw / doc.w, ih / doc.h);
     else if (!textureFor(t) || !brushFor(t)) this.ensureTextures();
   }
 

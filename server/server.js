@@ -129,6 +129,9 @@ async function api(req, res, url) {
     const id = parts[2];
     if (parts[3] === "save-as") { const b = await body(); return sendJson(res, 200, await ws.saveAs(id, b.parent, b.name)); }
     if (parts[3] === "reveal") { reveal(ws.fileOf(await ws.projectDir(id))); return sendJson(res, 200, { ok: true }); }
+    // unused assets: how many (unused-assets) and moving them to the trash (clean-assets)
+    if (parts[3] === "unused-assets") { const b = await body(); const r = await ws.unusedAssets(id, b.keep); return sendJson(res, 200, { count: r.count, bytes: r.bytes, total: r.total }); }
+    if (parts[3] === "clean-assets") { const b = await body(); return sendJson(res, 200, await ws.cleanAssets(id, b.keep)); }
   }
 
   if (parts[1] === "projects" && parts[3] === "backups" && method === "GET") {

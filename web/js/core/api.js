@@ -39,6 +39,8 @@ export const api = {
   saveProjectAs: (id, parent, name) => request("POST", P(id) + "/save-as", { parent, name }),
   forgetProject: (id) => request("DELETE", P(id)),
   trashProject: (id) => request("DELETE", P(id) + "?trash=1"),
+  unusedAssets: (id, keep) => request("POST", P(id) + "/unused-assets", { keep }),
+  cleanAssets: (id, keep) => request("POST", P(id) + "/clean-assets", { keep }),
   revealProject: (id) => request("POST", P(id) + "/reveal", {}),
   listBackups: (id) => request("GET", P(id) + "/backups"),
   loadBackup: (id, name) => request("GET", P(id) + "/backups/" + enc(name)),
