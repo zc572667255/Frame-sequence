@@ -77,9 +77,12 @@ export function vfxRect(r) {
 }
 
 // rendered effect frames, by everything that changes the picture (not where it
-// sits or when it starts, so dragging it around re-renders nothing)
+// sits or when it starts, so dragging it around re-renders nothing). Capped by
+// count and by pixels in all: a few big regions would otherwise hold hundreds
+// of MB of canvases.
 const cache = new Map();
-const CACHE_MAX = 160;
+const CACHE_MAX = 160, CACHE_PIXELS = 16e6; // ~64 MB
+let cachePixels = 0;
 export function vfxCanvas(s, i, w, h, draft = false) {
   const { x, y, start, length, perFrame, keys, follow, pad, box, ...look } = s;
   const key = JSON.stringify(look) + "#" + i + "#" + w + "x" + h + (draft ? "#draft" : "");
@@ -90,7 +93,12 @@ export function vfxCanvas(s, i, w, h, draft = false) {
     ? renderVfx({ ...look, style: "hd", w: Math.max(8, Math.ceil(w / 2)), h: Math.max(8, Math.ceil(h / 2)) }, i)
     : renderVfx({ ...look, w, h }, i);
   cache.set(key, v);
-  while (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value);
+  cachePixels += v.width * v.height;
+  while (cache.size > 1 && (cache.size > CACHE_MAX || cachePixels > CACHE_PIXELS)) {
+    const k = cache.keys().next().value, o = cache.get(k);
+    cachePixels -= o.width * o.height;
+    cache.delete(k);
+  }
   return v;
 }
 

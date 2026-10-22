@@ -126,10 +126,13 @@ export class GhostPanel {
     }
     choose("透明", "alpha", [["soft", "半透明"], ["dither", "像素抖动"]], "像素画选「像素抖动」：越淡的残影像素越稀疏，没有半透明像素");
     choose("混合", "blend", [["normal", "正常"], ["add", "发光（叠加变亮）"]]);
+    slider("遮挡", "cover", 0, 100, "%", "残影挡住它下面的图层（特效、拖尾）和更远的残影：100% 时被残影形状完全挡住，半透明的残影也分得清前后；0% 时像以前一样透出来");
 
     // motion
-    slider("偏移 X", "dx", -12, 12, "px", "每个残影再往这个方向挪一点：原地跑的冲刺动画也能拉出残影");
-    slider("偏移 Y", "dy", -12, 12, "px");
+    // up to half the canvas per step (at least 32 px), so a big sprite can fling its trail wide
+    const mx = Math.max(32, Math.round(this.doc.w / 2)), my = Math.max(32, Math.round(this.doc.h / 2));
+    slider("偏移 X", "dx", -mx, mx, "px", "每个残影再往这个方向挪一点：原地跑的冲刺动画也能拉出残影");
+    slider("偏移 Y", "dy", -my, my, "px");
     const loop = el("input", { type: "checkbox", checked: !!s.loop, onchange: () => this.edit((gh) => { gh.loop = loop.checked; }) });
     P.append(el("label", { class: "ed-check" }, loop, "循环动画：开头几帧用结尾的帧做残影"));
 

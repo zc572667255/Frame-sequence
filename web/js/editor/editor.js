@@ -17,7 +17,7 @@ import { styleThumb } from "./thumbs.js";
 import { TrailMode } from "./trailmode.js";
 import { drawFrameStack } from "../trails/composite.js";
 import { BUILTIN_BRUSHES, builtinBrush } from "../trails/model.js";
-import { GHOST_DEFAULTS, renderGhost, drawGhostCanvas, ghostSettings, ghostOn } from "../trails/ghost.js";
+import { GHOST_DEFAULTS, renderGhost, drawGhostCanvas, ghostSettings, ghostOn, ghostCovers } from "../trails/ghost.js";
 import { GhostPanel } from "./ghostpanel.js";
 import { VfxPanel } from "./vfxpanel.js";
 import { VFX_KINDS } from "../vfx/effects.js";
@@ -1497,7 +1497,8 @@ class Editor {
   }
 
   render() {
-    const c = this.canvas, g = this.g, doc = this.doc;
+    const c = this.canvas, doc = this.doc;
+    let g = this.g;
     const dpr = window.devicePixelRatio || 1;
     const W = this.stage.clientWidth, H = this.stage.clientHeight;
     if (c.width !== Math.round(W * dpr) || c.height !== Math.round(H * dpr)) {
@@ -1532,6 +1533,19 @@ class Editor {
       g.globalAlpha = 1;
     }
 
+    // A ghost layer with 遮挡 cuts its outline out of the layers below it, so
+    // the layers are then stacked on a clear canvas of their own and laid over
+    // the checkerboard afterwards (cutting into g would cut the checkerboard).
+    const outer = g;
+    if (doc.layers.some((l) => l.ghost && ghostCovers(l))) {
+      if (!this.stackCanvas) this.stackCanvas = createCanvas(1, 1);
+      const sc = this.stackCanvas;
+      if (sc.width !== c.width || sc.height !== c.height) { sc.width = c.width; sc.height = c.height; }
+      g = sc.getContext("2d");
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.clearRect(0, 0, W, H);
+      g.imageSmoothingEnabled = false;
+    }
     // attack trails are layers: sticks marked 角色后方 go under every layer, the
     // rest is drawn at the trail layer's place in the stack
     this.tm.drawBack(g, ox, oy, iw, ih);
@@ -1560,6 +1574,10 @@ class Editor {
       }
     });
     g.globalAlpha = 1;
+    if (g !== outer) {
+      outer.drawImage(this.stackCanvas, 0, 0, W, H);
+      g = outer;
+    }
     // the trail being drawn shows on top until it is committed to its layer
     if (this.trailPreview) g.drawImage(this.trailPreview, ox, oy, iw, ih);
     g.restore();

@@ -15,26 +15,28 @@ import { GLOW_PRESETS, glowStyle, mixStyle, hashSeed, renderGlow, pixelateGlow, 
 // style a preset sets (see BAND_LOOK); the 弧光 styles light the blade-tip edge
 // and let the grip side fade out in ragged streaks.
 // the classic styles: crisp and solid, lit along the edge, only a touch ragged,
-// thin at the tail and full at the head
+// thin at the tail and full at the head. Colours run
+// like a hand-painted slash: a white-hot leading edge, a bright tint, the
+// saturated main colour, then a deeper colour shifted in hue (never near black)
 const CLASSIC = { bandLayout: "edge", edgeFade: 0.2, edgeBreak: 0.3, streaks: 0.25, bandBlend: "steps", bandShade: 0.2, fadeSteps: false, shape: "head" };
-const ARC = { bandLayout: "edge", edgeFade: 0.55, streaks: 0.6, edgeBreak: 0.6, fadeSteps: true, bandBlend: "steps", bandShade: 0, shape: "head" };
+const ARC = { bandLayout: "edge", edgeFade: 0.55, streaks: 0.6, edgeBreak: 0.35, fadeSteps: true, bandBlend: "steps", bandShade: 0, shape: "head" };
 export const TRAIL_PRESETS = [
-  { id: "arc-ice", name: "冰蓝弧光", bands: [["#8c7fd6", 1], ["#5d8ff0", 0.62], ["#7fdcff", 0.34], ["#ffffff", 0.1]], look: ARC },
-  { id: "arc-fire", name: "烈焰弧光", bands: [["#a8322e", 1], ["#f77622", 0.62], ["#feae34", 0.34], ["#fff3b0", 0.1]], look: ARC },
-  { id: "arc-gold", name: "金辉弧光", bands: [["#b86f50", 1], ["#e8b04a", 0.62], ["#fee761", 0.34], ["#ffffff", 0.1]], look: ARC },
-  { id: "arc-shadow", name: "暗影弧光", bands: [["#3e2050", 1], ["#7a3aa8", 0.62], ["#c070e0", 0.34], ["#ffd8ff", 0.1]], look: ARC },
-  { id: "arc-wind", name: "翠风弧光", bands: [["#2a7a5a", 1], ["#3fbf7f", 0.62], ["#9ff0c0", 0.34], ["#ffffff", 0.1]], look: ARC },
-  { id: "arc-spin", name: "赤红旋斩", bands: [["#8a1a2a", 1], ["#d0303a", 0.62], ["#ff8a72", 0.34], ["#ffffff", 0.14]], look: { ...ARC, splits: 2, streaks: 0.4, edgeFade: 0.7, shape: "even" } },
-  { id: "arc-water", name: "水刃", bands: [["#2a5fd0", 1], ["#3ea0f0", 0.6], ["#8fe0ff", 0.32], ["#ffffff", 0.1]], look: { ...ARC, edgeFade: 0.6, streaks: 0.7, edgeBreak: 0.75 } },
-  { id: "white", name: "白光", bands: [["#2b3350", 1], ["#5a6988", 0.74], ["#a8b5cc", 0.48], ["#e4ecf6", 0.26], ["#ffffff", 0.1]], look: CLASSIC },
-  { id: "fire", name: "火焰", bands: [["#6e1420", 1], ["#b8282a", 0.76], ["#f06a1c", 0.52], ["#fcb83a", 0.3], ["#fff3a0", 0.12]], look: CLASSIC },
-  { id: "ice", name: "冰霜", bands: [["#0e2f66", 1], ["#1468b8", 0.74], ["#22a8e8", 0.5], ["#8ee8ff", 0.28], ["#ffffff", 0.1]], look: CLASSIC },
-  { id: "thunder", name: "雷电", bands: [["#1e2a7a", 1], ["#3b5dc9", 0.72], ["#41a6f6", 0.46], ["#b8e4ff", 0.24], ["#ffffff", 0.1]], look: CLASSIC },
-  { id: "shadow", name: "暗紫", bands: [["#24142c", 1], ["#4a2458", 0.74], ["#7a3a8c", 0.5], ["#c070c8", 0.28], ["#ffc8f0", 0.1]], look: CLASSIC },
-  { id: "blood", name: "鲜血", bands: [["#2a0c14", 1], ["#6a1020", 0.74], ["#b01c2c", 0.5], ["#ec4a4a", 0.26], ["#ffc0b0", 0.1]], look: CLASSIC },
-  { id: "holy", name: "圣光金", bands: [["#6a3a1c", 1], ["#b8742c", 0.74], ["#f0b23c", 0.5], ["#fde58a", 0.28], ["#ffffff", 0.1]], look: CLASSIC },
-  { id: "wind", name: "风刃", bands: [["#5a6a7c", 1], ["#9fb4c4", 0.6], ["#e8f4f4", 0.28], ["#ffffff", 0.1]], fade: 85, look: { ...CLASSIC, edgeFade: 0.5, streaks: 0.6, edgeBreak: 0.5 } },
-  { id: "earth", name: "岩土", bands: [["#2a1a0c", 1], ["#5a3a1c", 0.74], ["#946030", 0.5], ["#d0a060", 0.28], ["#f4dca0", 0.1]], look: { ...CLASSIC, edgeBreak: 0.5 } },
+  { id: "arc-ice", name: "冰蓝弧光", bands: [["#3a5bd9", 1], ["#4f9cf5", 0.7], ["#7fdcff", 0.44], ["#d6f6ff", 0.22], ["#ffffff", 0.09]], look: ARC },
+  { id: "arc-fire", name: "烈焰弧光", bands: [["#c2321f", 1], ["#f26a1b", 0.7], ["#ffa52e", 0.44], ["#ffe07a", 0.22], ["#fffbe0", 0.09]], look: ARC },
+  { id: "arc-gold", name: "金辉弧光", bands: [["#c8782a", 1], ["#eaa83a", 0.7], ["#ffd255", 0.44], ["#fff09a", 0.22], ["#ffffff", 0.09]], look: ARC },
+  { id: "arc-shadow", name: "暗影弧光", bands: [["#5a2a9a", 1], ["#8a3fd0", 0.7], ["#c070f0", 0.44], ["#efc2ff", 0.22], ["#ffffff", 0.09]], look: ARC },
+  { id: "arc-wind", name: "翠风弧光", bands: [["#1f8a6a", 1], ["#35c08a", 0.7], ["#7fe8b0", 0.44], ["#d0ffe4", 0.22], ["#ffffff", 0.09]], look: ARC },
+  { id: "arc-spin", name: "赤红旋斩", bands: [["#b01e32", 1], ["#e8384a", 0.62], ["#ff8a7a", 0.34], ["#ffffff", 0.14]], look: { ...ARC, splits: 2, streaks: 0.4, edgeFade: 0.7, shape: "even" } },
+  { id: "arc-water", name: "水刃", bands: [["#2457d6", 1], ["#3a9cf2", 0.68], ["#7fd8ff", 0.4], ["#dff8ff", 0.18], ["#ffffff", 0.07]], look: { ...ARC, edgeFade: 0.6, streaks: 0.7, edgeBreak: 0.5 } },
+  { id: "white", name: "白光", bands: [["#4a5a86", 1], ["#7f8fb4", 0.74], ["#b9c6de", 0.5], ["#e6eef8", 0.28], ["#ffffff", 0.12]], look: CLASSIC },
+  { id: "fire", name: "火焰", bands: [["#a8221e", 1], ["#e0431a", 0.76], ["#ff8a1e", 0.52], ["#ffd54a", 0.3], ["#fff6c8", 0.12]], look: CLASSIC },
+  { id: "ice", name: "冰霜", bands: [["#1d4fb0", 1], ["#2a86e0", 0.74], ["#4fc4f5", 0.5], ["#a8ecff", 0.28], ["#ffffff", 0.12]], look: CLASSIC },
+  { id: "thunder", name: "雷电", bands: [["#3a3fb8", 1], ["#4d74e8", 0.72], ["#59b4ff", 0.46], ["#c4ecff", 0.24], ["#ffffff", 0.1]], look: CLASSIC },
+  { id: "shadow", name: "暗紫", bands: [["#4a1f6a", 1], ["#7a2fa0", 0.74], ["#b04ad0", 0.5], ["#e48ef0", 0.28], ["#ffd8fa", 0.1]], look: CLASSIC },
+  { id: "blood", name: "鲜血", bands: [["#6a0e22", 1], ["#a8162c", 0.74], ["#dc2a3a", 0.5], ["#ff6a5e", 0.26], ["#ffd0c4", 0.1]], look: CLASSIC },
+  { id: "holy", name: "圣光金", bands: [["#b0642a", 1], ["#e09a34", 0.74], ["#f8c84a", 0.5], ["#fff0a0", 0.28], ["#ffffff", 0.1]], look: CLASSIC },
+  { id: "wind", name: "风刃", bands: [["#5a7a8c", 1], ["#9fc4cc", 0.6], ["#e0f6f2", 0.28], ["#ffffff", 0.1]], fade: 85, look: { ...CLASSIC, edgeFade: 0.5, streaks: 0.6, edgeBreak: 0.5 } },
+  { id: "earth", name: "岩土", bands: [["#4a2e18", 1], ["#7a4e26", 0.74], ["#a8743a", 0.5], ["#d8aa68", 0.28], ["#f6e0a8", 0.1]], look: { ...CLASSIC, edgeBreak: 0.5 } },
   { id: "mono", name: "主色", bands: null, look: CLASSIC },
 ];
 
@@ -123,7 +125,7 @@ export function rasterizeTrail(raw, opts, w, h, primary, brushCanvas) {
   }
   const out = renderStroke(sections, {
     bands: bands.map(([c, f]) => ["#" + c.map((v) => v.toString(16).padStart(2, "0")).join(""), f]),
-    fade, tailMode: opts.tailMode || "brush", pixel: true, opacity: 100,
+    fade, shape, tailMode: opts.tailMode || "brush", pixel: true, opacity: 100,
     bandBlend: opts.bandBlend || "steps", bandSoft: (opts.bandSoft ?? 60) / 100, bandShade: (opts.bandShade ?? 40) / 100,
     bandLayout: look.bandLayout, edgeFade: look.edgeFade, streaks: look.streaks, fadeSteps: look.fadeSteps, splits: look.splits,
     edgeBreak: opts.edgeBreak != null ? opts.edgeBreak / 100 : look.edgeBreak,

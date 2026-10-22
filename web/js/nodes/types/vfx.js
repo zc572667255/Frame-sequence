@@ -14,7 +14,7 @@ defineNode({
   title: "特效",
   category: "素材",
   icon: "✦",
-  help: "生成一段独立的特效序列帧：命中火花、爆炸、冲击波、烟尘、蓄力、魔法阵、治疗光圈、环绕光（斗气）、燃烧。"
+  help: "生成一段独立的特效序列帧：命中火花、爆炸、冲击波、烟尘、蓄力、魔法阵、治疗光圈、环绕光（斗气）、燃烧、流光、翅膀。"
     + "选类型和配色（与拖尾光效同一套），可出高清或像素风；右键「烘焙为动画卡片」后能在像素编辑器里继续修改。",
   outputs: [{ name: "out", label: "序列帧", kind: "frames" }],
   size: { w: 260, h: 300 },
@@ -78,6 +78,8 @@ defineNode({
     f.slider("大小", "size", { min: 20, max: 100, unit: "%" });
     f.slider("粒子", "amount", { min: 0, max: 200, unit: "%" });
     f.slider("辉光", "glow", { min: 0, max: 150, unit: "%" });
+    f.select("视角", "view", [["front", "正面"], ["side", "侧面"]], { wide: true });
+    f.slider("旋转", "rotate", { min: -180, max: 180, unit: "°" });
     const ground = f.slider("地面倾斜", "tilt", { min: 0, max: 80, unit: "°" });
     const pattern = f.select("法阵图案", "pattern", [["hex", "六芒星"], ["penta", "五芒星"], ["square", "双方形（八角）"]], { wide: true });
     const bolts = f.check("带闪电（超级赛亚人 2 那样在斗气上窜动）", "bolts");
@@ -89,6 +91,6 @@ defineNode({
       pattern.style.display = k === "circle" ? "" : "none";
     });
     f.buttons(["换一个随机样子", () => ctx.set({ seed: (p().seed % 9973) + 1 + Math.floor(Math.random() * 500) })]);
-    f.hint("「地面倾斜」：0° 是从正上方看，越大越扁，像放在地上（冲击波为 0° 时是空中的圆环）。想手修就右键卡片「烘焙为动画卡片」。");
+    f.hint("「地面倾斜」：0° 是从正上方看，越大越扁，像放在地上（冲击波为 0° 时是空中的圆环）。「视角」侧面：翅膀画成侧面的样子，其他特效横向压窄；「旋转」整体绕中心转动。想手修就右键卡片「烘焙为动画卡片」。");
   },
 });

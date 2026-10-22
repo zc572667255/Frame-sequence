@@ -32,6 +32,8 @@ export function glowPalette(st, mids = true) {
   return pal;
 }
 
+const SAT = 1.45;
+
 // A glow trail as pixel art: the canvas renderGlow made is shrunk to blocks of
 // size × size (averaging), every block snaps to the palette above, its opacity
 // to 4 steps (or a dither / a hard edge), and it is blown back up with hard
@@ -62,7 +64,11 @@ export function pixelateGlow(src, st, opts = {}) {
     else if (mode === "dither") al = a > (BAYER[((y + gy) & 3) * 4 + ((x + gx) & 3)] + 0.5) / 16 ? 1 : 0;
     else al = a < 0.2 ? 0 : Math.max(0.25, Math.round(a * 4) / 4);   // too faint to be worth a step: gone
     if (!al) { d[i + 3] = 0; continue; }
-    const r = d[i], g = d[i + 1], b = d[i + 2];
+    // averaging added-up light into blocks washes it toward white: pull the
+    // colour away from grey first, so it snaps to the preset's saturated
+    // colours rather than its pale ones (white-hot stays white)
+    const L = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    const r = L + (d[i] - L) * SAT, g = L + (d[i + 1] - L) * SAT, b = L + (d[i + 2] - L) * SAT;
     let best = pal[0], bd = Infinity;
     for (const c of pal) {
       const dr = c[0] - r, dg = c[1] - g, db = c[2] - b;
@@ -71,12 +77,46 @@ export function pixelateGlow(src, st, opts = {}) {
     }
     d[i] = best[0]; d[i + 1] = best[1]; d[i + 2] = best[2]; d[i + 3] = Math.round(al * 255);
   }
+  tidy(d, bw, bh);
   sg.putImageData(img, 0, 0);
   const out = createCanvas(W, H), og = out.getContext("2d");
   og.imageSmoothingEnabled = false;
   og.drawImage(small, 0, 0, bw, bh, bx0, by0, bw * k, bh * k);
   out.bbox = { x0: bx0, y0: by0, w: bw * k, h: bh * k };
   return out;
+}
+
+// The clean-up a pixel artist does by hand, on blocks already snapped to the
+// palette (RGBA d, w×h): a faint block with nothing round it goes (a bright
+// lone one stays: a glint), and a block whose colour none of its four
+// neighbours share, while three or four of them agree, takes theirs — flat
+// bands of colour instead of speckle.
+function tidy(d, w, h) {
+  const src = new Uint8ClampedArray(d);
+  const col = (i) => (src[i] << 16) | (src[i + 1] << 8) | src[i + 2];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = (y * w + x) * 4;
+    if (!src[i + 3]) continue;
+    let near = 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if ((dx || dy) && x + dx >= 0 && x + dx < w && y + dy >= 0 && y + dy < h && src[((y + dy) * w + x + dx) * 4 + 3]) near++;
+    }
+    if (!near) { if (src[i + 3] < 190) d[i + 3] = 0; continue; }
+    const own = col(i), seen = [];
+    let same = false;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      if (x + dx < 0 || x + dx >= w || y + dy < 0 || y + dy >= h) continue;
+      const j = ((y + dy) * w + x + dx) * 4;
+      if (!src[j + 3]) continue;
+      const c = col(j);
+      if (c === own) { same = true; break; }
+      seen.push(c);
+    }
+    if (same || seen.length < 3) continue;
+    for (const c of seen) {
+      if (seen.filter((o) => o === c).length >= 3) { d[i] = c >> 16; d[i + 1] = (c >> 8) & 255; d[i + 2] = c & 255; break; }
+    }
+  }
 }
 
 // 色阶: a glow trail as flat, cel-shaded 2D effect art — the same recipe as the

@@ -18,6 +18,8 @@ export const GHOST_DEFAULTS = {
   color2: "#7a5cff", // … to the farthest
   alpha: "soft",     // "soft" translucent | "dither" solid pixels in a checker pattern (pixel art)
   blend: "normal",   // "normal" | "add" (glowing)
+  cover: 100,        // 遮挡, %: how much a ghost hides what is under it — the layers below (effects,
+                     // trails) and the ghosts further back — so a see-through ghost still reads as in front
   dx: 0, dy: 0,      // extra shift per step, px: for animations that run in place
   loop: false,       // the first frames take their ghosts from the end
   frames: null,      // ids of the frames that show ghosts; null = every frame
@@ -69,6 +71,10 @@ export function renderGhost(gl, layers, frameIds, fi, w, h, drawCelAt, celKey) {
   }
   const out = createCanvas(w, h), g = out.getContext("2d");
   const tmp = createCanvas(w, h), tg = tmp.getContext("2d", { willReadFrequently: s.alpha === "dither" });
+  // 遮挡: the ghosts' whole outline, solid, for drawGhostCanvas to cut out of
+  // the layers below
+  const cover = Math.max(0, Math.min(1, (s.cover ?? 0) / 100));
+  const mask = cover > 0 ? createCanvas(w, h) : null, mg = mask && mask.getContext("2d");
   for (const [k, j] of steps) {
     tg.globalCompositeOperation = "source-over";
     tg.clearRect(0, 0, w, h);
@@ -86,6 +92,15 @@ export function renderGhost(gl, layers, frameIds, fi, w, h, drawCelAt, celKey) {
     }
     const a = Math.max(0, Math.min(1, s.fade / 100)) * (count - k + 1) / count;
     const ox = Math.round((s.dx || 0) * k), oy = Math.round((s.dy || 0) * k);
+    if (mask) {
+      // a nearer ghost (drawn later) hides the farther ones under it, rather
+      // than letting them show through; the outline joins the mask
+      g.globalCompositeOperation = "destination-out";
+      g.globalAlpha = cover;
+      g.drawImage(tmp, ox, oy);
+      g.globalCompositeOperation = "source-over";
+      mg.drawImage(tmp, ox, oy);
+    }
     if (s.alpha === "dither") {
       // pixel art: no half-transparent pixels — a pixel is kept or dropped by a
       // 4×4 Bayer pattern, so a fainter ghost is a sparser one
@@ -99,6 +114,7 @@ export function renderGhost(gl, layers, frameIds, fi, w, h, drawCelAt, celKey) {
     g.drawImage(tmp, ox, oy);
   }
   g.globalAlpha = 1;
+  out.mask = mask;
   if (key) {
     cache.set(key, out);
     while (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value);
@@ -106,11 +122,24 @@ export function renderGhost(gl, layers, frameIds, fi, w, h, drawCelAt, celKey) {
   return out;
 }
 
-// draw a ghost layer's rendering into g with its blend mode
+// does this ghost layer cut into the layers below it? (then g must hold only
+// layers, no backdrop: drawGhostCanvas erases from it)
+export const ghostCovers = (gl) => gl.visible !== false && ghostSettings(gl).cover > 0;
+
+// draw a ghost layer's rendering into g with its blend mode. With 遮挡 the
+// ghosts' outline is first cut out of what g already holds (the layers below),
+// so effects behind a ghost don't show through it.
 export function drawGhostCanvas(g, gl, c, ox = 0, oy = 0, w, h) {
   if (!c) return;
-  const op = g.globalCompositeOperation;
-  if (ghostSettings(gl).blend === "add") g.globalCompositeOperation = "lighter";
-  if (w == null) g.drawImage(c, ox, oy); else g.drawImage(c, ox, oy, w, h);
+  const s = ghostSettings(gl), op = g.globalCompositeOperation, ga = g.globalAlpha;
+  const put = (src) => (w == null ? g.drawImage(src, ox, oy) : g.drawImage(src, ox, oy, w, h));
+  if (c.mask) {
+    g.globalCompositeOperation = "destination-out";
+    g.globalAlpha = ga * Math.max(0, Math.min(1, s.cover / 100));
+    put(c.mask);
+    g.globalAlpha = ga;
+  }
+  g.globalCompositeOperation = s.blend === "add" ? "lighter" : "source-over";
+  put(c);
   g.globalCompositeOperation = op;
 }

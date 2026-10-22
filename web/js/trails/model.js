@@ -205,20 +205,32 @@ function sections(S, smooth, fineness, rotate, turn) {
     ang.push(a);
     lens.push(Math.hypot(k.b[0] - k.a[0], k.b[1] - k.a[1]));
   });
+  // The spline wants a neighbour beyond the first and the last stick. Repeating
+  // the end stick there straightens the end stretches — the tip cuts the chord
+  // instead of following the arc — and leaves a corner where the tail meets the
+  // rest. Instead the swing is carried on past its ends as it was going: from
+  // the last three sticks (it keeps bending the same way), or two.
+  const m = S.length;
+  const ext = (get) => (i) => {
+    if (i >= 0 && i < m) return get(i);
+    const [p, q, r] = i < 0 ? [0, 1, 2] : [m - 1, m - 2, m - 3];
+    const A = get(p), B = get(q), C = m >= 3 ? get(r) : null;
+    const f = (x, y, z) => (C ? 3 * x - 3 * y + z : 2 * x - y);
+    return typeof A === "number" ? f(A, B, C) : [f(A[0], B[0], C && C[0]), f(A[1], B[1], C && C[1])];
+  };
+  const PA = ext((i) => S[i].a), PB = ext((i) => S[i].b), PT = ext((i) => ang[i]), PL = ext((i) => lens[i]);
   const out = [];
   for (let k = 0; k < S.length - 1; k++) {
-    const c = (i) => Math.max(0, Math.min(S.length - 1, i));
-    const P = (i) => S[c(i)];
     for (let j = 0; j < n; j++) {
       const t = j / n;
-      const a = smooth ? cr(P(k - 1).a, P(k).a, P(k + 1).a, P(k + 2).a, t) : lerp(S[k].a, S[k + 1].a, t);
+      const a = smooth ? cr(PA(k - 1), PA(k), PA(k + 1), PA(k + 2), t) : lerp(S[k].a, S[k + 1].a, t);
       let b;
       if (rotate) {
-        const th = smooth ? cr1(ang[c(k - 1)], ang[k], ang[c(k + 1)], ang[c(k + 2)], t) : ang[k] + (ang[k + 1] - ang[k]) * t;
-        const L = Math.max(0, smooth ? cr1(lens[c(k - 1)], lens[k], lens[c(k + 1)], lens[c(k + 2)], t) : lens[k] + (lens[k + 1] - lens[k]) * t);
+        const th = smooth ? cr1(PT(k - 1), PT(k), PT(k + 1), PT(k + 2), t) : ang[k] + (ang[k + 1] - ang[k]) * t;
+        const L = Math.max(0, smooth ? cr1(PL(k - 1), PL(k), PL(k + 1), PL(k + 2), t) : lens[k] + (lens[k + 1] - lens[k]) * t);
         b = [a[0] + Math.cos(th) * L, a[1] + Math.sin(th) * L];
       } else {
-        b = smooth ? cr(P(k - 1).b, P(k).b, P(k + 1).b, P(k + 2).b, t) : lerp(S[k].b, S[k + 1].b, t);
+        b = smooth ? cr(PB(k - 1), PB(k), PB(k + 1), PB(k + 2), t) : lerp(S[k].b, S[k + 1].b, t);
       }
       // the back / front choice of a stick covers the sweep leading up to it
       out.push({ a, b, z: (t < 0.5 ? S[k] : S[k + 1]).z || "front" });
@@ -432,6 +444,13 @@ function brushSampler(canvas) {
   };
 }
 
+// Where a pixel sits for the tail fades: u from the tail — or, for 两头尖,
+// from whichever end is nearer, so the head end thins and breaks up just as
+// the tail does (both ends read as tails, sharing the fade length half each)
+function endsFn(st) {
+  return st.shape === "crescent" ? (u) => 2 * Math.min(u, 1 - u) : (u) => u;
+}
+
 // How much of the trail survives at (u, v) in the tail (0 = gone, 1 = solid).
 // fade: length of the tail region as a share of the trail; past it, solid.
 function tailFn(st, brush) {
@@ -589,12 +608,17 @@ function renderBands(t, segs, state, w, h, brush) {
   }
   const cov = bg.getImageData(0, 0, w, h).data;
   const uv = uvMap(segs, w, h, t.flip);
-  const tail = tailFn(st, brush);
+  const tail = tailFn(st, brush), ends = endsFn(st);
   const ramp = bandRamp(bands, st);
   const shade = Math.max(0, Math.min(1, st.bandShade ?? 0.4));
   const edge = st.bandLayout === "edge";
   const efade = Math.max(0, Math.min(1, st.edgeFade || 0));
-  const op = ((st.opacity ?? 100) / 100) * (state.alpha ?? 1);
+  // dissolving (after the swing): rather than fading — a checkerboard of dither
+  // in pixel art — the slash thins toward its brightest line and breaks into
+  // pieces along its length, the way hand-drawn slashes vanish
+  const gone = 1 - Math.max(0, Math.min(1, state.alpha ?? 1));
+  const pieces = gone > 0 ? streakNoise(hashStr((t.id || "x") + "#pieces")) : null;
+  const op = ((st.opacity ?? 100) / 100) * (st.pixel ? 1 : 1 - 0.5 * gone);
   // pixel mode: partial opacity becomes a dither, or (fadeSteps) 4 opacity steps
   const solid = (a, x, y) => {
     if (a >= 1) return 1;
@@ -627,18 +651,24 @@ function renderBands(t, segs, state, w, h, brush) {
       dim = 1 - 0.2 * (splits - k);
     }
     const e0 = has ? (edge ? 1 - sv : Math.abs(2 * sv - 1)) : edge ? 1 : f0;
-    let a = tail(u, v, x, y) * op * dim;
+    let a = tail(ends(u), v, x, y) * op * dim;
     // 破碎: the noise pushes the fading edge and the band edges in and out in
     // streaks, and chips the leading edge along the older part of the trail
     if (efade > 0) a *= 1 - smooth01((e0 + nz * brk * 1.0 - (1 - efade)) / efade);
     if (noise && !edge && e0 > 0.8 && nz < (e0 - 0.8) * 3 * brk - 0.5) a = 0;
     if (noise && e0 < 0.12 && u < 0.75 && nz < -0.5 + brk * 0.45 * (1 - u / 0.75)) a = 0;
+    if (pieces) {
+      // thinner and thinner (a ragged inner edge), and gaps opening across it
+      if (e0 > 1 - gone + nz * 0.2) continue;
+      // the cuts run clean across: whole pieces, not holes
+      if (pieces(u * 1.2, 0.5) < gone * 0.6) continue;
+    }
     // speed lines show through where the body has faded
     const sk = streak ? streak[i] / 255 * op : 0;
     let col;
     if (sk > a) { a = sk; col = streak.colorAt(i); }
     else {
-      const e = 1 - (1 - e0) * (1 - shade * (1 - u)) + nz * brk * 0.45;
+      const e = 1 - (1 - e0) * (1 - shade * (1 - ends(u))) + nz * brk * 0.45;
       col = ramp(Math.max(0, Math.min(1, e)), x, y);
     }
     if (st.pixel) a = solid(a, x, y);
@@ -710,7 +740,7 @@ export function renderTrail(trail, state, w, h, assets, z) {
   }
   const ad = ag.getImageData(0, 0, w, h).data;
   const uv = uvMap(segs, w, h, t.flip);
-  const tail = tailFn(st, brush);
+  const tail = tailFn(st, brush), ends = endsFn(st);
   const out = new ImageData(w, h), od = out.data;
   const op = ((st.opacity ?? 100) / 100) * (state.alpha ?? 1);
   const mono = hexToRgb(st.color || "#ffffff");
@@ -720,7 +750,7 @@ export function renderTrail(trail, state, w, h, assets, z) {
     if (!ta || !uv[i * 4 + 3]) continue;
     const x = i % w, y = (i / w) | 0;
     const u = uv[i * 4] / 255, v = uv[i * 4 + 1] / 255;
-    const keep = tail(u, v, x, y);
+    const keep = tail(ends(u), v, x, y);
     if (!keep) continue;
     let r, g, b, a;
     if (st.colorMode === "original") {
@@ -756,15 +786,76 @@ function renderGlowTrail(t, state, w, h, z) {
   // into a flat plate of the faintest opacity step around the trail
   const base = mixStyle(t.style);                              // the shared 强度 / 光晕 / 粒子 / 爆发 controls
   const flat = base.pixelGlow || base.cel > 0;
-  const st = flat ? { ...base, glow: (base.glow || 0) * 0.5, haze: (base.haze || 0) * 0.6 } : base;
-  const c = renderGlow(runs, st, w, h, {
-    seed: hashSeed(t.id), frame: state.frame || 0, alpha: state.alpha ?? 1, fade: t.style.fade,
+  let st = flat ? { ...base, glow: (base.glow || 0) * 0.5, haze: (base.haze || 0) * 0.6 } : base;
+  // pixel art wants a clean slash: the fine detail of the smooth glow — hair-
+  // thin strands, dust, twinkles, lens flares — only turns into stray pixels
+  // once snapped to blocks, so there is much less of it
+  if (base.pixelGlow) {
+    const less = { strands: 0.5, haze: 0.4, sparkles: 0.3, dust: 0.25, splatter: 0.5, shards: 0.5, flash: 0.35, impact: 0.4, snow: 0.5, embers: 0.6 };
+    st = { ...st };
+    for (const [k, m] of Object.entries(less)) st[k] = (+base[k] || 0) * m;
+  }
+  // 两头尖: the head end is drawn as a tail too (see mirrorTails), the two
+  // tails sharing the fade length half each
+  const two = t.style.shape === "crescent";
+  const ctx = {
+    seed: hashSeed(t.id), frame: state.frame || 0, alpha: state.alpha ?? 1, fade: (t.style.fade ?? 0.6) * (two ? 0.5 : 1),
     fx: z !== "back", run: state.run || [], age: state.age || 0, ended: !!state.ended, after: state.after || 0,
-  });
+  };
+  let c = renderGlow(runs, st, w, h, ctx);
+  if (two && runs.length) {
+    const back = runs.map((r) => r.slice().reverse().map((q) => ({ ...q, u: 1 - q.u }))).reverse();
+    c = mirrorTails(c, renderGlow(back, st, w, h, { ...ctx, fx: false, ended: false }), all);
+  }
   // 像素光效: the same glow, turned into pixel art
   if (t.style.pixelGlow) return pixelateGlow(c, t.style, { size: t.style.pxSize, alpha: t.style.pxAlpha });
   // 色阶: flat cel-shaded tones (and an outline), the 2D anime look
   return t.style.cel > 0 ? celShade(c, t.style, t.style.cel / 100, (t.style.celOutline || 0) / 100) : c;
+}
+
+// 两头尖 for glow trails: both ends should read as tails, and a glow's tail is
+// more than a fade — strands only start there, the core draws in, the flow
+// and colour change along it — spread over all its layers. So the trail is
+// also drawn reversed (head and tail swapped, no accents: the burst at the
+// tip has no place on a tail), and the two are joined in the middle: the
+// first half from the forward drawing, the second from the reversed one, with
+// a soft hand-over. Each pixel's place along the trail is that of the nearest
+// point on its middle line — continuous round a bend, and for light off to
+// the side the part of the trail it comes from.
+function mirrorTails(fwd, rev, all) {
+  if (!fwd || !rev || all.length < 2) return fwd || rev;
+  const w = fwd.width, h = fwd.height;
+  const box = (c) => c.bbox || { x0: 0, y0: 0, w, h };
+  const A = box(fwd), B = box(rev);
+  const x0 = Math.max(0, Math.floor(Math.min(A.x0, B.x0))), y0 = Math.max(0, Math.floor(Math.min(A.y0, B.y0)));
+  const x1 = Math.min(w, Math.ceil(Math.max(A.x0 + A.w, B.x0 + B.w))), y1 = Math.min(h, Math.ceil(Math.max(A.y0 + A.h, B.y0 + B.h)));
+  if (x1 <= x0 || y1 <= y0) return fwd;
+  // the middle line, thinned to at most ~48 points: the search runs per pixel
+  const step = Math.max(1, Math.ceil(all.length / 48));
+  const pick = all.filter((_, i) => i % step === 0 || i === all.length - 1);
+  const mid = pick.map((q) => lerp(q.a, q.b, 0.5)), us = pick.map((q) => q.u);
+  const bw = x1 - x0, bh = y1 - y0, img = new ImageData(bw, bh), d8 = img.data;
+  for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+    const px = x0 + x + 0.5, py = y0 + y + 0.5;
+    let best = Infinity, u = 0;
+    for (let i = 1; i < mid.length; i++) {
+      const [ax, ay] = mid[i - 1], dx = mid[i][0] - ax, dy = mid[i][1] - ay, l2 = dx * dx + dy * dy;
+      const s = l2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)) : 0;
+      const ex = ax + dx * s - px, ey = ay + dy * s - py, d2 = ex * ex + ey * ey;
+      if (d2 < best) { best = d2; u = us[i - 1] + (us[i] - us[i - 1]) * s; }
+    }
+    // how much of this pixel comes from the forward drawing
+    d8[(y * bw + x) * 4 + 3] = Math.round(255 * (1 - smooth01((u - 0.42) / 0.16)));
+  }
+  const W = createCanvas(w, h);
+  W.getContext("2d").putImageData(img, x0, y0);
+  const fg = fwd.getContext("2d"), rg = rev.getContext("2d");
+  fg.globalCompositeOperation = "destination-in"; fg.drawImage(W, 0, 0); fg.globalCompositeOperation = "source-over";
+  rg.globalCompositeOperation = "destination-out"; rg.drawImage(W, 0, 0);
+  // the two shares of each pixel add back up to one
+  rg.globalCompositeOperation = "lighter"; rg.drawImage(fwd, 0, 0); rg.globalCompositeOperation = "source-over";
+  rev.bbox = { x0, y0, w: bw, h: bh };
+  return rev;
 }
 
 // The same bands + tail rendering for any ribbon given as cross-sections
