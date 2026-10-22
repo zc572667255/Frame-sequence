@@ -9,9 +9,13 @@ import { uid, createCanvas } from "../core/util.js";
 
 const HISTORY_LIMIT = 100;
 
+// a layer with its settings objects copied, so a history snapshot never shares them
+const copyLayer = (l) => ({ ...l, ...(l.ghost ? { ghost: { ...l.ghost } } : {}), ...(l.vfx ? { vfx: { ...l.vfx } } : {}) });
+
 // Animation card params, any vintage -> { w, h, fps, layers, frames, palette }
 //   layers: [{ id, name, visible, opacity }]  bottom -> top
-//           (+ trail: id for an attack trail layer, ghost: {…} for a 残影 layer)
+//           (+ trail: id for an attack trail layer, ghost: {…} for a 残影 layer,
+//              vfx: {…} for a 特效 layer)
 //   frames: [{ id, duration, cels: { [layerId]: assetId } }]
 export function normalizeAnim(p) {
   const w = p.w || 32, h = p.h || 32;
@@ -64,7 +68,7 @@ export class EditorDoc {
     }
     const doc = new EditorDoc({
       w: n.w, h: n.h, fps: n.fps,
-      layers: n.layers.map((l) => ({ ...l, ...(l.ghost ? { ghost: { ...l.ghost } } : {}) })),
+      layers: n.layers.map(copyLayer),
       frames: n.frames.map((f) => ({ id: f.id, duration: f.duration })),
       cels, palette: [...n.palette], trails: JSON.parse(JSON.stringify(n.trails)),
     });
@@ -94,7 +98,7 @@ export class EditorDoc {
   snapshot() {
     return {
       w: this.w, h: this.h, fps: this.fps,
-      layers: this.layers.map((l) => ({ ...l, ...(l.ghost ? { ghost: { ...l.ghost } } : {}) })),
+      layers: this.layers.map(copyLayer),
       frames: this.frames.map((f) => ({ ...f })),
       cels: new Map(this.cels),
       palette: [...this.palette],
@@ -152,6 +156,9 @@ export class EditorDoc {
     if (this.frames.length < 2) return false;
     const f = this.frames.splice(fi, 1)[0];
     for (const l of this.layers) this.cels.delete(f.id + "|" + l.id);
+    // an effect that started on it starts on the frame that took its place
+    const next = this.frames[Math.min(fi, this.frames.length - 1)].id;
+    for (const l of this.layers) if (l.vfx && l.vfx.start === f.id) l.vfx = { ...l.vfx, start: next };
     for (const t of this.trails) if (t.keys) delete t.keys[f.id];
     return true;
   }
@@ -175,6 +182,7 @@ export class EditorDoc {
     const src = this.layers[li];
     const l = { ...src, id: uid("L"), name: src.name + " 副本" };
     if (src.ghost) l.ghost = { ...src.ghost };
+    if (src.vfx) l.vfx = { ...src.vfx };
     if (src.trail) {
       // a trail layer's content is its trail: copy that
       const t = this.trails.find((x) => x.id === src.trail);
@@ -212,6 +220,15 @@ export class EditorDoc {
 
   trailLayerIndex(trailId) { return this.layers.findIndex((l) => l.trail === trailId); }
 
+  // an effect (特效) layer, created right above layer `li` (or right below it:
+  // an aura goes behind what it surrounds)
+  addVfxLayer(li, vfx, name, below = false) {
+    const l = { id: uid("L"), name: name || "特效", visible: true, opacity: 100, vfx };
+    const at = below ? li : li + 1;
+    this.layers.splice(at, 0, l);
+    return at;
+  }
+
   // a ghost (残影) layer, created right below layer `li`: the afterimage goes
   // behind what it copies
   addGhostLayer(li, ghost) {
@@ -230,7 +247,7 @@ export class EditorDoc {
   }
 
   mergeDown(li) {
-    const special = (l) => l.trail || l.ghost;
+    const special = (l) => l.trail || l.ghost || l.vfx;
     if (li < 1 || special(this.layers[li]) || special(this.layers[li - 1])) return false;
     const top = this.layers[li];
     for (let fi = 0; fi < this.frames.length; fi++) {
@@ -289,7 +306,7 @@ export class EditorDoc {
     }
     return {
       w: this.w, h: this.h, fps: this.fps,
-      layers: this.layers.map((l) => ({ id: l.id, name: l.name, visible: l.visible !== false, opacity: l.opacity ?? 100, locked: !!l.locked, ...(l.trail ? { trail: l.trail } : {}), ...(l.ghost ? { ghost: { ...l.ghost } } : {}) })),
+      layers: this.layers.map((l) => ({ id: l.id, name: l.name, visible: l.visible !== false, opacity: l.opacity ?? 100, locked: !!l.locked, ...(l.trail ? { trail: l.trail } : {}), ...(l.ghost ? { ghost: { ...l.ghost } } : {}), ...(l.vfx ? { vfx: { ...l.vfx } } : {}) })),
       frames,
       palette: [...this.palette],
       trails: JSON.parse(JSON.stringify(this.trails)),

@@ -279,5 +279,9 @@
 .tl-name.trail { color: var(--k-frames); }
 .tl-cel.trail.has i { background: var(--k-frames); border-color: var(--k-frames); }
 .tl-name.ghost { color: var(--k-same); }
+.tl-name.vfx { color: var(--k-image); }
+.tl-cel.vfx.has i { background: var(--k-image); border-color: var(--k-image); }
+.tl-cel.vfx.key i { border-radius: 1px; transform: rotate(45deg); background: #ffd25c; border-color: #ffd25c; }
+.trail-thumb.vfx-thumb { aspect-ratio: 1; }
 .tl-cel.ghost.has i { background: var(--k-same); border-color: var(--k-same); box-shadow: 0 0 0 2px color-mix(in srgb, var(--k-same) 35%, transparent); }
 .tm-brush-pv { width: 120px; height: 28px; border-radius: 5px; border: 1px solid var(--line-strong); background: #000; image-rendering: pixelated; }

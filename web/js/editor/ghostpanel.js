@@ -25,12 +25,12 @@ export class GhostPanel {
   layer() { const l = this.doc.layers[this.ed.li]; return l && l.ghost ? l : null; }
 
   // show the panel when the current layer is a ghost layer, and rebuild it
+  // (the editor's syncSide decides whether the colours show)
   sync() {
     const on = !!this.layer();
     if (on !== this.shown) {
       this.shown = on;
       this.panel.style.display = on ? "" : "none";
-      this.ed.colorPanel.style.display = on || this.ed.tm.active ? "none" : "";
     }
     if (on) this.refresh();
   }
@@ -106,7 +106,7 @@ export class GhostPanel {
     row("预设", looks);
 
     // what it copies
-    const pixelLayers = this.doc.layers.filter((o) => !o.trail && !o.ghost);
+    const pixelLayers = this.doc.layers.filter((o) => !o.trail && !o.ghost && !o.vfx);
     choose("来源", "source", [["all", "所有像素图层"], ...pixelLayers.map((o) => [o.id, o.name])], "残影复制哪些图层的前几帧（拖尾图层和其他残影不算）");
     slider("数量", "count", 1, 8, " 个", "身后留几个残影");
     slider("间隔", "spacing", 1, 4, " 帧", "两个残影之间隔几帧：越大拉得越开");

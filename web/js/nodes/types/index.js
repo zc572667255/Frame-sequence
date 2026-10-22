@@ -1,6 +1,7 @@
 // Importing this registers every node type, in palette order.
 import "./source.js";
 import "./animation.js";
+import "./vfx.js";
 import "./removeBg.js";
 import "./depixel.js";
 import "./pixelize.js";

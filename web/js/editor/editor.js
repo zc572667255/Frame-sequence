@@ -19,6 +19,9 @@ import { drawFrameStack } from "../trails/composite.js";
 import { BUILTIN_BRUSHES, builtinBrush } from "../trails/model.js";
 import { GHOST_DEFAULTS, renderGhost, drawGhostCanvas, ghostSettings, ghostOn } from "../trails/ghost.js";
 import { GhostPanel } from "./ghostpanel.js";
+import { VfxPanel } from "./vfxpanel.js";
+import { VFX_KINDS } from "../vfx/effects.js";
+import { VFX_LAYER_DEFAULTS, vfxSettings, vfxFrame, vfxRegion, vfxRect, drawVfxLayer, layerBBox } from "../vfx/layer.js";
 
 const TOOLS = [
   { id: "pencil", label: "铅笔", key: "B", icon: "✎" },
@@ -31,10 +34,12 @@ const TOOLS = [
   { id: "select", label: "选区", key: "M", icon: "⬚" },
   { id: "move", label: "移动", key: "V", icon: "✥" },
   { id: "trail", label: "拖尾", key: "T", icon: "☄" },
+  { id: "vfx", label: "特效", key: "F", icon: "✦" },
 ];
-const KEY_TOOL = { b: "pencil", e: "eraser", g: "fill", i: "picker", l: "line", u: "rect", m: "select", v: "move", t: "trail" };
+const KEY_TOOL = { b: "pencil", e: "eraser", g: "fill", i: "picker", l: "line", u: "rect", m: "select", v: "move", t: "trail", f: "vfx" };
 const FX_LAYER = "特效";
 const TRAIL_KEY = "gt.trailBrush";
+const VFX_KEY = "gt.vfxTool.2"; // .2: 高清 became the default (the first key saved 像素 as the old default)
 const ZOOMS = [0.25, 0.5, 1, 2, 3, 4, 6, 8, 12, 16, 20, 24, 32, 40, 48, 64];
 const BRUSH_TOOLS = new Set(["pencil", "eraser", "line", "rect", "ellipse"]);
 
@@ -44,6 +49,7 @@ export const EDITOR_SHORTCUTS = [
   ["M / V", "选区 / 移动（没有选区时移动整层）"],
   ["Alt + 点击", "临时吸管"],
   ["T", "拖尾笔：按住拖出一道刀光，松手落笔；样式在左侧选"],
+  ["F", "特效：在当前帧新建一个特效图层，参数在右侧；选中特效图层时在画布上拖动移动、拖四角改大小"],
   ["Shift + 点击（铅笔）", "从上一点画直线"],
   ["右键", "用副色画"],
   ["X", "交换主色 / 副色"],
@@ -59,6 +65,36 @@ export const EDITOR_SHORTCUTS = [
   ["Ctrl+Z / Ctrl+Y", "撤销 / 重做"],
   ["Ctrl+S", "保存到动画卡片"],
 ];
+
+// the cursor over each handle of an effect's box (see vfxHandle)
+const HANDLE_CURSOR = {
+  "-1,-1": "nwse-resize", "1,1": "nwse-resize", "1,-1": "nesw-resize", "-1,1": "nesw-resize",
+  "-1,0": "ew-resize", "1,0": "ew-resize", "0,-1": "ns-resize", "0,1": "ns-resize",
+};
+
+// An effect's box dragged by a handle hd ({ x, y }: the sides that move) to
+// point q: the opposite side stays put; Shift keeps the shape (corners), Alt
+// resizes round the centre. Region in, region out ({ x, y, w, h }, centre).
+function resizeBox(r, hd, q, keepShape, fromCentre) {
+  let x0 = r.x - r.w / 2, x1 = r.x + r.w / 2, y0 = r.y - r.h / 2, y1 = r.y + r.h / 2;
+  if (fromCentre) {
+    if (hd.x) { const hw = Math.max(2, Math.abs(q.x - r.x)); x0 = r.x - hw; x1 = r.x + hw; }
+    if (hd.y) { const hh = Math.max(2, Math.abs(q.y - r.y)); y0 = r.y - hh; y1 = r.y + hh; }
+  } else {
+    if (hd.x < 0) x0 = Math.min(q.x, x1 - 4); else if (hd.x > 0) x1 = Math.max(q.x, x0 + 4);
+    if (hd.y < 0) y0 = Math.min(q.y, y1 - 4); else if (hd.y > 0) y1 = Math.max(q.y, y0 + 4);
+  }
+  if (keepShape && hd.x && hd.y) {
+    // the larger change wins; the corner opposite the handle (or the centre) stays
+    const k = Math.max((x1 - x0) / r.w, (y1 - y0) / r.h), w = r.w * k, h = r.h * k;
+    if (fromCentre) { x0 = r.x - w / 2; x1 = r.x + w / 2; y0 = r.y - h / 2; y1 = r.y + h / 2; }
+    else {
+      if (hd.x < 0) x0 = x1 - w; else x1 = x0 + w;
+      if (hd.y < 0) y0 = y1 - h; else y1 = y0 + h;
+    }
+  }
+  return { x: (x0 + x1) / 2, y: (y0 + y1) / 2, w: x1 - x0, h: y1 - y0 };
+}
 
 const celCache = new WeakMap();
 function celCanvas(img) {
@@ -129,6 +165,11 @@ class Editor {
     this.trailPreview = null;
     this.tm = new TrailMode(this); // 攻击拖尾模式
     this.gp = new GhostPanel(this); // 残影图层的设置
+    this.vp = new VfxPanel(this);   // 特效图层的设置
+    // the 特效 tool's choices follow the user across documents
+    let vsaved = {};
+    try { vsaved = JSON.parse(localStorage.getItem(VFX_KEY) || "{}"); } catch { /* none */ }
+    this.vfxTool = { kind: "hit", palette: "radiant", style: "hd", box: 0, ...vsaved };
     this.zoom = 8; this.panX = 0; this.panY = 0;
     this.sel = null;       // { x, y, w, h }
     this.float = null;     // { img, x, y, whole }
@@ -290,7 +331,7 @@ class Editor {
       el("p", { class: "ed-hint" }, "左键选主色，右键选副色。点主色色块或「取色器…」可以任选颜色。"),
     );
     this.tm.panel.style.display = "none";
-    const side = el("div", { class: "ed-side" }, this.colorPanel, this.tm.panel, this.gp.panel);
+    const side = el("div", { class: "ed-side" }, this.colorPanel, this.tm.panel, this.gp.panel, this.vp.panel);
 
     // timeline
     this.tlBar = el("div", { class: "tl-bar" });
@@ -319,6 +360,10 @@ class Editor {
     this.preview = null;
     this.syncToolUI();
     this.requestRender();
+    // 特效, like 攻击拖尾: a new effect layer on this frame straight away, its
+    // settings on the right (unless an effect layer is already the current one)
+    const cur = this.doc.layers[this.li];
+    if (t === "vfx" && !(cur && cur.vfx)) this.newVfx();
   }
 
   syncToolUI() {
@@ -339,6 +384,7 @@ class Editor {
     if (this.tool === "fill") check("只填相连区域", () => this.contiguous, (v) => { this.contiguous = v; });
     if (this.tool === "rect" || this.tool === "ellipse") check("实心", () => this.filled, (v) => { this.filled = v; });
     if (this.tool === "trail") this.trailOptions(o);
+    if (this.tool === "vfx") this.vfxOptions(o);
     if (this.tool === "select" || this.tool === "move") {
       const b = (label, fn, title) => o.append(el("button", { class: "btn small block", title: title || "", onclick: fn }, label));
       b("全选", () => this.selectAll(), "Ctrl+A");
@@ -632,11 +678,12 @@ class Editor {
     this.li = clamp(this.li, 0, this.doc.layers.length - 1);
     this.updateTitle();
     if (structural) this.rebuildTimeline();
-    else if (this.doc.layers.some((l) => l.ghost)) {
-      // later frames show this one as their ghost
-      for (let fi = 0; fi < this.doc.frames.length; fi++) this.refreshThumb(fi);
+    else if (this.doc.layers.some((l) => l.ghost || l.vfx)) {
+      // later frames show this one as their ghost; an effect spans several frames
+      this.refreshThumb(this.fi);
+      this.queueThumbs(this.doc.frames.map((_, fi) => fi).filter((fi) => fi !== this.fi));
     } else this.refreshThumb(this.fi);
-    this.gp.sync();
+    this.syncSide();
     this.requestRender();
   }
 
@@ -645,12 +692,22 @@ class Editor {
     // undoing restores the pixels it was lifted from
     this.float = null;
     this.drag = null;
-    if (this.doc.undo()) { this.sel = null; this.renderPalette(); this.afterChange(); this.tm.refresh(); }
+    const id = this.layerId();
+    if (this.doc.undo()) { this.sel = null; this.keepLayer(id); this.renderPalette(); this.afterChange(); this.tm.refresh(); }
   }
 
   redo() {
     this.commitFloat();
-    if (this.doc.redo()) { this.renderPalette(); this.afterChange(); this.tm.refresh(); }
+    const id = this.layerId();
+    if (this.doc.redo()) { this.keepLayer(id); this.renderPalette(); this.afterChange(); this.tm.refresh(); }
+  }
+
+  // the current layer stays current across undo / redo when it still exists,
+  // wherever the step moved it in the stack
+  layerId() { const l = this.doc.layers[this.li]; return l ? l.id : null; }
+  keepLayer(id) {
+    const i = this.doc.layers.findIndex((l) => l.id === id);
+    if (i >= 0) this.li = i;
   }
 
   // ---------- floating selection ----------
@@ -765,6 +822,7 @@ class Editor {
     if (l.visible === false) { this.app.toast("图层「" + l.name + "」是隐藏的，先显示它再画。", "warn"); return false; }
     if (l.trail) { this.app.toast("「" + l.name + "」是拖尾图层：在攻击拖尾模式里调棍子；想手修像素，先「栅格化本帧到特效图层」。", "warn"); return false; }
     if (l.ghost) { this.app.toast("「" + l.name + "」是残影图层：内容自动来自前几帧，在右侧调设置；要画画请选别的图层。", "warn"); return false; }
+    if (l.vfx) { this.app.toast("「" + l.name + "」是特效图层：拖动移动、拖四角改大小，设置在右侧；想手修先点右侧「转为像素图层」。", "warn"); return false; }
     return true;
   }
 
@@ -776,6 +834,7 @@ class Editor {
       return !!(t && t.keys && t.keys[this.doc.frames[fi].id]);
     }
     if (l && l.ghost) return ghostOn(ghostSettings(l), this.doc.frames[fi].id);
+    if (l && l.vfx) return vfxFrame(vfxSettings(l), this.doc.frames.map((f) => f.id), fi) >= 0;
     const img = this.doc.cel(fi, li);
     return !!img && !R.isEmpty(img);
   }
@@ -789,7 +848,9 @@ class Editor {
     this.syncTimelineSel();
     this.tm.onFrameChange(prev); // trail mode: carry the stick to the next frame
     this.tm.refresh();
-    if (!this.playing) this.gp.sync(); // 「本帧」 follows the frame
+    // the side panel shows this frame's 「本帧」 state: rebuilt once stepping
+    // pauses, not on every step of a held key
+    if (!this.playing) { clearTimeout(this.sideTimer); this.sideTimer = setTimeout(() => this.syncSide(), 60); }
     this.requestRender();
   }
 
@@ -805,8 +866,131 @@ class Editor {
       this.tm.selId = l.trail;
       if (!this.tm.active) this.tm.toggle(true); else this.tm.refresh();
     } else if (this.tm.active) this.tm.toggle(false);
-    this.gp.sync(); // a ghost layer shows its settings on the right
+    this.syncSide(); // a ghost layer shows its settings on the right
     this.requestRender();
+  }
+
+  // the right side: the trail panel in trail mode, a ghost or effect layer's
+  // settings while one is the current layer, else the colours
+  syncSide() {
+    this.gp.sync();
+    this.vp.sync();
+    const l = this.doc.layers[this.li];
+    this.colorPanel.style.display = this.tm.active || (l && (l.ghost || l.vfx)) ? "none" : "";
+  }
+
+  // ---------- 特效 tool ----------
+  saveVfxTool() {
+    try { localStorage.setItem(VFX_KEY, JSON.stringify(this.vfxTool)); } catch { /* private mode */ }
+  }
+
+  // the left side under the tool: what to do (the settings are on the right)
+  vfxOptions(o) {
+    o.append(el("button", { class: "btn small block", title: "在当前帧再加一个特效图层", onclick: () => this.newVfx() }, "＋ 新建特效"));
+    o.append(el("p", { class: "ed-hint" }, "特效从当前帧开始，参数在右侧：类型、配色、持续帧数等。在画布上拖动特效移动，拖方框四角改大小。"));
+  }
+
+  // a new effect on this frame in the middle of the canvas, of the kind and
+  // colours used last
+  newVfx() {
+    const s = Math.max(8, Math.round(Math.min(this.doc.w, this.doc.h) * 0.75));
+    this.placeVfx(this.doc.w / 2, this.doc.h / 2, s, s);
+  }
+
+  // a new effect layer above the current layer, centred at (x, y), starting on
+  // this frame. An aura (环绕光) goes behind the current layer and follows it
+  // when that layer has something on this frame.
+  placeVfx(x, y, w, h) {
+    const v = this.vfxTool;
+    const k = VFX_KINDS.find((q) => q.id === v.kind) || VFX_KINDS[0];
+    const cur = this.doc.layers[this.li];
+    const follow = k.around && cur && !cur.trail && !cur.ghost && !cur.vfx && this.hasContent(this.fi, this.li) ? cur.id : null;
+    const vfx = {
+      ...VFX_LAYER_DEFAULTS, ...k.defaults, kind: k.id, palette: v.palette || k.defaults.palette, style: v.style,
+      w: Math.round(w), h: Math.round(h), x: Math.round(x), y: Math.round(y), start: this.doc.frames[this.fi].id,
+      follow, seed: 1 + Math.floor(Math.random() * 9973),
+    };
+    if (this.tm.active) this.tm.toggle(false);
+    this.change(() => { this.li = this.doc.addVfxLayer(this.li, vfx, k.name, !!follow); });
+    this.goLayer(this.li);
+    const n = vfx.loop ? this.doc.frames.length - this.fi : vfx.frames;
+    if (!vfx.loop && this.fi + vfx.frames > this.doc.frames.length) {
+      this.app.toast("「" + k.name + "」有 " + vfx.frames + " 帧，从第 " + (this.fi + 1) + " 帧开始会超出动画末尾：可以在右侧减少「特效帧数」，或给动画加帧。", "warn");
+    } else this.app.toast("已在第 " + (this.fi + 1) + " 帧新建「" + k.name + "」，持续 " + n + " 帧。参数在右侧；在画布上拖动移动，拖四角改大小。");
+  }
+
+  // what an effect layer needs to follow another layer: its outline per frame
+  vfxCtx(draft = false) {
+    return { draft, bbox: (id, j) => layerBBox(this.doc.layers, id, j, this.doc.w, this.doc.h, this.drawCelAt, this.celKey) };
+  }
+
+  // the handle of an effect's box under a canvas point: { x, y } with -1 / 1 for
+  // the side that moves and 0 for one that doesn't (corners move both), or null
+  vfxHandle(l, q) {
+    const r = this.vfxRegionNow(l);
+    if (r.followed) return null;
+    const b = vfxRect(r), z = this.zoom;
+    const xs = [[b.x, -1], [b.x + b.w / 2, 0], [b.x + b.w, 1]], ys = [[b.y, -1], [b.y + b.h / 2, 0], [b.y + b.h, 1]];
+    for (const [hy, sy] of ys) for (const [hx, sx] of xs) {
+      if ((sx || sy) && Math.abs(q.x - hx) * z < 8 && Math.abs(q.y - hy) * z < 8) return { x: sx, y: sy };
+    }
+    // anywhere along an edge works too
+    const inX = q.x > b.x && q.x < b.x + b.w, inY = q.y > b.y && q.y < b.y + b.h;
+    if (inY && Math.abs(q.x - b.x) * z < 5) return { x: -1, y: 0 };
+    if (inY && Math.abs(q.x - b.x - b.w) * z < 5) return { x: 1, y: 0 };
+    if (inX && Math.abs(q.y - b.y) * z < 5) return { x: 0, y: -1 };
+    if (inX && Math.abs(q.y - b.y - b.h) * z < 5) return { x: 0, y: 1 };
+    return null;
+  }
+
+  // show effect layer l (at li) as a quick draft: a slider or a corner of it
+  // is moving, or the brush is on the layer it follows (its outline, and so
+  // its size, may change with every step of the stroke)
+  vfxDrafting(l, li) {
+    const d = this.drag;
+    if (li === this.li) return this.vp.live || !!(d && d.type === "vfx-size");
+    const cur = this.doc.layers[this.li];
+    return !!(d && (d.type === "paint" || d.type === "move") && l.vfx.follow && cur && l.vfx.follow === cur.id);
+  }
+
+  // an effect layer's region on a frame
+  vfxRegionNow(l, fi = this.fi) {
+    return vfxRegion(vfxSettings(l), this.doc.frames.map((f) => f.id), fi, this.vfxCtx());
+  }
+
+  // set an effect layer's region on this frame — its key when keyed per frame,
+  // else the fixed one. Inside a checkpoint; the settings are replaced, never
+  // edited in place (history snapshots share them).
+  setVfxRegion(l, r) {
+    // whole-pixel edges (the centre may fall on a half pixel), so dragging one
+    // side never nudges the other
+    const x0 = Math.round(r.x - r.w / 2), y0 = Math.round(r.y - r.h / 2);
+    const x1 = Math.max(x0 + 4, Math.round(r.x + r.w / 2)), y1 = Math.max(y0 + 4, Math.round(r.y + r.h / 2));
+    const v = { x: (x0 + x1) / 2, y: (y0 + y1) / 2, w: x1 - x0, h: y1 - y0 };
+    if (vfxSettings(l).perFrame) l.vfx = { ...l.vfx, keys: { ...(l.vfx.keys || {}), [this.doc.frames[this.fi].id]: v } };
+    else l.vfx = { ...l.vfx, ...v };
+  }
+
+  // 转为像素图层: the effect drawn into an ordinary layer in its place, every frame
+  rasterizeVfx() {
+    const l = this.doc.layers[this.li];
+    if (!l || !l.vfx) return;
+    const ids = this.doc.frames.map((f) => f.id);
+    this.change(() => {
+      const li = this.li;
+      this.doc.addLayer(li, l.name);
+      for (let fi = 0; fi < ids.length; fi++) {
+        const c = createCanvas(this.doc.w, this.doc.h), g = c.getContext("2d");
+        drawVfxLayer(g, l, ids, fi, 0, 0, 1, this.vfxCtx());
+        const img = g.getImageData(0, 0, this.doc.w, this.doc.h);
+        if (!R.isEmpty(img)) this.doc.setCel(fi, li, img);
+      }
+      this.doc.layers[li].opacity = l.opacity ?? 100;
+      this.doc.deleteLayer(li + 1);
+      this.li = li;
+    });
+    this.goLayer(this.li);
+    this.app.toast("已把特效画进普通图层「" + l.name + "」，现在可以用画笔修改。");
   }
 
   // a 残影 layer right below the current layer. It copies the current layer when
@@ -942,6 +1126,24 @@ class Editor {
       this.requestRender();
       return;
     }
+    // 特效: on the selected effect layer a corner handle resizes it and a drag
+    // anywhere else moves it, whatever the tool. With the 特效 tool on another
+    // layer, pressing places a new effect there (a drag sets its size).
+    const curL = this.doc.layers[this.li];
+    if (e.button === 0 && !e.altKey && (this.tool === "vfx" || (curL && curL.vfx))) {
+      this.commitFloat();
+      const q = this.toFloat(e);
+      if (curL && curL.vfx) {
+        const r0 = this.vfxRegionNow(curL), hd = this.vfxHandle(curL, q);
+        // following a layer, the region is that layer's: nothing to drag
+        if (r0.followed) { this.app.toast("这个特效正在跟随图层，位置和大小自动跟着它；想手动调，先在右侧把「跟随图层」改成「不跟随」。", "warn"); return; }
+        this.drag = { type: hd ? "vfx-size" : "vfx-move", hd, sx: q.x, sy: q.y, r0, moved: false };
+        return;
+      }
+      this.drag = { type: "vfx-new", x: q.x, y: q.y, r: 0 };
+      this.requestRender();
+      return;
+    }
     const secondary = e.button === 2;
     const tool = e.altKey && this.tool !== "select" && this.tool !== "move" ? "picker" : this.tool;
 
@@ -1007,6 +1209,15 @@ class Editor {
   onMove(e) {
     const p = this.toPixel(e);
     this.hover = p;
+    if (!this.drag) {
+      const l = this.doc.layers[this.li];
+      let cur = "";
+      if (l && l.vfx && !this.tm.active) {
+        const hd = this.vfxHandle(l, this.toFloat(e));
+        cur = hd ? HANDLE_CURSOR[hd.x + "," + hd.y] : "move";
+      }
+      if (this.canvas.style.cursor !== cur) this.canvas.style.cursor = cur;
+    }
     if (this.tm.drag) {
       this.tm.onMove(e, this.toFloat(e));
       this.requestRender();
@@ -1035,6 +1246,17 @@ class Editor {
         const x1 = clamp(p.x, 0, this.doc.w - 1), y1 = clamp(p.y, 0, this.doc.h - 1);
         d.moved = d.moved || x1 !== d.x0 || y1 !== d.y0;
         this.sel = { x: Math.min(d.x0, x1), y: Math.min(d.y0, y1), w: Math.abs(x1 - d.x0) + 1, h: Math.abs(y1 - d.y0) + 1 };
+      } else if (d.type === "vfx-new") {
+        const q = this.toFloat(e);
+        d.r = Math.hypot(q.x - d.x, q.y - d.y);
+      } else if (d.type === "vfx-move" || d.type === "vfx-size") {
+        const q = this.toFloat(e), l = this.doc.layers[this.li];
+        if (!d.moved) { this.doc.checkpoint(); d.moved = true; }
+        // the settings object is replaced, never edited in place (history snapshots share it)
+        const r0 = d.r0;
+        if (d.type === "vfx-move") this.setVfxRegion(l, { ...r0, x: r0.x + q.x - d.sx, y: r0.y + q.y - d.sy });
+        else this.setVfxRegion(l, resizeBox(r0, d.hd, q, e.shiftKey, e.altKey));
+        this.markDirty();
       } else if (d.type === "move" && this.float) {
         this.float.x = d.fx + p.x - d.sx;
         this.float.y = d.fy + p.y - d.sy;
@@ -1050,6 +1272,17 @@ class Editor {
     const d = this.drag;
     this.drag = null;
     if (!d) return;
+    if (d.type === "vfx-new") {
+      // a click: the tool's size; a drag: from the centre out to a corner
+      const box = d.r * this.zoom > 6 ? d.r * 2 : this.vfxTool.box || Math.min(this.doc.w, this.doc.h) * 0.75;
+      this.placeVfx(d.x, d.y, Math.max(8, box), Math.max(8, box));
+      return;
+    }
+    if (d.type === "vfx-move" || d.type === "vfx-size") {
+      // keyed per frame, the timeline shows the new key
+      if (d.moved) this.afterChange(!!vfxSettings(this.doc.layers[this.li]).perFrame);
+      return;
+    }
     if (d.type === "paint") {
       this.lastPaint = d.last;
       this.afterChange(false);
@@ -1235,8 +1468,11 @@ class Editor {
   onionLayer(fi, tint) {
     const key = fi + ":" + tint + ":" + this.doc.version;
     let c = this.onionCache.get(key);
-    if (!c) {
-      if (this.onionCache.size > 32) this.onionCache.clear();
+    if (c) { this.onionCache.delete(key); this.onionCache.set(key, c); }
+    else {
+      // the least recently used goes; clearing them all made stepping through
+      // a long animation recomposite its neighbours on every step
+      while (this.onionCache.size >= 64) this.onionCache.delete(this.onionCache.keys().next().value);
       c = this.composite(fi);
       const g = c.getContext("2d");
       g.globalCompositeOperation = "source-atop";
@@ -1299,11 +1535,13 @@ class Editor {
     // attack trails are layers: sticks marked 角色后方 go under every layer, the
     // rest is drawn at the trail layer's place in the stack
     this.tm.drawBack(g, ox, oy, iw, ih);
+    const frameIds = doc.frames.map((f) => f.id);
     doc.layers.forEach((l, li) => {
       if (l.visible === false) return;
       g.globalAlpha = (l.opacity ?? 100) / 100;
       if (l.trail) { this.tm.drawLayer(g, l, ox, oy, iw, ih); g.globalAlpha = 1; return; }
       if (l.ghost) { drawGhostCanvas(g, l, this.ghostCanvas(l), ox, oy, iw, ih); g.globalAlpha = 1; return; }
+      if (l.vfx) { drawVfxLayer(g, l, frameIds, this.fi, ox, oy, z, this.vfxCtx(this.vfxDrafting(l, li))); g.globalAlpha = 1; return; }
       const img = doc.cel(this.fi, li);
       if (img) g.drawImage(celCanvas(img), ox, oy, iw, ih);
       if (li !== this.li) return;
@@ -1339,6 +1577,42 @@ class Editor {
     // frame of the canvas
     g.strokeStyle = "rgba(255,255,255,0.35)";
     g.strokeRect(Math.round(ox) - 0.5, Math.round(oy) - 0.5, Math.round(iw) + 1, Math.round(ih) + 1);
+
+    // the selected effect layer's box with corner handles (fainter on frames it
+    // isn't showing on); a new effect's box while it is being dragged out
+    // handles: filled on a frame with its own key (or a fixed region), hollow
+    // where the region is interpolated; none while it follows a layer
+    const box = (x, y, bw, bh, on, solid = true, handles = true) => {
+      const sx = Math.round(ox + x * z) + 0.5, sy = Math.round(oy + y * z) + 0.5, sw = Math.round(bw * z), sh = Math.round(bh * z);
+      g.globalAlpha = on ? 1 : 0.45;
+      g.setLineDash([5, 4]);
+      g.strokeStyle = "#000"; g.lineDashOffset = 0; g.strokeRect(sx, sy, sw, sh);
+      g.strokeStyle = handles ? "#ffd25c" : "#7fe9ff"; g.lineDashOffset = 5; g.strokeRect(sx, sy, sw, sh);
+      g.setLineDash([]);
+      if (!handles) { g.globalAlpha = 1; return; }
+      const corners = [[sx, sy], [sx + sw, sy], [sx, sy + sh], [sx + sw, sy + sh]];
+      const edges = [[sx + sw / 2, sy], [sx + sw / 2, sy + sh], [sx, sy + sh / 2], [sx + sw, sy + sh / 2]];
+      for (const [hx, hy, k] of [...corners.map((c) => [...c, 3.5]), ...edges.map((c) => [...c, 2.5])]) {
+        g.fillStyle = solid ? "#ffd25c" : "rgba(0,0,0,0.6)"; g.fillRect(hx - k, hy - k, k * 2, k * 2);
+        g.strokeStyle = solid ? "#000" : "#ffd25c"; g.strokeRect(hx - k, hy - k, k * 2, k * 2);
+      }
+      // the move handle in the middle
+      const mx = sx + sw / 2, my = sy + sh / 2;
+      g.beginPath(); g.arc(mx, my, 7, 0, Math.PI * 2);
+      g.fillStyle = "rgba(0,0,0,0.55)"; g.fill();
+      g.strokeStyle = "#ffd25c"; g.lineWidth = 1.5; g.stroke(); g.lineWidth = 1;
+      g.beginPath(); g.moveTo(mx - 4, my); g.lineTo(mx + 4, my); g.moveTo(mx, my - 4); g.lineTo(mx, my + 4); g.stroke();
+      g.globalAlpha = 1;
+    };
+    const curL = doc.layers[this.li];
+    if (curL && curL.vfx && !this.playing) {
+      const s = vfxSettings(curL), r = this.vfxRegionNow(curL), b = vfxRect(r);
+      box(b.x, b.y, b.w, b.h, vfxFrame(s, frameIds, this.fi) >= 0, !s.perFrame || r.key !== false, !r.followed);
+    }
+    if (this.drag && this.drag.type === "vfx-new" && this.drag.r * z > 6) {
+      const d = this.drag;
+      box(d.x - d.r, d.y - d.r, d.r * 2, d.r * 2, true);
+    }
 
     // selection: two-tone dashes read on any colour
     if (this.sel) {
@@ -1462,8 +1736,8 @@ class Editor {
       eye.onclick = (e) => { e.stopPropagation(); l.visible = l.visible === false; this.markDirty(); this.rebuildTimeline(); this.requestRender(); };
       const lock = el("button", { class: "tl-ico lock" + (l.locked ? " on" : ""), title: l.locked ? "已锁定 · 点击解锁" : "点击锁定（锁定后不能画）" }, "锁");
       lock.onclick = (e) => { e.stopPropagation(); l.locked = !l.locked; this.markDirty(); this.rebuildTimeline(); };
-      const kind = l.trail ? "trail" : l.ghost ? "ghost" : "";
-      const name = el("span", { class: "tl-name" + (kind ? " " + kind : "") }, (l.trail ? "☄ " : l.ghost ? "◌ " : "") + l.name);
+      const kind = l.trail ? "trail" : l.ghost ? "ghost" : l.vfx ? "vfx" : "";
+      const name = el("span", { class: "tl-name" + (kind ? " " + kind : "") }, (l.trail ? "☄ " : l.ghost ? "◌ " : l.vfx ? "✦ " : "") + l.name);
       const head = el("div", { class: "tl-lhead", dataset: { li } }, eye, lock, name);
       head.addEventListener("click", () => this.goLayer(li));
       head.addEventListener("dblclick", () => {
@@ -1472,13 +1746,32 @@ class Editor {
       });
       g.append(head);
       doc.frames.forEach((f, fi) => {
-        const cell = el("div", { class: "tl-cel" + (this.hasContent(fi, li) ? " has" : "") + (kind ? " " + kind : ""), dataset: { fi, li } }, el("i"));
+        const keyed = l.vfx && l.vfx.perFrame && l.vfx.keys && l.vfx.keys[f.id];
+        const cell = el("div", { class: "tl-cel" + (this.hasContent(fi, li) ? " has" : "") + (kind ? " " + kind : "") + (keyed ? " key" : ""), dataset: { fi, li } }, el("i"));
         cell.addEventListener("click", () => { this.goLayer(li); this.goFrame(fi); });
         g.append(cell);
       });
     }
-    for (let fi = 0; fi < doc.frames.length; fi++) this.refreshThumb(fi, true);
+    // the current frame's thumbnail now, the rest a few at a time
+    this.thumbQ = [];
+    this.refreshThumb(this.fi, true);
+    this.queueThumbs(doc.frames.map((_, fi) => fi).filter((fi) => fi !== this.fi));
     this.syncTimelineSel();
+  }
+
+  // Thumbnails redrawn between frames, a few milliseconds' worth at a time:
+  // compositing every frame at once (effects, ghosts and all) stalls the editor
+  // for a moment after every change.
+  queueThumbs(list) {
+    const q = this.thumbQ || (this.thumbQ = []);
+    for (const fi of list) if (!q.includes(fi)) q.push(fi);
+    if (this.thumbTimer || !q.length) return;
+    const step = () => {
+      const t0 = performance.now();
+      while (q.length && performance.now() - t0 < 6) this.refreshThumb(q.shift());
+      this.thumbTimer = q.length ? setTimeout(step, 16) : 0;
+    };
+    this.thumbTimer = setTimeout(step, 16);
   }
 
   refreshThumb(fi, noCelUpdate) {

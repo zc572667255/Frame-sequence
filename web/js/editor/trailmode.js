@@ -76,7 +76,7 @@ export class TrailMode {
       if (!this.doc.trails.length) this.addTrail(NEW_TRAIL_STYLE, true);
       else this.focusLayer(this.trail());
     }
-    this.ed.colorPanel.style.display = on ? "none" : "";
+    this.ed.syncSide(); // the colours give way to the trail panel
     this.panel.style.display = on ? "" : "none";
     this.toggles.style.display = on ? "" : "none";
     this.ed.trailBtn.classList.toggle("primary", on);
