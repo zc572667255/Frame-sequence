@@ -2,7 +2,7 @@
 // the right in place of the colours while an effect layer is the current layer.
 // Where and how big it is can also be set on the canvas (drag it, or a corner).
 import { el } from "../core/util.js";
-import { VFX_KINDS, VFX_PALETTES, renderVfx, hasSide } from "../vfx/effects.js";
+import { VFX_KINDS, VFX_PALETTES, VFX_EDGES as EDGES, renderVfx, hasSide } from "../vfx/effects.js";
 import { vfxSettings } from "../vfx/layer.js";
 
 const GROUND = new Set(["shock", "dust", "circle", "heal"]);
@@ -222,7 +222,10 @@ export class VfxPanel {
     if (hasSide(s.kind)) choose("视角", "view", [["front", "正面"], ["side", "侧面"]]);
     slider("旋转", "rotate", -180, 180, "°", "整个特效绕中心转动（转出画幅框的部分会被裁掉，可以把画幅框拉大）");
     if (GROUND.has(s.kind)) slider("地面倾斜", "tilt", 0, 80, "°", "0° 是从正上方看，越大越扁，像放在地上");
-    if (s.kind === "circle") choose("法阵图案", "pattern", [["hex", "六芒星"], ["penta", "五芒星"], ["square", "双方形（八角）"]]);
+    if (s.kind === "circle") {
+      choose("法阵图案", "pattern", [["hex", "六芒星"], ["penta", "五芒星"], ["square", "双方形（八角）"]]);
+      choose("边缘特效", "edge", EDGES);
+    }
     if (s.kind === "aura") {
       const bolts = el("input", { type: "checkbox", checked: !!s.bolts, onchange: () => this.edit({ bolts: bolts.checked }) });
       P.append(el("label", { class: "ed-check" }, bolts, "带闪电（超级赛亚人 2 那样在斗气上窜动）"));

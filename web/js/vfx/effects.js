@@ -12,7 +12,7 @@
 import { createCanvas, hexToRgb } from "../core/util.js";
 import { GLOW_PRESETS } from "../trails/glow.js";
 import { rng, rgba, clamp01, smooth, colorAcross, drawBlurred, noiseGrid, fbmNoise, toHex } from "../trails/glow/util.js";
-import { star } from "../trails/glow/shapes.js";
+import { star, rockShape } from "../trails/glow/shapes.js";
 import { pixelateGlow } from "../trails/glow/finish.js";
 
 const TAU = Math.PI * 2;
@@ -48,6 +48,7 @@ export const VFX_DEFAULTS = {
   glow: 60,      // bloom, %
   tilt: 60,      // 冲击波 / 魔法阵 / 治疗 / 烟尘: how flat the ground is seen, degrees (0 = from above)
   pattern: "hex", // 魔法阵: "hex" 六芒星 | "penta" 五芒星 | "square" 双方形
+  edge: "auto",  // 魔法阵: what plays round the rim — "auto" (the palette's element) | "none" | "fire" 火焰 | "earth" 岩石 | "wind" 风刃 | "water" 水波 | "bolt" 闪电
   bolts: false,  // 环绕光: lightning crawling over it
   view: "front", // "front" 正面 | "side" 侧面, for the kinds that have one (hasSide)
   rotate: 0,     // degrees, the whole effect turned about its centre
@@ -57,6 +58,9 @@ export const VFX_DEFAULTS = {
 };
 
 export const VFX_PALETTES = GLOW_PRESETS.map((p) => [p.id, p.name]);
+
+// 魔法阵: what can play round its rim (circleEdge); "auto" takes the palette's element
+export const VFX_EDGES = [["auto", "自动（按配色）"], ["none", "无"], ["fire", "火焰"], ["earth", "岩石"], ["wind", "风刃"], ["water", "水波"], ["bolt", "闪电"]];
 
 // the colours of a preset as rgb: cols (dark → bright), core, rim, splat.
 // Kept per preset (read only), with the colour ramps the per-pixel effects use.
@@ -70,6 +74,9 @@ function paletteOf(id) {
   const smoke = mixRgb(cols[0], [58, 56, 60], 0.75);
   const pal = { preset: p, cols, core, rim, splat, smoke, dark: lum(core) < 60 };
   pal.fire = fireColor(pal);
+  // the element its glow style carries (fire, rock, wind, water, lightning), if any
+  const lk = p.look || {}, has = (...ks) => ks.some((q) => +lk[q] > 0);
+  pal.element = has("flames") ? "fire" : has("rocks") ? "earth" : has("curls") ? "wind" : has("caustic", "tear", "drops") ? "water" : has("bolts") ? "bolt" : null;
   // glowing fire (no smoke): the darkest colour at the faint tips → white-hot
   const flame = [cols[0], ...cols, core];
   pal.flame = ramp((v) => colorAcross(flame, v * 0.999));
@@ -140,19 +147,19 @@ function spike(g, cx, cy, th, len, wid, core, rim, a) {
   g.beginPath(); g.moveTo(bx, by); g.lineTo(cx + nx, cy + ny); g.lineTo(ex, ey); g.lineTo(cx - nx, cy - ny); g.closePath(); g.fill();
 }
 
-// sparks flung out from (x, y): streaks that slow down, fall a little and burn out
+// sparks flung out from (x, y): comets that slow down, curve over as they fall
+// and burn out, their tails bending along the arc
 function sparks(g, c, x, y, n, reach, t0, seedK, gravity = 0.3) {
   const P = rng(c.seed * 41 + seedK);
   for (let k = 0; k < n; k++) {
     const th = P() * TAU, sp = 0.45 + 0.75 * P(), life = 0.6 + 0.45 * P(), wid = 0.6 + 0.8 * P();
     const lt = (c.t - t0) / life;
     if (lt <= 0 || lt >= 1) continue;
-    const d = reach * (0.12 + sp * easeOut(lt, 2.4));
-    const fall = reach * gravity * lt * lt;
-    const tail = reach * 0.22 * sp * (1 - lt);
-    const q = [x + Math.cos(th) * d, y + Math.sin(th) * d + fall];
-    const p = [x + Math.cos(th) * Math.max(0, d - tail), y + Math.sin(th) * Math.max(0, d - tail) + fall * 0.8];
-    streak(g, p, q, c.pal.rim, c.pal.core, 1 - lt * lt, Math.max(1, c.R * 0.03 * wid * (1 - lt * 0.6)));
+    const at = (q) => {
+      const d = reach * (0.12 + sp * easeOut(q, 2.4)), fall = reach * gravity * q * q;
+      return [x + Math.cos(th) * d, y + Math.sin(th) * d + fall];
+    };
+    comet(g, c.pal, at, lt, 0.12 + 0.1 * sp, Math.max(0.8, c.R * 0.026 * wid * (1 - lt * 0.6)), 1 - lt * lt);
   }
 }
 
@@ -249,13 +256,15 @@ function trail(g, pal, pts, wd, a, head = true) {
   if (head) blob(g, x1, y1, wd * 2, [[0, pal.core, a], [0.4, pal.rim, 0.5 * a], [1, pal.rim, 0]]);
 }
 
-// an ember or a mote of light moving along (dx, dy): a bright point with a soft
-// halo and a short tail behind it
-function ember(g, pal, x, y, dx, dy, r, a) {
-  if (a <= 0.01 || r <= 0) return;
-  const l = Math.hypot(dx, dy) || 1, tx = -dx / l * r * 5, ty = -dy / l * r * 5;
-  streak(g, [x + tx, y + ty], [x, y], pal.rim, pal.core, 0.6 * a, r * 1.2);
-  blob(g, x, y, r * 3, [[0, pal.core, a], [0.3, pal.rim, 0.55 * a], [1, pal.rim, 0]]);
+// A particle with a tail: path(q) is where it is at progress q along its own
+// flight; it is drawn at q with a glowing head and a tail through where it was
+// a moment ago (back: how far back), so the tail bends with the path — an arc
+// for a falling spark, a wave for a swaying mote — thinning and fading behind
+function comet(g, pal, path, q, back, wd, a) {
+  if (a <= 0.01 || wd <= 0) return;
+  const pts = [];
+  for (let i = 8; i >= 0; i--) pts.push(path(Math.max(0, q - back * i / 8)));
+  trail(g, pal, pts, wd, a, true);
 }
 
 // A noisy density field coloured per pixel: blobs [{ x, y, r, heat }] summed
@@ -395,6 +404,70 @@ const EFFECTS = {
   // 爆炸: a fireball of noisy puffs that swells, cools from white through the
   // palette to smoke and drifts up, with a flash, a shock ring and sparks
   explosion(g, c) {
+    if (c.pal.dark) return EFFECTS.explosionInk(g, c);
+    const { t, R, cx, cy, pal, w, h } = c;
+    const k = 1.6 / R, sc = fieldScale(c, R);
+    const N = fbmNoise(c.seed * 19 + 3), F = fbmNoise(c.seed * 23 + 5), W = fbmNoise(c.seed * 29 + 7);
+    // the fireball swells fast and rises a little; the smoke after it grows on
+    // and drifts higher
+    const e = easeOut(t / 0.42, 2.2), rise = R * 0.32 * easeIn(t, 1.5);
+    const rb = R * (0.16 + 0.66 * e), fy = cy - rise * 0.5;
+    const rs = R * (0.24 + 0.42 * e + 0.12 * t), sy = cy - rise * 0.9;
+    const cool = 1 - smooth(0.1, 0.72, t), flash = 0.5 * (1 - smooth(0, 0.16, t));
+    // smoke: soft billows lit from above, thickening as the fire dies down,
+    // then thinning away
+    const smokeA = smooth(0.12, 0.5, t) * (1 - smooth(0.55, 1.05, t));
+    const smokeHi = mixRgb(pal.smoke, [176, 168, 160], 0.5);
+    if (smokeA > 0.01) {
+      g.globalCompositeOperation = "source-over";
+      field(g, Math.max(0, Math.floor(cx - rs * 1.6)), Math.max(0, Math.floor(sy - rs * 1.6)), Math.min(w, Math.ceil(cx + rs * 1.6)), Math.min(h, Math.ceil(sy + rs * 1.5)), sc, (x, y, px) => {
+        const dx = x + 0.5 - cx, dy = y + 0.5 - sy;
+        const wx = (W(dx * k * 0.6, dy * k * 0.6 + t) - 0.5) * rs * 0.5;
+        const n = N((dx + wx) * k, (dy * 1.1) * k + t * 1.3), b = F((dx + wx) * k * 2.4 + 5, dy * k * 2.4 + t * 2);
+        // billows: big lumps from n, smaller puffs on them from b
+        const d = 1 - Math.hypot(dx + wx, dy * 1.1) / rs + (n - 0.5) * 0.95 + (b - 0.5) * 0.35;
+        if (d <= 0) return false;
+        const a = smooth(0, 0.3, d) * smokeA * (0.65 + 0.35 * b) * 0.9;
+        if (a <= 0.004) return false;
+        // lit from above, each puff brighter on its top
+        const lit = clamp01(0.5 - dy / rs * 0.55 + (b - 0.5) * 0.9), col = mixRgb(pal.smoke, smokeHi, lit * lit);
+        px[0] = col[0]; px[1] = col[1]; px[2] = col[2]; px[3] = a;
+      });
+    }
+    // fire: tongues rolling out from a white-hot middle, fine strands running
+    // outward through them, the whole cooling through the palette
+    if (cool + flash > 0.02) {
+      g.globalCompositeOperation = "lighter";
+      field(g, Math.max(0, Math.floor(cx - rb * 1.7)), Math.max(0, Math.floor(fy - rb * 1.7)), Math.min(w, Math.ceil(cx + rb * 1.7)), Math.min(h, Math.ceil(fy + rb * 1.7)), sc, (x, y, px) => {
+        const dx = x + 0.5 - cx, dy = y + 0.5 - fy, dist = Math.hypot(dx, dy);
+        const wx = (W(dx * k * 0.7 + 3, dy * k * 0.7 - t * 0.8) - 0.5) * rb * 0.6;
+        const wy = (W(dx * k * 0.7 - 9, dy * k * 0.7 + 4) - 0.5) * rb * 0.4;
+        // rolling lumps of flame (n), churning smaller ones on them (b), the
+        // edge licking out in tongues
+        const n = N((dx + wx) * k * 1.2 + 11, (dy + wy) * k * 1.2 - t * 1.6);
+        const b = F((dx + wx) * k * 2.8 - 7, (dy + wy) * k * 2.8 - t * 2.6);
+        const d = 1 - dist / rb + (n - 0.5) * 0.85 + (b - 0.5) * 0.3;
+        if (d <= -0.12) return false;
+        const body = smooth(-0.04, 0.25, d), tongue = smooth(-0.12, 0.02, d) * (1 - body) * smooth(0.55, 0.8, b) * 0.8;
+        const heat = clamp01((d * 1.2 + (b - 0.5) * 0.55) * cool + flash * body);
+        const a = body * smooth(0.04, 0.35, heat) + tongue * cool;
+        if (a <= 0.004) return false;
+        const col = at(pal.flame, heat);
+        px[0] = col[0]; px[1] = col[1]; px[2] = col[2]; px[3] = a;
+      });
+    }
+    g.globalCompositeOperation = "lighter";
+    const fl = 1 - smooth(0, 0.18, t);
+    blob(g, cx, cy, R * 0.7, [[0, pal.core, fl], [0.35, pal.rim, 0.6 * fl], [1, pal.rim, 0]]);
+    const sr = R * (0.3 + 0.95 * easeOut(t / 0.45, 2)), sa = 1 - smooth(0, 0.5, t);
+    ring(g, cx, cy, sr, R * 0.12 * (1 - t) + 1, 1, pal.rim, 0.25 * sa);
+    ring(g, cx, cy, sr, R * 0.03 + 0.6, 1, pal.core, 0.5 * sa);
+    sparks(g, c, cx, cy, Math.round(22 * c.amount), R * 1.1, 0.02, 7, 0.45);
+  },
+
+  // 爆炸 in a dark preset (黑炎), not a kind of its own: a churning ink cloud of
+  // noisy puffs, painted rather than added as light
+  explosionInk(g, c) {
     const { t, R, cx, cy, pal } = c;
     const P = rng(c.seed * 19 + 2);
     const K = Math.round(10 + 6 * c.amount);
@@ -439,6 +512,10 @@ const EFFECTS = {
     g.restore();
     // the rings hold their brightness, then fade out by the last frame
     const r1 = R * easeOut(t, 2.6), r2 = R * 0.8 * easeOut((t - 0.12) / 0.88, 2.6), left = 1 - easeIn(t, 2);
+    // the wave itself: a broad soft band of light pushed out ahead of the
+    // middle, brightest just behind the front
+    ring(g, cx, cy, r1 * 0.8, r1 * 0.32 + 1, k, pal.rim, 0.22 * left, kx);
+    ring(g, cx, cy, r1 * 0.93, r1 * 0.12 + 1, k, pal.cols[pal.cols.length - 1], 0.25 * left, kx);
     ring(g, cx, cy, r1, R * 0.11 * (1 - t) + 0.8, k, pal.core, 0.95 * (1 - easeIn(t, 2.2)), kx);
     ring(g, cx, cy, r1, R * 0.2 * (1 - t) + 1, k, pal.rim, 0.5 * left, kx);
     if (t > 0.12) ring(g, cx, cy, r2, R * 0.05 * (1 - t) + 0.6, k, pal.rim, 0.7 * left, kx);
@@ -451,11 +528,13 @@ const EFFECTS = {
     }
     if (k < 0.98) {
       g.globalCompositeOperation = "source-over";
+      // bits kicked up by the front, arcing up and back down with trails
+      g.globalCompositeOperation = "lighter";
       for (let i = 0; i < Math.round(14 * c.amount); i++) {
-        const th = P() * TAU, up = R * (0.05 + 0.2 * P()) * Math.sin(Math.PI * clamp01(t * 1.3)), a = 1 - smooth(0.5, 1, t);
+        const th = P() * TAU, hgt = R * (0.05 + 0.2 * P()), sz = R * 0.02 * (0.6 + P()), a = 1 - smooth(0.5, 1, t);
         if (a <= 0) continue;
-        g.fillStyle = rgba(pal.splat, 0.85 * a);
-        g.beginPath(); g.arc(cx + Math.cos(th) * r1 * 0.95, cy + Math.sin(th) * r1 * 0.95 * k - up, Math.max(0.7, R * 0.02 * (0.6 + P())), 0, TAU); g.fill();
+        const at = (q) => { const rr = R * easeOut(q / 1.3, 2.6) * 0.95; return [cx + Math.cos(th) * rr * kx, cy + Math.sin(th) * rr * k - hgt * Math.sin(Math.PI * q)]; };
+        comet(g, { rim: pal.splat, core: pal.core }, at, clamp01(t * 1.3), 0.2, Math.max(0.7, sz), 0.85 * a);
       }
     }
   },
@@ -486,8 +565,10 @@ const EFFECTS = {
     for (let k = 0; k < Math.round(8 * c.amount); k++) {
       const side = P() < 0.5 ? -1 : 1, sp = 0.6 + 0.5 * P(), lt = clamp01(t / (0.45 + 0.3 * P()));
       if (lt >= 1) continue;
-      const x = cx + side * R * 1.05 * sp * lt, y = gy - R * 0.45 * sp * Math.sin(Math.PI * lt) * (0.4 + c.squash);
-      const sz = Math.max(1, Math.round(R * 0.035));
+      const at = (q) => [cx + side * R * 1.05 * sp * q, gy - R * 0.45 * sp * Math.sin(Math.PI * q) * (0.4 + c.squash)];
+      const [x, y] = at(lt), sz = Math.max(1, Math.round(R * 0.035));
+      // a faint dusty streak behind each pebble's arc, then the pebble
+      if (!c.pixel) comet(g, { rim: cols[1], core: cols[cols.length - 1] }, at, lt, 0.18, sz * 0.8, 0.45 * (1 - lt));
       g.fillStyle = rgba(cols[1], 1 - lt * 0.4);
       g.fillRect(Math.round(x), Math.round(y), sz, sz);
     }
@@ -632,15 +713,18 @@ const EFFECTS = {
         trail(g, pal, pts, lw * 1.3, lit, true);
       }
     }
-    // motes rising off it (whole cycles per loop, so the loop closes)
+    // motes rising off it, swaying, trailing light (whole cycles per loop,
+    // so the loop closes)
     const M = Math.round(14 * c.amount);
     for (let i = 0; i < M; i++) {
       const th = P() * TAU, rr = Math.sqrt(P()) * R * 0.9, ph = P(), sp = 1 + Math.floor(P() * 2);
       const p = frac(ph + t * sp), a = Math.sin(Math.PI * p) * env * reveal;
-      const x = ox + Math.cos(th) * rr * kx, y = oy + Math.sin(th) * rr * k - R * 0.9 * p;
-      if (c.pixel) blob(g, x, y, Math.max(1.2, R * 0.035), [[0, pal.core, a], [0.5, pal.rim, 0.5 * a], [1, pal.rim, 0]]);
-      else ember(g, pal, x, y, 0, -1, Math.max(0.6, R * 0.012), a);
+      const at = (q) => [ox + Math.cos(th) * rr * kx + R * 0.06 * Math.sin(TAU * q * 1.5 + th), oy + Math.sin(th) * rr * k - R * 0.9 * q];
+      comet(g, pal, at, p, 0.22, Math.max(0.6, R * 0.014) * (c.pixel ? 1.8 : 1), a);
     }
+    // the element of the palette (or the one asked for) round the rim
+    const el = c.edge === "auto" ? pal.element : c.edge;
+    if (el && el !== "none") circleEdge(g, c, el, (th, r) => to(Math.cos(th) * r, Math.sin(th) * r), env * reveal);
   },
 
   // 治疗光圈: a ring of light on the ground, a soft column rising from it, and
@@ -701,19 +785,19 @@ const EFFECTS = {
       const p = frac(t * (c.loop ? 1 : 1.2) + j / turns), rr = R * (0.95 - 0.3 * p), yy = gy - H * 0.5 * easeIn(p, 1.3);
       swirl(g, pal, cx, yy, rr, rr * k, TAU * (p * 1.5 + j * 0.37), 0.9 * Math.sin(Math.PI * p), Math.max(0.8, R * 0.025));
     }
-    // floating plus signs and twinkling motes
+    // floating plus signs, and motes rising in a sway with trails of light
     const P = rng(c.seed * 43 + 10), N = Math.round(14 * c.amount);
     for (let i = 0; i < N; i++) {
       const x = cx + (P() * 2 - 1) * R * 0.85, y0 = gy + (P() * 2 - 1) * R * k * 0.6, ph = P(), sp = 1 + Math.floor(P() * 2), plus = P() < 0.45;
-      const p = frac(ph + t * sp), a = Math.sin(Math.PI * p);
-      const y = y0 - R * 1.5 * p, s = R * (plus ? 0.07 : 0.035) * (0.7 + 0.3 * a);
+      const p = frac(ph + t * sp), a = Math.sin(Math.PI * p), sw = ph * TAU;
+      const at = (q) => [x + R * 0.07 * Math.sin(TAU * q * 1.2 + sw), y0 - R * 1.5 * q];
+      const [px, py] = at(p), s = R * (plus ? 0.07 : 0.035) * (0.7 + 0.3 * a);
       if (plus) {
         const th = Math.max(1, s * 0.38);
-        blob(g, x, y, s * 2.4, [[0, pal.rim, 0.5 * a], [1, pal.rim, 0]]);
+        blob(g, px, py, s * 2.4, [[0, pal.rim, 0.5 * a], [1, pal.rim, 0]]);
         g.fillStyle = rgba(pal.core, a);
-        g.fillRect(x - s, y - th / 2, s * 2, th); g.fillRect(x - th / 2, y - s, th, s * 2);
-      } else if (c.pixel) blob(g, x, y, Math.max(1.2, s * 1.6), [[0, pal.core, a], [0.5, pal.rim, 0.5 * a], [1, pal.rim, 0]]);
-      else star(g, [x, y], Math.max(2, s * 2.2), pal.rim, a, 0);
+        g.fillRect(px - s, py - th / 2, s * 2, th); g.fillRect(px - th / 2, py - s, th, s * 2);
+      } else comet(g, pal, at, p, 0.25, Math.max(0.7, s * 0.55) * (c.pixel ? 1.8 : 1), a);
     }
     g.globalAlpha = 1;
   },
@@ -758,11 +842,11 @@ const EFFECTS = {
       const x = cx + ux * rx * 0.8 * Math.sqrt(1 - p * 0.5), yb = cy + ry * (0.9 - 2.3 * p);
       beam(g, pal, x, yb + len, yb, Math.max(0.8, rx * 0.018), Math.sin(Math.PI * p) * 0.9);
     }
-    // sparks drifting up off the top
+    // sparks shooting up off the top, flaring outward, with trails
     for (let k = 0; k < Math.round(10 * c.amount); k++) {
       const ux = P() * 2 - 1, ph = P(), sp = 1 + Math.floor(P() * 2), big = P();
-      const p = frac(ph + t * sp), x = cx + ux * rx * 0.9, y = cy - ry * (0.3 + 1.2 * p);
-      ember(g, pal, x, y, ux * 0.3, -1, Math.max(0.7, rx * (0.012 + 0.02 * big)), Math.sin(Math.PI * p));
+      const p = frac(ph + t * sp), at = (q) => [cx + ux * rx * (0.9 + 0.35 * q * q), cy - ry * (0.3 + 1.2 * q)];
+      comet(g, pal, at, p, 0.2, Math.max(0.7, rx * (0.012 + 0.016 * big)) * (c.pixel ? 1.6 : 1), Math.sin(Math.PI * p));
     }
     // lightning crawling over it, new every frame (超级赛亚人 2)
     if (c.bolts) {
@@ -838,13 +922,23 @@ const EFFECTS = {
     }
     // glittering dust along the ribbons, twinkling (whole cycles per loop)
     const N = Math.round(36 * c.amount);
+    const edges = (x) => smooth(0, 0.15, (x - (cx - rx)) / (2 * rx)) * smooth(0, 0.15, (cx + rx - x) / (2 * rx));
     for (let i = 0; i < N; i++) {
       const [mid, wide] = bands[Math.floor(P() * bands.length)];
       const x = xa + (xb - xa) * P(), y = mid(x) + wide(x) * (P() * 2 - 1) * 1.5 + (P() - 0.5) * ry * 0.25;
       const ph = P(), sp = 1 + Math.floor(P() * 3), big = P();
-      const a = Math.pow(Math.sin(Math.PI * frac(ph + t * sp)), 2) * env * smooth(0, 0.15, (x - (cx - rx)) / (2 * rx)) * smooth(0, 0.15, (cx + rx - x) / (2 * rx));
+      const a = Math.pow(Math.sin(Math.PI * frac(ph + t * sp)), 2) * env * edges(x);
       if (big > 0.9 && !c.pixel) star(g, [x, y], Math.max(2, c.R * 0.05), pal.rim, a, 0);
       else blob(g, x, y, Math.max(1, c.R * (0.01 + 0.015 * big)), [[0, pal.core, a], [0.5, pal.rim, 0.5 * a], [1, pal.rim, 0]]);
+    }
+    // sparks riding the ribbons from one end to the other, trailing light
+    // along the curve (whole cycles per loop)
+    for (let i = 0; i < Math.round(8 * c.amount); i++) {
+      const [mid, wide] = bands[Math.floor(P() * bands.length)], v = P() * 2 - 1, ph = P(), sp = 1 + Math.floor(P() * 2);
+      const at = (q) => { const x = cx - rx + 2 * rx * q; return [x, mid(x) + wide(x) * v]; };
+      const p = frac(ph + t * sp), [hx] = at(p);
+      if (hx > xb) continue;
+      comet(g, pal, at, p, 0.12, Math.max(0.7, c.R * 0.016) * (c.pixel ? 1.6 : 1), env * edges(hx));
     }
   },
 
@@ -940,11 +1034,12 @@ const EFFECTS = {
       trail(g, pal, bone.slice(from), lw * 2.4, a * (1 - 0.6 * gone), false);
       // sparks hanging about the wing and drifting off its edge
       for (let m = 0; m < Math.round(26 * c.amount * (1 + 2 * gone)); m++) {
-        const [tip, s] = tips[Math.floor(P() * tips.length)], back = P();
+        const [tip, s] = tips[Math.floor(P() * tips.length)], back = P(), out = 0.4 + P(), drop = P(), r = P();
         const ph = P(), sp = 1 + Math.floor(P() * 2), p = frac(ph + t * sp), tw = Math.sin(Math.PI * p);
-        const x = tip[0] + dir * R * 0.2 * (p * (0.4 + P()) - back * 0.6), y = tip[1] + R * (0.25 * p * (1.3 - s) - 0.15 * back * P());
-        if (P() < 0.25 && !c.pixel) star(g, [x, y], Math.max(1.5, R * 0.03), pal.rim, a * tw, 0);
-        else blob(g, x, y, Math.max(0.8, R * (0.008 + 0.012 * P())) * 2, [[0, pal.core, a * tw], [0.4, pal.rim, 0.5 * a * tw], [1, pal.rim, 0]]);
+        // shed from the feather tips: out and down, the fall speeding up
+        const at = (q) => [tip[0] + dir * R * 0.2 * (q * out - back * 0.6), tip[1] + R * (0.3 * q * q * (1.3 - s) - 0.15 * back * drop)];
+        if (r < 0.25 && !c.pixel) { const [x, y] = at(p); star(g, [x, y], Math.max(1.5, R * 0.03), pal.rim, a * tw, 0); }
+        else comet(g, pal, at, p, 0.3, Math.max(0.6, R * (0.006 + 0.008 * r)) * (c.pixel ? 1.8 : 1), a * tw);
       }
       return at2(0, 0);
     };
@@ -999,11 +1094,146 @@ const EFFECTS = {
     g.globalCompositeOperation = "lighter";
     for (let k = 0; k < Math.round(18 * c.amount); k++) {
       const ux = (P() * 2 - 1) * 0.9, ph = P(), sp = 1 + Math.floor(P() * 2), sw = P() * TAU, big = P();
-      const p = frac(ph + t * sp), x = cx + ux * rx * (1 + 0.4 * p) + Math.sin(sw + p * TAU) * rx * 0.12, y = by - ry * (0.3 + 2 * p);
-      ember(g, pal, x, y, Math.cos(sw + p * TAU) * 0.6, -1, Math.max(0.8, rx * (0.015 + 0.025 * big)), Math.sin(Math.PI * p) * (1 - p * 0.4));
+      const p = frac(ph + t * sp), at = (q) => [cx + ux * rx * (1 + 0.4 * q) + Math.sin(sw + q * TAU) * rx * 0.12, by - ry * (0.3 + 2 * q)];
+      comet(g, pal, at, p, 0.14, Math.max(0.8, rx * (0.012 + 0.018 * big)) * (c.pixel ? 1.6 : 1), Math.sin(Math.PI * p) * (1 - p * 0.4));
     }
   },
 };
+
+// a tongue of flame standing at (x, y): a curved point up to height h leaning
+// by sway, hot at the root and fading toward the tip, a brighter core inside
+function tongue(g, pal, x, y, wb, h, sway, a) {
+  if (a <= 0.01 || h <= 1) return;
+  for (const [k, kh, col0, col1, ka] of [[1, 1, pal.rim, pal.cols[1] || pal.rim, 0.75], [0.45, 0.6, pal.core, pal.rim, 1]]) {
+    const w = wb * k, H = h * kh, tx = x + sway * kh, ty = y - H;
+    const gr = g.createLinearGradient(x, y, tx, ty);
+    gr.addColorStop(0, rgba(col0, a * ka));
+    gr.addColorStop(0.55, rgba(col1, a * ka * 0.6));
+    gr.addColorStop(1, rgba(col1, 0));
+    g.fillStyle = gr;
+    g.beginPath(); g.moveTo(x - w, y);
+    g.quadraticCurveTo(x - w * 0.5 + sway * 0.25, y - H * 0.6, tx, ty);
+    g.quadraticCurveTo(x + w * 0.6 + sway * 0.5, y - H * 0.45, x + w, y);
+    g.closePath(); g.fill();
+  }
+}
+
+// 魔法阵 edges: the circle's element playing round its rim. place(th, r) is a
+// point on the circle's own plane (angle th, radius r) on the screen — it
+// follows the ground's perspective and the side view — and "up" is up the
+// screen. Everything moves in whole cycles per loop, so a loop closes; the
+// lightning is new every frame. a: strength (the circle's own fade).
+function circleEdge(g, c, el, place, a) {
+  if (a <= 0.01) return;
+  const { t, R, pal } = c, amt = Math.max(0.2, c.amount), P = rng(c.seed * 131 + 17);
+  const px = c.pixel ? 1.7 : 1, cyc = (ph, sp) => frac(ph + t * sp);
+  g.globalCompositeOperation = "lighter";
+  if (el === "fire") {
+    // tongues of flame standing round the rim, each flickering and swaying
+    const n = Math.round(24 * amt);
+    for (let i = 0; i < n; i++) {
+      const th = (i + P() * 0.6) / n * TAU, j = P(), ph = P(), sp = 1 + Math.floor(P() * 3), ph2 = P();
+      const [bx, by] = place(th, R * 0.97), fl = 0.7 + 0.3 * Math.sin(TAU * (t * sp + ph));
+      const sway = R * 0.05 * Math.sin(TAU * (t * (1 + sp % 2) + ph2));
+      tongue(g, pal, bx, by, R * (0.055 + 0.05 * j), R * (0.22 + 0.3 * j) * fl, sway, a * (0.6 + 0.4 * fl));
+    }
+    // embers drifting up off it
+    for (let i = 0; i < Math.round(14 * amt); i++) {
+      const th = P() * TAU, ph = P(), sp = 1 + Math.floor(P() * 2), sw = P() * TAU;
+      const [bx, by] = place(th, R * 0.97), p = cyc(ph, sp);
+      const at = (q) => [bx + R * 0.08 * Math.sin(sw + q * TAU), by - R * (0.1 + 0.7 * q)];
+      comet(g, pal, at, p, 0.15, Math.max(0.6, R * 0.012) * px, a * Math.sin(Math.PI * p));
+    }
+  } else if (el === "earth") {
+    // a ring of rocks lifted off the ground, bobbing and slowly turning, each
+    // over its shadow; grit hopping up off the rim and falling back
+    g.globalCompositeOperation = "source-over";
+    const cols = pal.cols.length >= 4 ? pal.cols : [...pal.cols, pal.rim, pal.core].slice(0, 4);
+    const rocks = [];
+    for (let i = 0, n = Math.round(13 * amt); i < n; i++) {
+      const th = (i + P() * 0.5) / n * TAU, j = P(), ph = P(), spin = P() * TAU, dir = P() < 0.5 ? -1 : 1, sd = Math.floor(P() * 1e6);
+      const [bx, by] = place(th, R * (0.98 + 0.08 * P()));
+      const lift = R * (0.14 + 0.22 * j + 0.06 * Math.sin(TAU * (t + ph))) * a;
+      rocks.push([by, () => {
+        blob(g, bx, by, R * 0.06 * (0.6 + j), [[0, [0, 0, 0], 0.35 * a], [1, [0, 0, 0], 0]]);
+        rockShape(g, [bx, by - lift], Math.max(2, R * (0.05 + 0.065 * j)), spin + dir * TAU * t, rng(sd), cols, a);
+      }]);
+    }
+    rocks.sort((p, q) => p[0] - q[0]).forEach(([, draw]) => draw());   // the far ones first
+    for (let i = 0; i < Math.round(16 * amt); i++) {
+      const th = P() * TAU, ph = P(), sp = 1 + Math.floor(P() * 2), hgt = R * (0.08 + 0.15 * P()), out = (P() - 0.3) * R * 0.15, sz = Math.max(1, R * 0.012 * (1 + P()));
+      const p = cyc(ph, sp), [bx, by] = place(th, R * 0.98);
+      g.fillStyle = rgba(cols[1], a * Math.sin(Math.PI * p));
+      g.fillRect(bx + out * p - sz / 2, by - hgt * Math.sin(Math.PI * p) - sz / 2, sz, sz);
+    }
+  } else if (el === "wind") {
+    // bands of wind spiralling up round the circle, drawing in as they rise
+    for (let i = 0, n = Math.max(3, Math.round(5 * amt)); i < n; i++) {
+      const q = cyc(i / n + P() * 0.1, 1), spin = TAU * (t * 2 + P()), span = 1.6 + P() * 1.2, w = Math.max(0.8, R * 0.02) * px;
+      const pts = [];
+      for (let s = 0; s <= 24; s++) {
+        const [x, y] = place(spin + span * s / 24, R * (1.05 - 0.3 * q));
+        pts.push([x, y - R * (0.05 + 0.7 * q)]);
+      }
+      trail(g, pal, pts, w * 3, a * 0.25 * Math.sin(Math.PI * q), false);
+      trail(g, pal, pts, w, a * Math.sin(Math.PI * q), false);
+    }
+    // gusts: quick streaks skimming round the rim
+    for (let i = 0; i < Math.round(10 * amt); i++) {
+      const th0 = P() * TAU, ph = P(), sp = 2 + Math.floor(P() * 2), r = R * (1 + 0.15 * P()), up = R * 0.3 * P();
+      const p = cyc(ph, sp), at = (q) => { const [x, y] = place(th0 + q * 1.4, r); return [x, y - up]; };
+      comet(g, pal, at, p, 0.35, Math.max(0.5, R * 0.01) * px, a * 0.8 * Math.sin(Math.PI * p));
+    }
+  } else if (el === "water") {
+    // a wave running round the rim — crests travelling round, a bright line
+    // along the top — ripples spreading on the ground, drops leaping off it
+    const M = 72, base = [], crest = [];
+    for (let i = 0; i <= M; i++) {
+      const th = i / M * TAU, hgt = R * 0.06 * (1.2 + Math.sin(th * 5 - TAU * t * 2) + 0.4 * Math.sin(th * 9 + TAU * t * 3));
+      const [x, y] = place(th, R * 0.99);
+      base.push([x, y]); crest.push([x, y - Math.max(0, hgt) * a]);
+    }
+    const water = mixRgb(pal.rim, pal.cols[1] || pal.rim, 0.4);
+    // the band between the ground and the crest: the crest round one way, the
+    // ground back the other, so only what lies between them fills
+    g.fillStyle = rgba(water, 0.3 * a);
+    g.beginPath();
+    crest.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+    for (let i = M; i >= 0; i--) g.lineTo(base[i][0], base[i][1]);
+    g.closePath(); g.fill();
+    g.strokeStyle = rgba(pal.core, 0.8 * a); g.lineWidth = Math.max(0.8, R * 0.012) * px; g.lineJoin = "round";
+    g.beginPath(); crest.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.stroke();
+    for (let i = 0; i < 2; i++) {
+      const q = cyc(i / 2, 1);
+      g.strokeStyle = rgba(pal.rim, 0.5 * a * (1 - q)); g.lineWidth = Math.max(0.7, R * 0.012) * px;
+      g.beginPath();
+      for (let s = 0; s <= M; s++) { const [x, y] = place(s / M * TAU, R * (1.02 + 0.32 * q)); if (s) g.lineTo(x, y); else g.moveTo(x, y); }
+      g.stroke();
+    }
+    for (let i = 0; i < Math.round(14 * amt); i++) {
+      const th = P() * TAU, ph = P(), sp = 1 + Math.floor(P() * 2), hgt = R * (0.12 + 0.2 * P()), out = 0.1 + 0.2 * P();
+      const p = cyc(ph, sp), at = (q) => { const [x, y] = place(th, R * (0.99 + out * q)); return [x, y - hgt * Math.sin(Math.PI * q)]; };
+      comet(g, pal, at, p, 0.25, Math.max(0.6, R * 0.013) * px, a * Math.sin(Math.PI * p));
+    }
+  } else if (el === "bolt") {
+    // arcs jumping along the rim and a bolt or two leaping up off it, new
+    // every frame (the frame number within the sequence, so a loop closes)
+    const B = rng(c.seed * 151 + (c.i % c.n) * 7919);
+    for (let k = 0; k < Math.round(4 * amt); k++) {
+      const th = B() * TAU, span = 0.35 + 0.6 * B(), pts = [];
+      for (let s = 0; s <= 6; s++) {
+        const [x, y] = place(th + span * s / 6, R * (0.97 + 0.06 * (B() - 0.5)));
+        pts.push([x, y - R * 0.12 * Math.sin(Math.PI * s / 6)]);
+      }
+      bolt(g, pal, jag(pts, B, R * 0.035), Math.max(0.7, R * 0.012) * px, a);
+    }
+    for (let k = 0; k < Math.round(2 * amt); k++) {
+      if (B() < 0.4) continue;
+      const [x, y] = place(B() * TAU, R * 0.97), hgt = R * (0.3 + 0.4 * B());
+      bolt(g, pal, jag([[x, y], [x + (B() - 0.5) * R * 0.2, y - hgt]], B, R * 0.05), Math.max(0.6, R * 0.009) * px, a * 0.85);
+    }
+  }
+}
 
 // smooth noise that drifts upwards over the sequence: (x, y) in canvas pixels →
 // 0..1. k: noise cells per pixel across, ky: how much taller the cells are
@@ -1025,7 +1255,7 @@ function loopNoise(c, salt, k, ky, L) {
 const strand = (n, p) => Math.pow(1 - Math.abs(2 * n - 1), p);
 
 // how much bloom each kind gets on top of what it draws itself
-const BLOOM = { hit: 1, shock: 0.8, charge: 1, heal: 0.7, circle: 0, explosion: 0, dust: 0, aura: 0.9, burn: 0.9, ribbon: 1, wings: 1 };
+const BLOOM = { hit: 1, shock: 0.8, charge: 1, heal: 0.7, circle: 0, explosion: 0.7, dust: 0, aura: 0.9, burn: 0.9, ribbon: 1, wings: 1 };
 
 // one frame: a w×h canvas
 export function renderVfx(p, i) {
@@ -1047,7 +1277,7 @@ export function renderVfx(p, i) {
     // the ground line: low enough for what rises off it to fit
     gy: s.kind === "dust" ? h * 0.85 : ground ? h / 2 + R * squash * 0.5 : h / 2,
     squash: s.kind === "shock" && s.tilt <= 2 ? 1 : squash,
-    amount: Math.max(0, s.amount / 100), glow: Math.max(0, s.glow / 100), loop: !!s.loop, pattern: s.pattern,
+    amount: Math.max(0, s.amount / 100), glow: Math.max(0, s.glow / 100), loop: !!s.loop, pattern: s.pattern, edge: s.edge || "auto",
     pixel: s.style === "pixel", bolts: !!s.bolts, view: hasSide(s.kind) ? s.view : "front",
   };
   // what stands on the ground sits low, its ring just inside the bottom edge

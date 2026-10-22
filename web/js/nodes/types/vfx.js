@@ -5,7 +5,7 @@ import { defineNode } from "../registry.js";
 import { makeStage, makePlayer } from "../view.js";
 import { framesValue } from "../data.js";
 import { el } from "../../core/util.js";
-import { VFX_KINDS, VFX_DEFAULTS, VFX_PALETTES, renderVfxFrames, hasSide } from "../../vfx/effects.js";
+import { VFX_KINDS, VFX_DEFAULTS, VFX_PALETTES, VFX_EDGES as EDGES, renderVfxFrames, hasSide } from "../../vfx/effects.js";
 
 const GROUND = new Set(["shock", "dust", "circle", "heal"]);
 
@@ -82,6 +82,7 @@ defineNode({
     f.slider("旋转", "rotate", { min: -180, max: 180, unit: "°" });
     const ground = f.slider("地面倾斜", "tilt", { min: 0, max: 80, unit: "°" });
     const pattern = f.select("法阵图案", "pattern", [["hex", "六芒星"], ["penta", "五芒星"], ["square", "双方形（八角）"]], { wide: true });
+    const edge = f.select("边缘特效", "edge", EDGES, { wide: true });
     const bolts = f.check("带闪电（超级赛亚人 2 那样在斗气上窜动）", "bolts");
     f.custom(el("span"), () => {
       const k = p().kind;
@@ -89,6 +90,7 @@ defineNode({
       px.style.display = p().style === "pixel" ? "" : "none";
       ground.style.display = GROUND.has(k) ? "" : "none";
       pattern.style.display = k === "circle" ? "" : "none";
+      edge.style.display = k === "circle" ? "" : "none";
       view.style.display = hasSide(k) ? "" : "none";
     });
     f.buttons(["换一个随机样子", () => ctx.set({ seed: (p().seed % 9973) + 1 + Math.floor(Math.random() * 500) })]);
