@@ -9,42 +9,65 @@
 //             each starting somewhere in the tail and growing toward the head,
 //             added up (additive light)
 //   core    — a sharp, white-hot crescent along the outer side with a coloured rim
-//   bloom   — a blurred copy of strands + core added on top
-//   erosion — noise eats the thin parts first, more as the trail dissolves
-//   fx      — twinkling four-point stars, a starburst flash where the swing
-//             starts, and ink-like splatter flying off the blade
+//   flow    — the body as moving fire / water / energy: noise warped and
+//             flowing along the swing, hugging the rim, the inner edge broken
+//             into tongues
+//   shadow  — (toon) a darker copy of the core, offset inward
+//   bolts   — lightning: jagged forking lines along the blade, new every frame
+//   flames  — tongues of fire licking off the blade, flickering every frame
+//   rays    — (holy light) thin beams shining outward from the leading edge
+//   embers  — (fx) glowing sparks rising and swaying off the swing
+// Dark palettes (黑炎) are painted rather than added as light: black fire has to
+// cover what is behind it, and only its glowing edge adds light.
+//   bloom   — a blurred copy of strands + core (+ flow) added on top
+//   erosion — noise eats the trail as it dissolves, inner side first: the
+//             leading edge is the last thing to go
+//   fx      — twinkling four-point stars, fine dust, glassy shards, a starburst
+//             flash where the swing starts, an impact burst where it ends, and
+//             ink-like splatter flying off the blade
 // Colours run across the width (inner -> outer); `core` / `rim` / `splat` are the
 // colours of the hot crescent, its edge and the splatter.
 import { createCanvas, hexToRgb } from "../core/util.js";
+import { uvMap } from "./uv.js";
 
 export const GLOW_PRESETS = [
   { id: "dream", name: "梦幻", colors: ["#2f5bff", "#2fd8ff", "#e8fbff", "#ff6ad5"], core: "#ffffff", rim: "#7fe9ff", splat: "#9fd8ff",
-    look: { strands: 70, core: 25, haze: 35, glow: 75, sparkles: 16, sparkleSize: 7, flash: 0, splatter: 0, erode: 25 } },
+    look: { strands: 70, core: 25, haze: 35, glow: 75, sparkles: 16, sparkleSize: 7, flash: 0, splatter: 0, erode: 25, dust: 45, flow: 15 } },
   { id: "blaze", name: "烈焰斩", colors: ["#ff5a4a", "#ff7a2a", "#ffad3b", "#ffd27a"], core: "#fffaf0", rim: "#ff9a1a", splat: "#e08a2e",
-    look: { strands: 14, core: 90, haze: 65, glow: 50, sparkles: 0, sparkleSize: 6, flash: 80, splatter: 70, erode: 35 } },
+    look: { strands: 14, core: 90, haze: 60, glow: 50, sparkles: 0, sparkleSize: 6, flash: 80, splatter: 50, erode: 35, flow: 60, impact: 60, flames: 55, embers: 45 } },
   { id: "frost", name: "冰晶", colors: ["#1b4dff", "#38c7ff", "#c4f4ff", "#ffffff"], core: "#ffffff", rim: "#5fd6ff", splat: "#a6e8ff",
-    look: { strands: 45, core: 60, haze: 40, glow: 65, sparkles: 12, sparkleSize: 6, flash: 40, splatter: 0, erode: 35 } },
-  { id: "spark", name: "雷光", colors: ["#5b3bff", "#6fb0ff", "#ffffff", "#b6a4ff"], core: "#ffffff", rim: "#8fb8ff", splat: "#c8d6ff",
-    look: { strands: 30, core: 70, haze: 25, glow: 80, sparkles: 20, sparkleSize: 5, flash: 100, splatter: 0, erode: 35 } },
+    look: { strands: 40, core: 60, haze: 40, glow: 65, sparkles: 10, sparkleSize: 6, flash: 40, splatter: 0, erode: 35, flow: 25, shards: 50, dust: 40 } },
+  { id: "spark", name: "雷光", colors: ["#3a0a8a", "#7a2aff", "#c08aff", "#f2e4ff"], core: "#ffffff", rim: "#b47aff", splat: "#d8b8ff",
+    look: { strands: 22, core: 70, haze: 25, glow: 80, sparkles: 14, sparkleSize: 5, flash: 100, splatter: 0, erode: 35, flow: 20, impact: 55, dust: 20, bolts: 85 } },
   { id: "radiant", name: "圣光", colors: ["#ff9f2e", "#ffdc7a", "#fff8de", "#ffffff"], core: "#ffffff", rim: "#ffd25c", splat: "#ffe08a",
-    look: { strands: 40, core: 60, haze: 45, glow: 70, sparkles: 14, sparkleSize: 8, flash: 60, splatter: 0, erode: 35 } },
+    look: { strands: 34, core: 60, haze: 45, glow: 70, sparkles: 12, sparkleSize: 8, flash: 60, splatter: 0, erode: 35, flow: 10, impact: 35, dust: 45, rays: 70 } },
   { id: "umbra", name: "暗影", colors: ["#3a0b57", "#8a22c2", "#e07bff", "#ffd2ff"], core: "#ffe6ff", rim: "#b04de0", splat: "#6a2a8a",
-    look: { strands: 50, core: 55, haze: 60, glow: 55, sparkles: 6, sparkleSize: 5, flash: 0, splatter: 40, erode: 35 } },
+    look: { strands: 35, core: 55, haze: 55, glow: 55, sparkles: 6, sparkleSize: 5, flash: 0, splatter: 40, erode: 40, flow: 55, dust: 15 } },
   { id: "venom", name: "毒雾", colors: ["#0b7a34", "#35d65a", "#b9ff8c", "#f2ffdc"], core: "#f4ffe8", rim: "#4be06a", splat: "#4caf3c",
-    look: { strands: 35, core: 50, haze: 70, glow: 55, sparkles: 4, sparkleSize: 5, flash: 0, splatter: 80, erode: 35 } },
+    look: { strands: 25, core: 50, haze: 65, glow: 55, sparkles: 4, sparkleSize: 5, flash: 0, splatter: 80, erode: 40, flow: 70, dust: 30 } },
+  { id: "shatter", name: "冰刃碎光", colors: ["#1a2f8a", "#2f6bff", "#6fd4ff", "#e8fbff"], core: "#ffffff", rim: "#9fe8ff", splat: "#bfe8ff",
+    look: { strands: 30, core: 55, haze: 35, glow: 60, sparkles: 6, sparkleSize: 4, flash: 0, splatter: 0, erode: 40, flow: 55, shards: 70, dust: 70 } },
+  { id: "inferno", name: "炎爆", colors: ["#4a0000", "#c40c08", "#ff2e10", "#ff8a2a"], core: "#fff0d8", rim: "#ff4a18", splat: "#b01408",
+    look: { strands: 4, core: 80, haze: 45, glow: 55, sparkles: 0, sparkleSize: 6, flash: 0, splatter: 40, erode: 45, flow: 90, impact: 90, dust: 10, flames: 75, embers: 65 } },
+  { id: "blackfire", name: "黑炎", colors: ["#030005", "#0e0014", "#24062e", "#4a0c52"], core: "#0a0010", rim: "#c03aff", splat: "#3a0a44",
+    look: { strands: 6, core: 85, haze: 60, glow: 60, sparkles: 0, sparkleSize: 5, flash: 0, splatter: 25, erode: 40, flow: 80, impact: 40, flames: 80, embers: 60 } },
+  { id: "crescent", name: "月影", colors: ["#0b1f8a", "#1f5bff", "#6fb8ff", "#e8f4ff"], core: "#ffffff", rim: "#bfe4ff", splat: "#bfe4ff",
+    look: { strands: 8, core: 75, haze: 20, glow: 85, sparkles: 4, sparkleSize: 3, flash: 0, splatter: 0, erode: 20, dust: 20 } },
+  { id: "violet", name: "紫电", colors: ["#3a0040", "#a01ac8", "#ff5ae0", "#ffe0fa"], core: "#ffffff", rim: "#ff7aea", splat: "#f0a0e8",
+    look: { strands: 24, core: 60, haze: 40, glow: 65, sparkles: 8, sparkleSize: 5, flash: 30, splatter: 0, erode: 35, flow: 45, dust: 30, bolts: 60 } },
+  { id: "toon", name: "卡通白", colors: ["#9aa3b5", "#d8dde8", "#ffffff", "#ffffff"], core: "#ffffff", rim: "#ffffff", splat: "#ffffff",
+    look: { strands: 8, core: 100, haze: 0, glow: 0, sparkles: 0, sparkleSize: 4, flash: 0, splatter: 0, erode: 20, shadow: 70 } },
   { id: "crimson", name: "血刃", colors: ["#6b0014", "#d0162a", "#ff6a6f", "#ffe0e0"], core: "#fff0f0", rim: "#e8283c", splat: "#a0101e",
-    look: { strands: 16, core: 85, haze: 55, glow: 45, sparkles: 0, sparkleSize: 6, flash: 50, splatter: 90, erode: 35 } },
+    look: { strands: 16, core: 85, haze: 55, glow: 45, sparkles: 0, sparkleSize: 6, flash: 50, splatter: 90, erode: 35, flow: 30, impact: 60 } },
 ];
 
-// the style fields a glow preset sets (trail.style / the 拖尾笔's options)
+// the style fields a glow preset sets (trail.style / the 拖尾笔's options). Every
+// layer is set, so switching presets never keeps a layer from the last one.
+const LOOK_ZERO = { flow: 0, shards: 0, dust: 0, impact: 0, shadow: 0, bolts: 0, flames: 0, embers: 0, rays: 0 };
 export function glowStyle(p) {
-  return { glowId: p.id, glowColors: p.colors.slice(), glowCore: p.core, glowRim: p.rim, glowSplat: p.splat, ...p.look };
+  return { glowId: p.id, glowColors: p.colors.slice(), glowCore: p.core, glowRim: p.rim, glowSplat: p.splat, ...LOOK_ZERO, ...p.look };
 }
 export const GLOW_DEFAULTS = glowStyle(GLOW_PRESETS[0]);
-
-export function glowSwatch(p) {
-  return "linear-gradient(90deg, " + p.colors.map((c, i) => c + " " + Math.round(i / (p.colors.length - 1) * 100) + "%").join(", ") + ")";
-}
 
 const lerp = (p, q, t) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t];
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
@@ -78,13 +101,15 @@ const widthOf = (q) => Math.hypot(q.b[0] - q.a[0], q.b[1] - q.a[1]);
 //   fx    — false to leave out stars / flash / splatter (the "back" pass)
 //   run, age — every stick of the swing so far and frames since its first stick;
 //             the flash sits at the first stick, splatter flies off later ones
+//   ended, after — the swing has reached its last stick, and how many frames
+//             ago: the impact burst goes off there
 // Returns a fullW×fullH canvas, or null when there is nothing to draw.
 export function renderGlow(runs, style, fullW, fullH, ctx = {}) {
   runs = (runs || []).filter((r) => r.length >= 2);
   const st = { ...GLOW_DEFAULTS, ...style };
   let run = ctx.run || [];
   const doFx = ctx.fx !== false;
-  if (!runs.length && !(doFx && run.length && (st.flash > 0 || st.splatter > 0))) return null;
+  if (!runs.length && !(doFx && run.length && (st.flash > 0 || st.splatter > 0 || st.impact > 0))) return null;
 
   const cols = (st.glowColors && st.glowColors.length >= 2 ? st.glowColors : GLOW_DEFAULTS.glowColors).map(hexToRgb);
   const coreC = hexToRgb(st.glowCore || "#ffffff"), rimC = hexToRgb(st.glowRim || st.glowColors[st.glowColors.length - 1]);
@@ -93,6 +118,9 @@ export function renderGlow(runs, style, fullW, fullH, ctx = {}) {
   const alpha = clamp01(ctx.alpha ?? 1) * clamp01((st.opacity ?? 100) / 100);
   const tail = Math.max(0.05, Math.min(1, ctx.fade ?? 0.6));
   const pct = (k) => clamp01((+st[k] || 0) / 100);
+  // a dark palette (black fire) is painted over, not added as light
+  const lum = (c) => (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]) / 255;
+  const dark = cols.reduce((s, c) => s + lum(c), 0) / cols.length < 0.18;
 
   // size of everything: the widest cross-section (or the longest stick)
   let maxW = 1;
@@ -106,7 +134,8 @@ export function renderGlow(runs, style, fullW, fullH, ctx = {}) {
   const grow = (p) => { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); };
   for (const r of runs) for (const q of r) { grow(q.a); grow(q.b); }
   for (const s of run) { grow(s.a); grow(s.b); }
-  const pad = maxW * (doFx && st.flash > 0 && (ctx.age ?? 0) < 4 ? 2.8 : 1.4) + 4;
+  const big = doFx && ((st.flash > 0 && (ctx.age ?? 0) < 4) || (st.impact > 0 && ctx.ended));
+  const pad = maxW * (big ? 2.8 : st.embers > 0 || st.rays > 0 ? 2.2 : 1.4) + 4;
   x0 = Math.max(0, Math.floor(x0 - pad)); y0 = Math.max(0, Math.floor(y0 - pad));
   x1 = Math.min(fullW, Math.ceil(x1 + pad)); y1 = Math.min(fullH, Math.ceil(y1 + pad));
   if (!(x1 > x0 && y1 > y0)) return null;
@@ -117,6 +146,7 @@ export function renderGlow(runs, style, fullW, fullH, ctx = {}) {
 
   const out = createCanvas(w, h);
   const og = out.getContext("2d");
+  let UV = null, F = null;
   const strokeSeg = (g, p, q, col, a, lw) => {
     if (a <= 0.002) return;
     g.strokeStyle = rgba(col, a);
@@ -140,6 +170,24 @@ export function renderGlow(runs, style, fullW, fullH, ctx = {}) {
         }
       }
       drawBlurred(og, [H], Math.max(1.5, maxW / 6));
+    }
+
+    // where each pixel sits on the ribbon (half size): the flowing body and the
+    // inner-side-first erosion both work in (u, v)
+    UV = pct("flow") > 0 || pct("erode") > 0 ? halfUV(runs, w, h) : null;
+
+    // ---- flow: the textured body
+    if (UV && pct("flow") > 0) {
+      F = flowLayer(UV, cols, coreC, seed, frame, alpha, tail, pct("flow"));
+      og.drawImage(F, 0, 0, UV.mw * UV.k, UV.mh * UV.k);
+    }
+
+    // ---- flames: tongues of fire off the blade
+    const T = pct("flames") > 0 ? flames(runs, w, h, cols, coreC, rimC, seed, frame, alpha, tail, maxW, pct("flames"), dark) : null;
+    if (T) {
+      og.globalCompositeOperation = dark ? "source-over" : "lighter";
+      og.drawImage(T, 0, 0);
+      og.globalCompositeOperation = "source-over";
     }
 
     // ---- strands (additive light): thin pointed filaments, each one polygon so
@@ -183,7 +231,6 @@ export function renderGlow(runs, style, fullW, fullH, ctx = {}) {
       lg.globalCompositeOperation = "lighter";
     }
 
-
     // ---- core: a sharp crescent along the outer side, rim colour around a hot centre
     const core = pct("core");
     const C = createCanvas(w, h), cg = C.getContext("2d");
@@ -208,6 +255,18 @@ export function renderGlow(runs, style, fullW, fullH, ctx = {}) {
         cg.closePath();
         cg.fill();
       };
+      // toon shadow: the same crescent in a dark tone, pushed toward the grip side
+      const shadow = pct("shadow");
+      if (shadow > 0) {
+        let dx = 0, dy = 0;
+        for (const r of runs) for (const q of r) { dx += q.a[0] - q.b[0]; dy += q.a[1] - q.b[1]; }
+        const dl = Math.hypot(dx, dy) || 1, off = maxW * 0.14 * shadow;
+        cg.save();
+        cg.translate(dx / dl * off, dy / dl * off);
+        cg.fillStyle = rgba(cols[0].map((c) => Math.round(c * 0.75)), ca * 0.9);
+        for (const r of runs) poly(r, 1);
+        cg.restore();
+      }
       cg.fillStyle = rgba(rimC, ca);
       for (const r of runs) poly(r, 1);
       // the hot centre, blurred a touch so it melts into the rim
@@ -248,17 +307,24 @@ export function renderGlow(runs, style, fullW, fullH, ctx = {}) {
       lg.beginPath(); lg.arc(c[0], c[1], r, 0, Math.PI * 2); lg.fill();
     }
 
+    // ---- lightning
+    const Bt = pct("bolts") > 0 ? bolts(runs, w, h, coreC, rimC, seed, frame, alpha, maxW, pct("bolts")) : null;
+
     og.globalCompositeOperation = "lighter";
     og.drawImage(L, 0, 0);
     og.globalCompositeOperation = "source-over";
     og.drawImage(C, 0, 0);
+    if (Bt) { og.globalCompositeOperation = "lighter"; og.drawImage(Bt, 0, 0); og.globalCompositeOperation = "source-over"; }
+    // ---- rays of light
+    const Ry = pct("rays") > 0 ? rays(runs, w, h, coreC, rimC, seed, frame, alpha, maxW, pct("rays")) : null;
+    if (Ry) { og.globalCompositeOperation = "lighter"; og.drawImage(Ry, 0, 0); og.globalCompositeOperation = "source-over"; }
     // bloom: blurred copies of the light and the core, added on top
     const bloom = pct("glow");
     if (bloom > 0) {
       og.globalCompositeOperation = "lighter";
       for (const [rad, k] of [[maxW / 9, 0.45], [maxW / 3.5, 0.35]]) {
         og.globalAlpha = bloom * k;
-        drawBlurred(og, [L, C], Math.max(1, rad));
+        drawBlurred(og, [L, C, F, Bt, T, Ry].filter(Boolean), Math.max(1, rad));
       }
       og.globalAlpha = 1;
       og.globalCompositeOperation = "source-over";
@@ -267,20 +333,52 @@ export function renderGlow(runs, style, fullW, fullH, ctx = {}) {
 
   // erosion: as the trail dissolves, noise eats it from the thin parts inward
   // (the usual alpha-erosion of slash VFX) instead of it just turning see-through
-  if (runs.length) erode(og, w, h, x0, y0, seed, pct("erode"), ctx.alpha ?? 1, maxW);
+  if (runs.length) erode(og, w, h, x0, y0, seed, pct("erode"), ctx.alpha ?? 1, maxW, UV);
 
   if (doFx) {
-    if (runs.length) sparkles(og, runs, st, cols, seed, frame, alpha, maxW, at);
+    if (runs.length) {
+      sparkles(og, runs, st, cols, seed, frame, alpha, maxW, at);
+      dust(og, runs, cols, seed, frame, alpha, maxW, at, pct("dust"));
+    }
     if (run.length) {
       flash(og, run, st, coreC, rimC, seed, frame, ctx.age ?? 0, alpha, pct("flash"));
       splatter(og, run, w, h, st, splatC, seed, ctx.age ?? 0, alpha, pct("splatter"));
+      shards(og, run, cols, coreC, seed, ctx.age ?? 0, alpha, pct("shards"));
+      embers(og, run, coreC, rimC, seed, frame, ctx.age ?? 0, clamp01((st.opacity ?? 100) / 100), maxW, pct("embers"), dark);
+      if (ctx.ended) impact(og, run, coreC, rimC, splatC, seed, frame, ctx.after ?? 0, clamp01((st.opacity ?? 100) / 100), pct("impact"));
     }
   }
   // a canvas, not ImageData: everything above stays on the GPU, reading pixels
   // back would cost more than all the drawing
   const full = createCanvas(fullW, fullH);
   full.getContext("2d").drawImage(out, x0, y0);
+  full.bbox = { x0, y0, w, h };              // where anything was drawn (pixelateGlow)
   return full;
+}
+
+// The accents alone — dust, splatter, shards and the impact burst — on a w×h
+// canvas, coloured from `colors` (dark -> bright). The pixel bands draw these and
+// then snap them to solid pixels in the trail's own colours.
+// amounts: { dust, shards, splatter, impact } 0..1; ctx as renderGlow's.
+export function renderFx(runs, run, colors, amounts, w, h, ctx = {}) {
+  runs = (runs || []).filter((r) => r.length >= 2);
+  run = run || [];
+  if (!runs.length && !run.length) return null;
+  const cols = colors.map((c) => (typeof c === "string" ? hexToRgb(c) : c));
+  const coreC = cols[cols.length - 1], rimC = cols[Math.max(0, cols.length - 2)], splatC = cols[Math.floor((cols.length - 1) / 2)];
+  const seed = ctx.seed || 1, frame = ctx.frame || 0, alpha = clamp01(ctx.alpha ?? 1);
+  let maxW = 1;
+  for (const r of runs) for (const q of r) maxW = Math.max(maxW, widthOf(q));
+  for (const s of run) maxW = Math.max(maxW, widthOf(s));
+  const at = (q, v) => lerp(q.a, q.b, v);
+  const c = createCanvas(w, h), g = c.getContext("2d");
+  if (runs.length && amounts.dust > 0) dust(g, runs, cols, seed, frame, alpha, Math.max(maxW, 60), at, amounts.dust);
+  if (run.length) {
+    if (amounts.splatter > 0) splatter(g, run, w, h, {}, splatC, seed, ctx.age ?? 0, alpha, amounts.splatter);
+    if (amounts.shards > 0) shards(g, run, cols, coreC, seed, ctx.age ?? 0, alpha, amounts.shards);
+    if (ctx.ended && amounts.impact > 0) impact(g, run, coreC, rimC, splatC, seed, frame, ctx.after ?? 0, 1, amounts.impact);
+  }
+  return c;
 }
 
 // draw the canvases blurred by rad px. Wide blurs are done on a smaller copy and
@@ -340,7 +438,7 @@ function noiseGrid(seed, w, h, ox, oy, cell) {
   return out;
 }
 
-function erode(og, w, h, ox, oy, seed, amount, life, maxW) {
+function erode(og, w, h, ox, oy, seed, amount, life, maxW, UV) {
   const t = amount * (0.08 + 0.92 * (1 - clamp01(life)));       // a little always, more while dissolving
   if (t <= 0.02) return;
   // the mask is worked out at half size and laid over with destination-in
@@ -348,8 +446,13 @@ function erode(og, w, h, ox, oy, seed, amount, life, maxW) {
   const noise = noiseGrid(seed, mw, mh, ox / k, oy / k, Math.max(2, maxW / 4 / k));
   const img = new ImageData(mw, mh), d = img.data;
   const lo = t - 0.12, span = 0.24;
+  // with the uv map, how far a pixel is from the leading edge counts too: the
+  // grip side wears away first and the bright edge is the last to go. Pixels off
+  // the ribbon (haze, bloom) count as middling.
+  const uv = UV && UV.mw === mw && UV.mh === mh ? UV.d : null;
   for (let p = 0, i = 3; p < mw * mh; p++, i += 4) {
-    let m = (noise[p] - lo) / span;
+    const n = uv ? noise[p] * 0.6 + (uv[i] > 8 ? uv[i - 2] / 255 : 0.5) * 0.4 : noise[p];
+    let m = (n - lo) / span;
     m = m <= 0 ? 0 : m >= 1 ? 1 : m * m * (3 - 2 * m);
     d[i] = Math.round(m * 255);
   }
@@ -515,4 +618,449 @@ function splatter(og, run, w, h, st, col, seed, age, alpha, amount) {
   og.filter = "none";
   og.globalAlpha = 1;
   og.drawImage(S, 0, 0);
+}
+
+// the uv map at half size: { k, mw, mh, d } (d: RGBA, r = u, g = v, a = covered)
+function halfUV(runs, w, h) {
+  const k = 2, mw = Math.ceil(w / k), mh = Math.ceil(h / k);
+  const sc = (q) => ({ a: [q.a[0] / k, q.a[1] / k], b: [q.b[0] / k, q.b[1] / k], u: q.u });
+  const segs = [];
+  for (const r of runs) for (let i = 1; i < r.length; i++) segs.push([sc(r[i - 1]), sc(r[i])]);
+  return { k, mw, mh, d: uvMap(segs, mw, mh, false) };
+}
+
+// smooth fractal value noise, 3 octaves, 0..1
+function fbmNoise(seed) {
+  const hash = (x, y) => {
+    let v = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ seed;
+    v = Math.imul(v ^ (v >>> 13), 1274126177);
+    return ((v ^ (v >>> 16)) >>> 0) / 4294967295;
+  };
+  const one = (x, y) => {
+    const ix = Math.floor(x), iy = Math.floor(y);
+    let tx = x - ix, ty = y - iy;
+    tx = tx * tx * (3 - 2 * tx); ty = ty * ty * (3 - 2 * ty);
+    const a = hash(ix, iy), b = hash(ix + 1, iy), c = hash(ix, iy + 1), d = hash(ix + 1, iy + 1);
+    return a + (b - a) * tx + (c - a) * ty + (a - b - c + d) * tx * ty;
+  };
+  return (x, y) => one(x, y) * 0.55 + one(x * 2.1 + 17.3, y * 2.1 + 3.1) * 0.3 + one(x * 4.3 + 7.7, y * 4.3 + 29.5) * 0.15;
+}
+
+// The flowing body (流体): noise warped by noise, stretched along the swing and
+// moving a little every frame — licks of fire, rushing water, swirling energy.
+// It hugs the leading edge; toward the grip side it breaks into tongues. Hot
+// colours (and the core colour) near the edge, the darker ones inward.
+function flowLayer(UV, cols, coreC, seed, frame, alpha, tail, amount) {
+  const { mw, mh, d } = UV;
+  const img = new ImageData(mw, mh), o = img.data;
+  const fbm = fbmNoise(seed * 13 + 7), t = frame * 0.35;
+  for (let i = 0; i < mw * mh * 4; i += 4) {
+    const cov = d[i + 3];
+    if (cov < 8) continue;
+    const u = d[i] / 255, v = d[i + 1] / 255;
+    const wx = fbm(u * 4 - t * 0.4, v * 3), wy = fbm(u * 4 + 9.1, v * 3 + 4.7 - t * 0.3);
+    const n = fbm(u * 13 + (wx - 0.5) * 3 - t, v * 5 + (wy - 0.5) * 2.4);
+    const body = v * 1.25 + (n - 0.5) * 1.8 * amount;
+    const m = smooth(0.42, 0.58, body) * smooth(0, tail, u);
+    if (m <= 0.01) continue;
+    const lum = smooth(0.25, 0.75, n);                     // dark folds between the licks
+    const heat = clamp01(v * 0.7 + (lum - 0.5) * 0.8 + 0.15);
+    let c = colorAcross(cols, heat);
+    if (heat > 0.85) { const k = (heat - 0.85) / 0.15; c = [0, 1, 2].map((j) => Math.round(c[j] + (coreC[j] - c[j]) * k)); }
+    o[i] = c[0]; o[i + 1] = c[1]; o[i + 2] = c[2];
+    o[i + 3] = Math.round(255 * m * (0.3 + 0.7 * lum) * alpha * (0.5 + 0.5 * amount) * (cov / 255));
+  }
+  const F = createCanvas(mw, mh);
+  F.getContext("2d").putImageData(img, 0, 0);
+  return F;
+}
+
+// fine dust (粒子): lots of tiny specks over the trail and just inside it, fixed
+// to the trail so they ride with it, twinkling frame to frame
+function dust(og, runs, cols, seed, frame, alpha, maxW, at, amount) {
+  const N = Math.round(amount * 140);
+  if (!N) return;
+  const r = runs[runs.length - 1];
+  const R = rng(seed * 91 + 3), T = rng(seed * 17 + frame * 389);
+  const unit = Math.max(0.6, maxW / 90);
+  og.globalCompositeOperation = "lighter";
+  for (let k = 0; k < N; k++) {
+    const u = Math.pow(R(), 0.6), v = 1.05 - Math.pow(R(), 0.8) * 1.35;
+    const size = unit * (0.5 + 1.6 * Math.pow(R(), 3));
+    const tw = (0.3 + 0.7 * T()) * alpha;
+    let i = 1;
+    while (i < r.length - 1 && r[i].u < u) i++;
+    const p = at(r[i], v);
+    const c = colorAcross(cols, clamp01(v + 0.3));
+    og.fillStyle = rgba([0, 1, 2].map((j) => Math.round(c[j] + (255 - c[j]) * 0.5)), tw * (0.4 + 0.6 * u));
+    og.beginPath(); og.arc(p[0], p[1], size, 0, Math.PI * 2); og.fill();
+  }
+  og.globalCompositeOperation = "source-over";
+}
+
+// glassy shards (碎片): thin angular slivers with bright edges, breaking off the
+// inner side of the blade and drifting back toward the grip side
+function shards(og, run, cols, coreC, seed, age, alpha, amount) {
+  const K = Math.round(amount * 16);
+  if (!K || alpha <= 0.01 || run.length < 2) return;
+  const first = age - (run.length - 1);
+  og.globalCompositeOperation = "lighter";
+  for (let k = 0; k < K; k++) {
+    const R = rng(seed * 53 + k * 7907);
+    const bi = 1 + Math.floor(R() * Math.max(1, Math.min(run.length, 8) - 1) * 1.5);
+    const since = age - (first + bi);
+    if (since < 0 || bi >= run.length) continue;
+    const s = run[bi], L = widthOf(s);
+    const life = alpha * clamp01(1 - since / 9);
+    if (life <= 0.02) continue;
+    let nx = s.a[0] - s.b[0], ny = s.a[1] - s.b[1];                  // toward the grip
+    const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
+    const tx = -ny, ty = nx;                                        // along the swing
+    const travel = L * (0.05 + 0.3 * R()) * (1 - Math.exp(-(since + 1) / 2));
+    const c0 = lerp(s.a, s.b, 0.3 + 0.55 * R());
+    const c = [c0[0] + nx * travel, c0[1] + ny * travel];
+    const len = L * (0.14 + 0.26 * R()), wid = len * (0.15 + 0.25 * R());
+    const sk = (R() - 0.5) * 0.6, back = 0.2 + 0.4 * R();
+    const pts = [
+      [c[0] + tx * len * 0.5, c[1] + ty * len * 0.5],
+      [c[0] + nx * wid * 0.5 + tx * len * sk, c[1] + ny * wid * 0.5 + ty * len * sk],
+      [c[0] - tx * len * 0.5, c[1] - ty * len * 0.5],
+      [c[0] - nx * wid * back - tx * len * sk * 0.5, c[1] - ny * wid * back - ty * len * sk * 0.5],
+    ];
+    og.beginPath();
+    pts.forEach((p, i) => (i ? og.lineTo(p[0], p[1]) : og.moveTo(p[0], p[1])));
+    og.closePath();
+    og.fillStyle = rgba(colorAcross(cols, 0.45 + 0.5 * R()), 0.4 * life);
+    og.fill();
+    og.strokeStyle = rgba(coreC, 0.85 * life);
+    og.lineWidth = Math.max(0.6, L / 110);
+    og.stroke();
+  }
+  og.globalCompositeOperation = "source-over";
+}
+
+// the impact burst (命中爆点) where the swing ends: a hot flash, rays and debris
+// flung out, growing and fading over the frames after the last stick
+function impact(og, run, coreC, rimC, splatC, seed, frame, after, opacity, amount) {
+  const f = amount * opacity * clamp01(1 - after / 4);
+  if (f <= 0.01) return;
+  const last = run[run.length - 1], prev = run[run.length - 2];
+  const L = Math.max(4, widthOf(last));
+  let c = lerp(last.a, last.b, 0.85);
+  if (prev) {
+    const dx = last.b[0] - prev.b[0], dy = last.b[1] - prev.b[1], dl = Math.hypot(dx, dy);
+    if (dl > 1e-3) c = [c[0] + dx / dl * L * 0.18, c[1] + dy / dl * L * 0.18];
+  }
+  const R0 = L * (0.55 + 0.3 * after);
+  const P = rng(seed * 29 + 11), F = rng(seed * 37 + frame * 71);
+  og.globalCompositeOperation = "lighter";
+  const gl = og.createRadialGradient(c[0], c[1], 0, c[0], c[1], R0);
+  gl.addColorStop(0, rgba(coreC, 0.95 * f));
+  gl.addColorStop(0.25, rgba(rimC, 0.6 * f));
+  gl.addColorStop(1, rgba(rimC, 0));
+  og.fillStyle = gl;
+  og.beginPath(); og.arc(c[0], c[1], R0, 0, Math.PI * 2); og.fill();
+  og.lineCap = "round";
+  for (let k = 0; k < 18; k++) {
+    const th = P() * Math.PI * 2, len = R0 * (0.6 + 1.1 * P()) * (0.8 + 0.4 * F());
+    const x1 = c[0] + Math.cos(th) * len, y1 = c[1] + Math.sin(th) * len;
+    const g = og.createLinearGradient(c[0], c[1], x1, y1);
+    g.addColorStop(0, rgba(coreC, 0.9 * f));
+    g.addColorStop(0.4, rgba(rimC, 0.5 * f));
+    g.addColorStop(1, rgba(rimC, 0));
+    og.strokeStyle = g;
+    og.lineWidth = Math.max(0.7, L / (k < 4 ? 30 : 60));
+    og.beginPath(); og.moveTo(c[0], c[1]); og.lineTo(x1, y1); og.stroke();
+  }
+  // debris: solid bits flying out
+  og.globalCompositeOperation = "source-over";
+  for (let k = 0; k < 26; k++) {
+    const th = P() * Math.PI * 2, dist = R0 * (0.3 + 1.0 * P()) * (0.6 + 0.4 * after);
+    const r = L * (0.008 + 0.025 * Math.pow(P(), 2));
+    og.fillStyle = rgba(splatC, 0.9 * f);
+    og.beginPath(); og.arc(c[0] + Math.cos(th) * dist, c[1] + Math.sin(th) * dist, Math.max(0.6, r), 0, Math.PI * 2); og.fill();
+  }
+}
+
+// Lightning (闪电): a few jagged bolts running along the blade, each made by
+// midpoint displacement (every segment split and its middle knocked sideways,
+// less at each level), with forks breaking off it, mostly outward past the
+// edge. A fresh set every frame, so it flickers. Drawn as a wide glow in the
+// rim colour under a thin white-hot line.
+function bolts(runs, w, h, coreC, rimC, seed, frame, alpha, maxW, amount) {
+  if (amount <= 0 || alpha <= 0.01) return null;
+  const r = runs[runs.length - 1];
+  if (r.length < 2) return null;
+  const P = rng(seed * 61 + frame * 1297 + 5);
+  // a point at (u, v) on the ribbon, interpolated between sections
+  const sample = (u, v) => {
+    let i = 1;
+    while (i < r.length - 1 && r[i].u < u) i++;
+    const p = r[i - 1], q = r[i], t = clamp01((u - p.u) / ((q.u - p.u) || 1));
+    const a = lerp(p.a, p.b, v), b = lerp(q.a, q.b, v);
+    return { pt: lerp(a, b, t), out: [q.b[0] - q.a[0], q.b[1] - q.a[1]] };
+  };
+  const jag = (pts, rough, depth) => {
+    let cur = pts;
+    for (let d = 0; d < depth; d++, rough *= 0.55) {
+      const next = [cur[0]];
+      for (let i = 1; i < cur.length; i++) {
+        const a = cur[i - 1], b = cur[i];
+        const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy) || 1;
+        const off = (P() - 0.5) * len * rough;
+        next.push([(a[0] + b[0]) / 2 - dy / len * off, (a[1] + b[1]) / 2 + dx / len * off], b);
+      }
+      cur = next;
+    }
+    return cur;
+  };
+  const paths = [];
+  const count = 1 + Math.round(amount * 3);
+  for (let k = 0; k < count; k++) {
+    const u0 = 0.12 + 0.45 * P(), v0 = 0.45 + 0.5 * P();
+    const pts = [];
+    for (let s = 0; s <= 6; s++) pts.push(sample(u0 + (1 - u0) * s / 6, Math.max(0.1, Math.min(1.05, v0 + (P() - 0.5) * 0.4))).pt);
+    const main = jag(pts, 0.5, 4);
+    paths.push([main, 1]);
+    const forks = 1 + Math.floor(P() * 3 * amount + 0.5);
+    for (let f = 0; f < forks; f++) {
+      const at = Math.floor(main.length * (0.2 + 0.7 * P()));
+      const start = main[Math.min(main.length - 1, at)];
+      const { out } = sample(u0 + (1 - u0) * at / main.length, 1);
+      const ol = Math.hypot(out[0], out[1]) || 1, side = P() < 0.75 ? 1 : -1, turn = (P() - 0.5) * 1.4;
+      let dx = out[0] / ol * side, dy = out[1] / ol * side;
+      [dx, dy] = [dx * Math.cos(turn) - dy * Math.sin(turn), dx * Math.sin(turn) + dy * Math.cos(turn)];
+      const len = maxW * (0.25 + 0.55 * P());
+      paths.push([jag([start, [start[0] + dx * len, start[1] + dy * len]], 0.6, 3), 0.55]);
+    }
+  }
+  const B = createCanvas(w, h), g = B.getContext("2d");
+  g.lineCap = "round"; g.lineJoin = "round";
+  const flick = alpha * (0.75 + 0.25 * P());
+  const line = (pts) => { g.beginPath(); pts.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]))); g.stroke(); };
+  for (const [pts, wt] of paths) {
+    g.strokeStyle = rgba(rimC, 0.45 * flick * wt);
+    g.lineWidth = Math.max(1.5, maxW / 12) * wt;
+    line(pts);
+  }
+  for (const [pts, wt] of paths) {
+    g.strokeStyle = rgba(coreC, 0.95 * flick);
+    g.lineWidth = Math.max(0.8, maxW / 45) * (0.6 + 0.4 * wt);
+    line(pts);
+  }
+  return B;
+}
+
+// a point on the last run at (u, v), interpolated between sections, with the
+// section's across vector (inner -> outer)
+function onRun(r, u, v) {
+  let i = 1;
+  while (i < r.length - 1 && r[i].u < u) i++;
+  const p = r[i - 1], q = r[i], t = clamp01((u - p.u) / ((q.u - p.u) || 1));
+  const a = lerp(p.a, p.b, v), b = lerp(q.a, q.b, v);
+  const ax = q.b[0] - q.a[0], ay = q.b[1] - q.a[1], al = Math.hypot(ax, ay) || 1;
+  return { pt: lerp(a, b, t), across: [ax / al, ay / al] };
+}
+
+// Flames (火舌): soft tongues of fire growing out of the body and streaming
+// back along the trail, the way flames trail behind something moving fast.
+// They root inside the ribbon (mostly its inner half; bright fire also licks a
+// little over the leading edge) and lean only slightly away from the blade.
+// Where they sit is fixed per trail; their length, lean and sway change every
+// frame, so they flicker. Bright fire is added as light and softened a touch.
+// Black fire is painted dark, over a blurred halo of the rim colour, so it
+// glows at its edges instead of being outlined.
+function flames(runs, w, h, cols, coreC, rimC, seed, frame, alpha, tail, maxW, amount, dark) {
+  const r = runs[runs.length - 1];
+  if (r.length < 2) return null;
+  const N = Math.round(amount * 26);
+  const S = rng(seed * 71 + 1), P = rng(seed * 71 + frame * 733 + 2);
+  const T = createCanvas(w, h), g = T.getContext("2d");
+  const G = dark ? createCanvas(w, h) : null, gg = G && G.getContext("2d");
+  for (let k = 0; k < N; k++) {
+    const u = 0.15 + 0.85 * Math.pow(S(), 0.7);
+    const outer = !dark && S() < 0.2;
+    const vb = outer ? 0.9 + 0.06 * S() : 0.3 + 0.4 * S();
+    const { pt: B, across } = onRun(r, u, vb);
+    const back0 = onRun(r, Math.max(0, u - 0.04), vb).pt;
+    let bx = back0[0] - B[0], by = back0[1] - B[1];
+    const bl = Math.hypot(bx, by) || 1; bx /= bl; by /= bl;          // toward the tail
+    const nx = outer ? across[0] : -across[0], ny = outer ? across[1] : -across[1];   // away from the blade
+    const len = maxW * (0.2 + 0.4 * S()) * (0.75 + 0.45 * P()) * (0.5 + 0.5 * u);
+    const wid = len * (0.3 + 0.2 * S());
+    const lean = 0.15 + 0.2 * P();
+    const tip = [B[0] + bx * len + nx * len * lean, B[1] + by * len + ny * len * lean];
+    // the root lies along the trail, a little ahead of B; the sides bow out
+    // and the tip whips to one side (an S-ish lick)
+    const b1 = [B[0] - bx * wid * 0.6 + nx * wid * 0.3, B[1] - by * wid * 0.6 + ny * wid * 0.3];
+    const b2 = [B[0] - bx * wid * 0.2 - nx * wid * 0.5, B[1] - by * wid * 0.2 - ny * wid * 0.5];
+    const px = -(tip[1] - B[1]), py = tip[0] - B[0], pl = Math.hypot(px, py) || 1;
+    const whip = (P() - 0.5) * wid * 1.4;
+    const c1 = [(b1[0] + tip[0]) / 2 + px / pl * (wid * 0.5 + whip), (b1[1] + tip[1]) / 2 + py / pl * (wid * 0.5 + whip)];
+    const c2 = [(b2[0] + tip[0]) / 2 - px / pl * (wid * 0.35 - whip), (b2[1] + tip[1]) / 2 - py / pl * (wid * 0.35 - whip)];
+    const a = alpha * smooth(0, tail, u) * (0.55 + 0.45 * u);
+    if (a <= 0.02) continue;
+    const shape = (c) => { c.beginPath(); c.moveTo(b1[0], b1[1]); c.quadraticCurveTo(c1[0], c1[1], tip[0], tip[1]); c.quadraticCurveTo(c2[0], c2[1], b2[0], b2[1]); c.closePath(); };
+    const gr = g.createLinearGradient(B[0], B[1], tip[0], tip[1]);
+    gr.addColorStop(0, rgba(cols[dark ? 1 : 3], 0.85 * a));
+    gr.addColorStop(0.55, rgba(cols[dark ? 0 : 2], 0.5 * a));
+    gr.addColorStop(1, rgba(cols[dark ? 0 : 1], 0));
+    g.fillStyle = gr;
+    shape(g); g.fill();
+    if (dark) {
+      // its glow: the same lick in the rim colour, blurred under it later
+      const eg = gg.createLinearGradient(B[0], B[1], tip[0], tip[1]);
+      eg.addColorStop(0, rgba(rimC, 0.7 * a));
+      eg.addColorStop(1, rgba(rimC, 0));
+      gg.fillStyle = eg;
+      shape(gg); gg.fill();
+    } else if (S() < 0.5) {
+      // a hot inner lick
+      const m = (p, t) => lerp(B, p, t);
+      g.fillStyle = rgba(coreC, 0.45 * a);
+      g.beginPath(); g.moveTo(...m(b1, 0.5)); g.quadraticCurveTo(...m(c1, 0.5), ...m(tip, 0.55)); g.quadraticCurveTo(...m(c2, 0.5), ...m(b2, 0.5)); g.closePath(); g.fill();
+    }
+  }
+  const out = createCanvas(w, h), og = out.getContext("2d");
+  if (dark) {
+    og.filter = `blur(${Math.max(1.5, maxW / 30)}px)`;
+    og.drawImage(G, 0, 0);
+    og.filter = `blur(${Math.max(0.5, maxW / 160)}px)`;
+    og.drawImage(T, 0, 0);
+  } else {
+    og.filter = `blur(${Math.max(0.5, maxW / 90)}px)`;
+    og.drawImage(T, 0, 0);
+  }
+  og.filter = "none";
+  return out;
+}
+
+// Rays (光芒): thin beams of light shining out of the leading edge, longer
+// toward the head, fanning a little and flickering frame to frame
+function rays(runs, w, h, coreC, rimC, seed, frame, alpha, maxW, amount) {
+  const r = runs[runs.length - 1];
+  if (r.length < 2) return null;
+  const N = Math.round(amount * 40);
+  const S = rng(seed * 97 + 4), P = rng(seed * 97 + frame * 571 + 6);
+  const Rc = createCanvas(w, h), g = Rc.getContext("2d");
+  g.lineCap = "round";
+  for (let k = 0; k < N; k++) {
+    const u = 0.25 + 0.75 * Math.pow(S(), 0.6);
+    const { pt: B, across } = onRun(r, u, 0.95);
+    const spread = (S() - 0.5) * 0.6;
+    const dx = across[0] * Math.cos(spread) - across[1] * Math.sin(spread), dy = across[0] * Math.sin(spread) + across[1] * Math.cos(spread);
+    const len = maxW * (0.4 + 1.4 * Math.pow(S(), 2)) * (0.7 + 0.5 * P()) * (0.4 + 0.6 * u);
+    const a = alpha * (0.35 + 0.65 * P());
+    const end = [B[0] + dx * len, B[1] + dy * len];
+    const gr = g.createLinearGradient(B[0], B[1], end[0], end[1]);
+    gr.addColorStop(0, rgba(coreC, 0.75 * a));
+    gr.addColorStop(0.35, rgba(rimC, 0.35 * a));
+    gr.addColorStop(1, rgba(rimC, 0));
+    g.strokeStyle = gr;
+    g.lineWidth = Math.max(0.8, maxW / (35 + 60 * S()));
+    g.beginPath(); g.moveTo(B[0], B[1]); g.lineTo(end[0], end[1]); g.stroke();
+  }
+  return Rc;
+}
+
+// Embers (余烬): glowing sparks thrown off the swing that rise, sway and burn
+// out over several frames — they outlive the trail itself a little
+function embers(og, run, coreC, rimC, seed, frame, age, opacity, maxW, amount, dark) {
+  const K = Math.round(amount * 34);
+  if (!K || run.length < 1) return;
+  const first = age - (run.length - 1);
+  const hot = dark ? [0, 1, 2].map((j) => Math.round(rimC[j] + (255 - rimC[j]) * 0.45)) : coreC;
+  const F = rng(seed * 89 + frame * 313);
+  og.globalCompositeOperation = "lighter";
+  for (let k = 0; k < K; k++) {
+    const R = rng(seed * 83 + k * 6151);
+    const bi = Math.floor(R() * run.length);
+    const since = age - (first + bi + Math.floor(R() * 2));
+    const life = 5 + R() * 7;
+    if (since < 0 || since > life) continue;
+    const s = run[bi];
+    const p0 = lerp(s.a, s.b, 0.3 + 0.7 * R());
+    const rise = maxW * (0.05 + 0.08 * R()) * since;
+    const sway = Math.sin(since * 0.9 + R() * 6.28) * maxW * 0.05 + (R() - 0.5) * maxW * 0.08 * since;
+    const p = [p0[0] + sway, p0[1] - rise];
+    const fade = 1 - since / life;
+    const size = Math.max(0.6, maxW * (0.01 + 0.018 * R()) * (0.5 + 0.5 * fade));
+    const a = opacity * fade * (0.6 + 0.4 * F());
+    const halo = og.createRadialGradient(p[0], p[1], 0, p[0], p[1], size * 3.5);
+    halo.addColorStop(0, rgba(hot, 0.9 * a));
+    halo.addColorStop(0.35, rgba(rimC, 0.45 * a));
+    halo.addColorStop(1, rgba(rimC, 0));
+    og.fillStyle = halo;
+    og.beginPath(); og.arc(p[0], p[1], size * 3.5, 0, Math.PI * 2); og.fill();
+  }
+  og.globalCompositeOperation = "source-over";
+}
+
+// ---------- 像素光效 ----------
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+
+// The palette a pixelated glow snaps to: the preset's own colours sorted dark to
+// bright, with an in-between shade added between every two neighbours
+const palettes = new Map();
+function glowPalette(st) {
+  const src = [...(st.glowColors || GLOW_DEFAULTS.glowColors), st.glowRim, st.glowCore, st.glowSplat].filter(Boolean);
+  const key = src.join(",");
+  if (palettes.has(key)) return palettes.get(key);
+  const lum = (c) => 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
+  const base = [];
+  for (const c of src.map(hexToRgb)) if (!base.some((b) => Math.abs(b[0] - c[0]) + Math.abs(b[1] - c[1]) + Math.abs(b[2] - c[2]) < 24)) base.push(c);
+  base.sort((p, q) => lum(p) - lum(q));
+  const pal = [];
+  base.forEach((c, i) => {
+    if (i) { const p = base[i - 1]; pal.push([0, 1, 2].map((j) => Math.round(Math.sqrt((p[j] * p[j] + c[j] * c[j]) / 2)))); }
+    pal.push(c);
+  });
+  palettes.set(key, pal);
+  return pal;
+}
+
+// A glow trail as pixel art: the canvas renderGlow made is shrunk to blocks of
+// size × size (averaging), every block snaps to the palette above, its opacity
+// to 4 steps (or a dither / a hard edge), and it is blown back up with hard
+// edges. The blocks sit on the document's grid, so they don't crawl as the
+// trail moves. opts: { size: 1..8, alpha: "steps" | "dither" | "hard" }
+export function pixelateGlow(src, st, opts = {}) {
+  if (!src) return src;
+  const k = Math.max(1, Math.min(8, opts.size | 0 || 1));
+  const W = src.width, H = src.height;
+  const bb = src.bbox || { x0: 0, y0: 0, w: W, h: H };
+  const bx0 = Math.floor(bb.x0 / k) * k, by0 = Math.floor(bb.y0 / k) * k;
+  const bw = Math.ceil((bb.x0 + bb.w - bx0) / k), bh = Math.ceil((bb.y0 + bb.h - by0) / k);
+  if (bw <= 0 || bh <= 0) return src;
+  const small = createCanvas(bw, bh), sg = small.getContext("2d", { willReadFrequently: true });
+  sg.imageSmoothingEnabled = true;
+  sg.imageSmoothingQuality = "high";
+  sg.drawImage(src, bx0, by0, bw * k, bh * k, 0, 0, bw, bh);
+  const img = sg.getImageData(0, 0, bw, bh), d = img.data;
+  const pal = glowPalette(st);
+  const mode = opts.alpha || "steps";
+  const gx = bx0 / k, gy = by0 / k;
+  for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+    const i = (y * bw + x) * 4;
+    const a = d[i + 3] / 255;
+    if (a < 0.08) { d[i + 3] = 0; continue; }
+    let al;
+    if (mode === "hard") al = a >= 0.4 ? 1 : 0;
+    else if (mode === "dither") al = a > (BAYER[((y + gy) & 3) * 4 + ((x + gx) & 3)] + 0.5) / 16 ? 1 : 0;
+    else al = a < 0.2 ? 0 : Math.max(0.25, Math.round(a * 4) / 4);   // too faint to be worth a step: gone
+    if (!al) { d[i + 3] = 0; continue; }
+    const r = d[i], g = d[i + 1], b = d[i + 2];
+    let best = pal[0], bd = Infinity;
+    for (const c of pal) {
+      const dr = c[0] - r, dg = c[1] - g, db = c[2] - b;
+      const dd = 2 * dr * dr + 4 * dg * dg + 3 * db * db;
+      if (dd < bd) { bd = dd; best = c; }
+    }
+    d[i] = best[0]; d[i + 1] = best[1]; d[i + 2] = best[2]; d[i + 3] = Math.round(al * 255);
+  }
+  sg.putImageData(img, 0, 0);
+  const out = createCanvas(W, H), og = out.getContext("2d");
+  og.imageSmoothingEnabled = false;
+  og.drawImage(small, 0, 0, bw, bh, bx0, by0, bw * k, bh * k);
+  return out;
 }

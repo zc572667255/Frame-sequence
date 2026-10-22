@@ -9,11 +9,13 @@
 // The bands and tail are rendered by trails/model.js, shared with attack trails.
 import { hexToRgb } from "../core/util.js";
 import { renderStroke } from "../trails/model.js";
-import { GLOW_PRESETS, glowStyle, hashSeed, renderGlow } from "../trails/glow.js";
+import { GLOW_PRESETS, glowStyle, hashSeed, renderGlow, pixelateGlow } from "../trails/glow.js";
 
 // bands: outer -> inner, [colour, width factor]. look: the rest of the band
 // style a preset sets (see BAND_LOOK); the 弧光 styles light the blade-tip edge
 // and let the grip side fade out in ragged streaks.
+// the classic styles: crisp and solid, lit along the edge, only a touch ragged
+const CLASSIC = { bandLayout: "edge", edgeFade: 0.2, edgeBreak: 0.3, streaks: 0.25, bandBlend: "steps", bandShade: 0.2, fadeSteps: false, shape: "crescent" };
 const ARC = { bandLayout: "edge", edgeFade: 0.55, streaks: 0.6, edgeBreak: 0.6, fadeSteps: true, bandBlend: "steps", bandShade: 0, shape: "crescent" };
 export const TRAIL_PRESETS = [
   { id: "arc-ice", name: "冰蓝弧光", bands: [["#8c7fd6", 1], ["#5d8ff0", 0.62], ["#7fdcff", 0.34], ["#ffffff", 0.1]], look: ARC },
@@ -23,21 +25,21 @@ export const TRAIL_PRESETS = [
   { id: "arc-wind", name: "翠风弧光", bands: [["#2a7a5a", 1], ["#3fbf7f", 0.62], ["#9ff0c0", 0.34], ["#ffffff", 0.1]], look: ARC },
   { id: "arc-spin", name: "赤红旋斩", bands: [["#8a1a2a", 1], ["#d0303a", 0.62], ["#ff8a72", 0.34], ["#ffffff", 0.14]], look: { ...ARC, splits: 2, streaks: 0.4, edgeFade: 0.7, shape: "even" } },
   { id: "arc-water", name: "水刃", bands: [["#2a5fd0", 1], ["#3ea0f0", 0.6], ["#8fe0ff", 0.32], ["#ffffff", 0.1]], look: { ...ARC, edgeFade: 0.6, streaks: 0.7, edgeBreak: 0.75 } },
-  { id: "white", name: "白光", bands: [["#5a6988", 1], ["#c0cbdc", 0.72], ["#ffffff", 0.4]] },
-  { id: "fire", name: "火焰", bands: [["#a22633", 1], ["#f77622", 0.75], ["#feae34", 0.5], ["#fee761", 0.25]] },
-  { id: "ice", name: "冰霜", bands: [["#124e89", 1], ["#0099db", 0.72], ["#2ce8f5", 0.45], ["#ffffff", 0.18]] },
-  { id: "thunder", name: "雷电", bands: [["#3b5dc9", 1], ["#41a6f6", 0.6], ["#ffffff", 0.28]] },
-  { id: "shadow", name: "暗紫", bands: [["#3e2731", 1], ["#68386c", 0.75], ["#b55088", 0.45], ["#f6757a", 0.18]] },
-  { id: "blood", name: "鲜血", bands: [["#3e2731", 1], ["#a22633", 0.7], ["#e43b44", 0.35]] },
-  { id: "holy", name: "圣光金", bands: [["#b86f50", 1], ["#feae34", 0.72], ["#fee761", 0.45], ["#ffffff", 0.18]] },
-  { id: "wind", name: "风刃", bands: [["#8b9bb4", 1], ["#ffffff", 0.45]], fade: 85 },
-  { id: "mono", name: "主色", bands: null },
+  { id: "white", name: "白光", bands: [["#2b3350", 1], ["#5a6988", 0.74], ["#a8b5cc", 0.48], ["#e4ecf6", 0.26], ["#ffffff", 0.1]], look: CLASSIC },
+  { id: "fire", name: "火焰", bands: [["#6e1420", 1], ["#b8282a", 0.76], ["#f06a1c", 0.52], ["#fcb83a", 0.3], ["#fff3a0", 0.12]], look: CLASSIC },
+  { id: "ice", name: "冰霜", bands: [["#0e2f66", 1], ["#1468b8", 0.74], ["#22a8e8", 0.5], ["#8ee8ff", 0.28], ["#ffffff", 0.1]], look: CLASSIC },
+  { id: "thunder", name: "雷电", bands: [["#1e2a7a", 1], ["#3b5dc9", 0.72], ["#41a6f6", 0.46], ["#b8e4ff", 0.24], ["#ffffff", 0.1]], look: CLASSIC },
+  { id: "shadow", name: "暗紫", bands: [["#24142c", 1], ["#4a2458", 0.74], ["#7a3a8c", 0.5], ["#c070c8", 0.28], ["#ffc8f0", 0.1]], look: CLASSIC },
+  { id: "blood", name: "鲜血", bands: [["#2a0c14", 1], ["#6a1020", 0.74], ["#b01c2c", 0.5], ["#ec4a4a", 0.26], ["#ffc0b0", 0.1]], look: CLASSIC },
+  { id: "holy", name: "圣光金", bands: [["#6a3a1c", 1], ["#b8742c", 0.74], ["#f0b23c", 0.5], ["#fde58a", 0.28], ["#ffffff", 0.1]], look: CLASSIC },
+  { id: "wind", name: "风刃", bands: [["#5a6a7c", 1], ["#9fb4c4", 0.6], ["#e8f4f4", 0.28], ["#ffffff", 0.1]], fade: 85, look: { ...CLASSIC, edgeFade: 0.5, streaks: 0.6, edgeBreak: 0.5 } },
+  { id: "mono", name: "主色", bands: null, look: CLASSIC },
 ];
 
 // what a band preset without its own look gets: bright middle, clean-ish edges
-export const BAND_LOOK = { bandLayout: "center", edgeFade: 0, streaks: 0, edgeBreak: 0.3, fadeSteps: false, splits: 0 };
+export const BAND_LOOK = { bandLayout: "center", edgeFade: 0, streaks: 0, edgeBreak: 0.3, fadeSteps: false, splits: 0, pxDust: 0, pxShards: 0, pxSplatter: 0, pxImpact: 0 };
 
-export const TRAIL_DEFAULTS = { preset: "glow:dream", width: 10, shape: "head", fade: 45, sparks: false, toFxLayer: true, tailMode: "brush", brushId: "bristle", brushData: null, bandBlend: "steps", bandSoft: 60, bandShade: 40, edgeBreak: 40 };
+export const TRAIL_DEFAULTS = { preset: "glow:dream", width: 10, shape: "head", fade: 45, sparks: false, toFxLayer: true, tailMode: "brush", brushId: "bristle", brushData: null, bandBlend: "steps", bandSoft: 60, bandShade: 40, edgeBreak: 40, pixelGlow: false, pxSize: 1, pxAlpha: "steps" };
 
 // ---------- stroke geometry ----------
 // resample the raw pointer path at ~1px spacing, then smooth it so a shaky hand
@@ -152,16 +154,13 @@ export function rasterizeTrail(raw, opts, w, h, primary, brushCanvas) {
 function glowStroke(curve, sections, p, opts, w, h, fade) {
   const n = sections.length - 1, run = [];
   for (let k = 0; k <= 6; k++) run.push(sections[Math.round(n * (0.3 + 0.7 * k / 6))]);
-  const c = renderGlow([sections], glowStyle(p), w, h, {
+  const st0 = glowStyle(p);
+  const st = opts.pixelGlow ? { ...st0, glow: st0.glow * 0.5, haze: st0.haze * 0.6 } : st0;   // see model.js: tight pixel glows
+  let c = renderGlow([sections], st, w, h, {
     seed: hashSeed(curve.length + ":" + Math.round(curve[0].x) + ":" + Math.round(curve[0].y)),
-    frame: 0, alpha: 1, fade, fx: true, run, age: run.length + 3,
+    frame: 0, alpha: 1, fade, fx: true, run, age: run.length + 3, ended: true, after: 0,
   });
+  if (c && opts.pixelGlow) c = pixelateGlow(c, st, { size: opts.pxSize, alpha: opts.pxAlpha });
   return c && c.getContext("2d").getImageData(0, 0, w, h);
 }
 
-// swatch for the preset picker
-export function presetSwatch(p, primary) {
-  const bands = p.bands || [[primary, 1]];
-  const stops = bands.map(([c], i) => (typeof c === "string" ? c : "rgb(" + c.slice(0, 3).join(",") + ")") + " " + Math.round(i / Math.max(1, bands.length - 1) * 100) + "%");
-  return "linear-gradient(90deg, " + (stops.length > 1 ? stops.join(", ") : stops[0] + ", " + stops[0]) + ")";
-}

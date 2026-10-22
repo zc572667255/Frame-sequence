@@ -14,8 +14,9 @@ import { putBlobAsset, getAssetCanvas } from "../core/assets.js";
 import { showMenu } from "../ui/menu.js";
 import { STYLE_DEFAULTS, BUILTIN_PRESETS, BUILTIN_BRUSHES, SHAPES, newTrail, normalizeTrail, trailState, stickReversed } from "../trails/model.js";
 import { trailCanvas, textureFor, brushFor, loadTextures, setTexture, drawTrail } from "../trails/composite.js";
-import { TRAIL_PRESETS, BAND_LOOK, presetSwatch } from "./trailbrush.js";
-import { GLOW_PRESETS, GLOW_DEFAULTS, glowStyle, glowSwatch } from "../trails/glow.js";
+import { TRAIL_PRESETS, BAND_LOOK } from "./trailbrush.js";
+import { GLOW_PRESETS, GLOW_DEFAULTS, glowStyle } from "../trails/glow.js";
+import { styleThumb } from "./thumbs.js";
 
 // a new trail starts as the 梦幻 glow; the pixel bands are one click away
 const NEW_TRAIL_STYLE = { ...STYLE_DEFAULTS, colorMode: "glow", pixel: false, fade: 0.7, ...glowStyle(GLOW_PRESETS[0]) };
@@ -263,21 +264,22 @@ export class TrailMode {
   // takes the current primary colour
   // 高清 / 像素: switch the trail to the other kind, with the style it had there
   // last time (or the first one)
+  // 高清 <-> 像素: a glow trail keeps its preset and only turns pixel art on or
+  // off; a band trail going to 高清 takes its last glow preset
   setKind(k) {
     const t = this.trail();
     if (!t) return;
     const st = t.style;
-    if (k === "hd") this.applyGlow(GLOW_PRESETS.find((p) => p.id === st.glowId) || GLOW_PRESETS[0]);
-    else {
-      this.applyStyle(TRAIL_PRESETS.find((x) => x.id === st.styleId) || TRAIL_PRESETS[0], true);
-    }
+    if (st.colorMode === "glow") this.edit(() => { t.style.pixelGlow = k !== "hd"; });
+    else if (k === "hd") this.applyGlow(GLOW_PRESETS.find((p) => p.id === st.glowId) || GLOW_PRESETS[0]);
   }
 
-  // a 光效 style: smooth light, so pixel mode goes off with it
-  applyGlow(p) {
+  // a 光效 style (pixelGlow: as pixel art). The band renderer's pixel flag goes
+  // off: glows have their own pixel step
+  applyGlow(p, pixelGlow = false) {
     const t = this.trail();
     if (!t) return;
-    this.edit(() => { Object.assign(t.style, { colorMode: "glow", pixel: false }, glowStyle(p)); });
+    this.edit(() => { Object.assign(t.style, { colorMode: "glow", pixel: false, pixelGlow }, glowStyle(p)); });
   }
 
   applyStyle(p, pixel) {
@@ -586,25 +588,39 @@ export class TrailMode {
       el("button", { class: "tool-btn", title: "把当前纹理、配色和参数另存为预设（不含棍子）", onclick: () => this.savePreset() }, "保存")));
     // the same styles as the 拖尾笔 brush: one click sets the colour bands, the
     // shape / arc / direction / length settings stay as they are
+    const isGlow = st.colorMode === "glow", hd = isGlow && !st.pixelGlow;
     const grid = el("div", { class: "trail-presets" });
     for (const p of TRAIL_PRESETS) {
       const on = st.colorMode === "bands" && st.styleId === p.id;
       grid.append(el("button", { class: "trail-preset" + (on ? " on" : ""), title: p.name, onclick: () => this.applyStyle(p) },
-        el("span", { class: "trail-sw", style: { background: presetSwatch(p, this.ed.primary) } }), el("span", null, p.name)));
+        styleThumb("band", p, this.ed.primary), el("span", null, p.name)));
     }
+    // 高清 or 像素 first. 像素 lists the same glow styles drawn as pixel art
+    // (像素光效), then the classic colour bands
     const glowGrid = el("div", { class: "trail-presets" });
     for (const p of GLOW_PRESETS) {
-      const on = st.colorMode === "glow" && st.glowId === p.id;
-      glowGrid.append(el("button", { class: "trail-preset" + (on ? " on" : ""), title: p.name, onclick: () => this.applyGlow(p) },
-        el("span", { class: "trail-sw glow", style: { background: glowSwatch(p) } }), el("span", null, p.name)));
+      const on = isGlow && st.glowId === p.id;
+      glowGrid.append(el("button", { class: "trail-preset" + (on ? " on" : ""), title: p.name, onclick: () => this.applyGlow(p, !hd) },
+        styleThumb(hd ? "hd" : "pixel", p), el("span", null, p.name)));
     }
-    // 高清 (smooth glow styles) or 像素 (hard-edged colour bands): pick the kind
-    // first, then only that kind's styles are listed
-    const hd = st.colorMode === "glow";
     const kind = el("div", { class: "trail-kind" },
-      el("button", { class: hd ? "on" : "", title: "平滑发光的高清特效：光丝、辉光、刀芯、星光", onclick: () => { if (!hd) this.setKind("hd"); } }, "高清"),
-      el("button", { class: hd ? "" : "on", title: "硬边像素画：分层色带，没有半透明", onclick: () => { if (hd) this.setKind("pixel"); } }, "像素"));
-    P.append(el("div", { class: "tm-label" }, "样式"), kind, hd ? glowGrid : grid);
+      el("button", { class: hd ? "on" : "", title: "平滑发光的高清特效", onclick: () => { if (!hd) this.setKind("hd"); } }, "高清"),
+      el("button", { class: hd ? "" : "on", title: "像素画：同样的光效画成像素，或经典分层色带", onclick: () => { if (hd) this.setKind("pixel"); } }, "像素"));
+    P.append(el("div", { class: "tm-label" }, "样式"), kind);
+    if (hd) P.append(glowGrid);
+    else P.append(el("div", { class: "tm-label" }, "像素光效"), glowGrid, el("div", { class: "tm-label" }, "经典色带"), grid);
+    if (isGlow && st.pixelGlow) {
+      // the pixel step: block size and how soft edges become pixels
+      const ps = el("input", { type: "range", min: 1, max: 8, value: st.pxSize || 1, title: "几个画布像素拼成一个大像素。像素画角色用 1；高分辨率画布想要更粗的颗粒就调大" });
+      const pv = el("span", { class: "mono tm-num" }, (st.pxSize || 1) + " px");
+      ps.oninput = () => this.liveEdit(() => { t.style.pxSize = +ps.value; pv.textContent = ps.value + " px"; });
+      ps.onchange = () => this.endLive();
+      const pa = el("select", { class: "ed-select", title: "辉光、渐隐这些半透明的地方怎么变成像素" },
+        ...[["steps", "4 级透明"], ["dither", "抖动（全实心像素）"], ["hard", "硬边（只留实心部分）"]].map(([v, n]) => el("option", { value: v, selected: (st.pxAlpha || "steps") === v }, n)));
+      pa.onchange = () => this.edit(() => { t.style.pxAlpha = pa.value; });
+      P.append(el("div", { class: "tm-row" }, el("span", { class: "tm-label" }, "像素大小"), ps, pv),
+        el("div", { class: "tm-row" }, el("span", { class: "tm-label" }, "透明方式"), pa));
+    }
     const shape = el("select", { class: "ed-select" }, ...SHAPES.map(([v, n]) => el("option", { value: v, selected: (st.shape || "head") === v }, n)));
     shape.onchange = () => this.edit(() => { t.style.shape = shape.value; });
     P.append(el("div", { class: "tm-row" }, el("span", { class: "tm-label" }, "形状"), shape));
@@ -652,8 +668,8 @@ export class TrailMode {
     const rot = el("input", { type: "checkbox", checked: t.rotate !== false, onchange: () => this.edit(() => { t.rotate = rot.checked; }) });
     P.append(el("label", { class: "ed-check" }, rot, "按握柄旋转插值（帧与帧之间刀尖走圆弧）"));
 
-    // pixel trails can also be coloured from a texture instead of the bands
-    if (!hd) {
+    // band trails can also be coloured from a texture instead of the bands
+    if (!isGlow) {
       const mode = el("select", { class: "ed-select" },
         ...[["bands", "色带（上面的样式）"], ["mono", "单色 · 灰度纹理"], ["gradient", "渐变 · 灰度纹理"], ["original", "原色（RGBA 纹理）"]].map(([v, n]) => el("option", { value: v, selected: st.colorMode === v }, n)));
       mode.onchange = () => this.edit(() => { t.style.colorMode = mode.value; });
@@ -736,6 +752,11 @@ export class TrailMode {
       slider("破碎", "edgeBreak", 0, 100, 100, "%");
       slider("速度线", "streaks", 0, 100, 100, "%");
       slider("分条", "splits", 0, 4, 1, " 道");
+      // accents, snapped to these band colours as solid pixels
+      slider("粒子", "pxDust", 0, 100, 100, "%");
+      slider("碎片", "pxShards", 0, 100, 100, "%");
+      slider("飞溅", "pxSplatter", 0, 100, 100, "%");
+      slider("命中爆点", "pxImpact", 0, 100, 100, "%");
       if (st.pixel !== false) {
         const fm = el("select", { class: "ed-select", title: "渐隐的地方怎么画：网格抖动（全是实心像素）或 4 级透明度" },
           ...[["dither", "抖动（全实心像素）"], ["steps", "分级透明（4 级）"]].map(([v, n]) => el("option", { value: v, selected: (st.fadeSteps ? "steps" : "dither") === v }, n)));
@@ -754,6 +775,15 @@ export class TrailMode {
       slider("星光大小", "sparkleSize", 1, 20, 1, "");
       slider("起手闪光", "flash", 0, 100, 1, "%");
       slider("飞溅", "splatter", 0, 100, 1, "%");
+      slider("流体", "flow", 0, 100, 1, "%");
+      slider("碎片", "shards", 0, 100, 1, "%");
+      slider("粒子", "dust", 0, 100, 1, "%");
+      slider("命中爆点", "impact", 0, 100, 1, "%");
+      slider("阴影", "shadow", 0, 100, 1, "%");
+      slider("闪电", "bolts", 0, 100, 1, "%");
+      slider("火舌", "flames", 0, 100, 1, "%");
+      slider("余烬", "embers", 0, 100, 1, "%");
+      slider("光芒", "rays", 0, 100, 1, "%");
     }
     // how the tail ends: brush streaks (default), dither dots, or a soft fade.
     // Glow trails are smooth light: no tail texture, no pixel mode

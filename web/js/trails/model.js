@@ -10,7 +10,8 @@
 // outer) with a greyscale brush texture whose luminance becomes opacity, coloured
 // with one colour, a gradient along u, or the texture's own colours.
 import { createCanvas, hexToRgb } from "../core/util.js";
-import { renderGlow, hashSeed } from "./glow.js";
+import { renderGlow, renderFx, pixelateGlow, hashSeed } from "./glow.js";
+import { texTri, uvMap } from "./uv.js";
 
 export const STYLE_DEFAULTS = {
   texture: { kind: "builtin", id: "luma" },
@@ -27,6 +28,8 @@ export const STYLE_DEFAULTS = {
   streaks: 0,                       // thin speed lines along the trail, showing where the body has faded
   edgeBreak: 0,                     // 破碎: ragged, streaky edges instead of clean curves
   splits: 0,                        // 分条: cut the width into this many + 1 parallel strips, each with its own colours
+  pxDust: 0, pxShards: 0, pxSplatter: 0, pxImpact: 0,   // accents (trails/glow.js renderFx), snapped to the band colours
+  pixelGlow: false, pxSize: 1, pxAlpha: "steps",        // glow trails as pixel art (像素光效): block size, opacity steps | dither | hard
   tailMode: "brush",               // brush (streaks) | dither (dots) | smooth (needs pixel off)
   brush: { kind: "builtin", id: "bristle" },
   color: "#ffffff",
@@ -95,12 +98,14 @@ export function trailState(trail, frameIds, fi) {
   const sticks = swing.slice(-(Math.max(1, trail.length | 0) + 1));
   const p = k ? k / ((trail.dissolve | 0) + 1) : 0;
   const st = trail.style || {};
-  if (st.colorMode !== "glow") return sticks.length < 2 ? null : { sticks, trim: p, alpha: 1 - p };
+  // ended: this frame has the swing's last stick, or comes after it (the impact)
+  const ended = k > 0 || !keys[frameIds[fi + 1]];
+  if (st.colorMode !== "glow") return sticks.length < 2 ? null : { sticks, trim: p, alpha: 1 - p, run: swing, age: fi - start, frame: fi, ended, after: k };
   // glow trails also want the whole swing (the flash sits on its first stick,
   // splatter flies off later ones), how long ago it started and the frame (stars
   // twinkle per frame). A lone first stick already shows the flash.
   if (sticks.length < 2 && !(st.flash > 0)) return null;
-  return { sticks, trim: p, alpha: 1 - p, run: swing, age: fi - start, frame: fi };
+  return { sticks, trim: p, alpha: 1 - p, run: swing, age: fi - start, frame: fi, ended, after: k };
 }
 
 // A stick drawn the wrong way round — its tip end where the grip is — turns the
@@ -338,29 +343,6 @@ function ribbonSections(trail, sticks, trim) {
   return out;
 }
 
-// draw the texture triangle (s0,s1,s2 in texture px) onto (d0,d1,d2) with an affine
-// map; triangles are grown a hair so neighbours overlap instead of leaving seams
-function texTri(g, tex, s0, s1, s2, d0, d1, d2) {
-  const cx = (d0[0] + d1[0] + d2[0]) / 3, cy = (d0[1] + d1[1] + d2[1]) / 3;
-  const grow = (p) => { const dx = p[0] - cx, dy = p[1] - cy, l = Math.hypot(dx, dy) || 1; return [p[0] + dx / l * 0.6, p[1] + dy / l * 0.6]; };
-  const D = [grow(d0), grow(d1), grow(d2)];
-  const den = (s1[0] - s0[0]) * (s2[1] - s0[1]) - (s2[0] - s0[0]) * (s1[1] - s0[1]);
-  if (Math.abs(den) < 1e-9) return;
-  const a = ((d1[0] - d0[0]) * (s2[1] - s0[1]) - (d2[0] - d0[0]) * (s1[1] - s0[1])) / den;
-  const b = ((d1[1] - d0[1]) * (s2[1] - s0[1]) - (d2[1] - d0[1]) * (s1[1] - s0[1])) / den;
-  const c = ((d2[0] - d0[0]) * (s1[0] - s0[0]) - (d1[0] - d0[0]) * (s2[0] - s0[0])) / den;
-  const d = ((d2[1] - d0[1]) * (s1[0] - s0[0]) - (d1[1] - d0[1]) * (s2[0] - s0[0])) / den;
-  const e = d0[0] - a * s0[0] - c * s0[1], f = d0[1] - b * s0[0] - d * s0[1];
-  g.save();
-  g.beginPath();
-  g.moveTo(D[0][0], D[0][1]); g.lineTo(D[1][0], D[1][1]); g.lineTo(D[2][0], D[2][1]);
-  g.closePath();
-  g.clip();
-  g.transform(a, b, c, d, e, f);
-  g.drawImage(tex, 0, 0);
-  g.restore();
-}
-
 function gradientAt(stops, u) {
   const s = [...stops].sort((x, y) => x.p - y.p);
   if (u <= s[0].p) return hexToRgb(s[0].c);
@@ -446,39 +428,6 @@ function brushSampler(canvas) {
     const y = Math.max(0, Math.min(d.h - 1, Math.round(v * (d.h - 1))));
     return d.lum[y * d.w + x];
   };
-}
-
-// ---------- per-pixel (u, v) ----------
-// A 256×256 lookup image (red = u, green = v) mapped onto the ribbon with the
-// same affine triangles as the texture: every covered pixel learns where it sits
-// along (u) and across (v) the trail. Needed for brush streaks, which run along u
-// and change across v.
-let uvTex = null;
-function uvTexture() {
-  if (uvTex) return uvTex;
-  uvTex = createCanvas(256, 256);
-  const g = uvTex.getContext("2d");
-  const img = g.createImageData(256, 256);
-  for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) {
-    const i = (y * 256 + x) * 4;
-    img.data[i] = x; img.data[i + 1] = y; img.data[i + 3] = 255;
-  }
-  g.putImageData(img, 0, 0);
-  return uvTex;
-}
-
-function uvMap(segs, w, h, flip) {
-  const c = createCanvas(w, h), g = c.getContext("2d", { willReadFrequently: true });
-  const T = uvTexture();
-  const v0 = flip ? 255 : 0, v1 = flip ? 0 : 255;
-  for (const [p, q] of segs) {
-    // the head cap's sections all sit at u = 1: give them a 1-texel strip, or the
-    // triangles collapse and the cap gets no (u, v) at all
-    const u1 = q.u * 255, u0 = Math.min(p.u * 255, u1 - 1);
-    texTri(g, T, [u0, v0], [u0, v1], [u1, v1], p.a, p.b, q.b);
-    texTri(g, T, [u0, v0], [u1, v1], [u1, v0], p.a, q.b, q.a);
-  }
-  return g.getImageData(0, 0, w, h).data;
 }
 
 // How much of the trail survives at (u, v) in the tail (0 = gone, 1 = solid).
@@ -695,7 +644,40 @@ function renderBands(t, segs, state, w, h, brush) {
     if (a <= 0) continue;
     od[i * 4] = col[0]; od[i * 4 + 1] = col[1]; od[i * 4 + 2] = col[2]; od[i * 4 + 3] = Math.round(a * 255);
   }
+  bandFx(t, runs, state, bands, w, h, od);
   return out;
+}
+
+// The accents of the glow trails (dust, shards, splatter, the impact burst) for
+// a band trail: drawn smooth, then in pixel mode every pixel at least a third
+// covered becomes solid and takes the nearest of the trail's own band colours,
+// so the accents are clean pixel art in the same palette. They go on top.
+function bandFx(t, runs, state, bands, w, h, od) {
+  const st = t.style, amt = (k) => Math.max(0, Math.min(1, st[k] || 0));
+  const amounts = { dust: amt("pxDust"), shards: amt("pxShards"), splatter: amt("pxSplatter"), impact: amt("pxImpact") };
+  if (!(amounts.dust || amounts.shards || amounts.splatter || amounts.impact) || !state.run) return;
+  const colors = bands.map(([c]) => c);                               // outer (dark) -> inner (bright)
+  const op = ((st.opacity ?? 100) / 100);
+  const fx = renderFx(runs, state.run, colors, amounts, w, h, {
+    seed: hashSeed(t.id || "x"), frame: state.frame || 0, alpha: state.alpha ?? 1, age: state.age || 0, ended: !!state.ended, after: state.after || 0,
+  });
+  if (!fx) return;
+  const d = fx.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+  for (let i = 0; i < w * h; i++) {
+    const a = d[i * 4 + 3];
+    if (!a) continue;
+    const r = d[i * 4], g = d[i * 4 + 1], b = d[i * 4 + 2];
+    if (st.pixel !== false) {
+      if (a < 85) continue;
+      let best = bands[0][0], bd = Infinity;
+      for (const [c] of bands) { const dd = (c[0] - r) ** 2 + (c[1] - g) ** 2 + (c[2] - b) ** 2; if (dd < bd) { bd = dd; best = c; } }
+      od[i * 4] = best[0]; od[i * 4 + 1] = best[1]; od[i * 4 + 2] = best[2]; od[i * 4 + 3] = Math.round(255 * Math.min(1, op));
+    } else {
+      const fa = (a / 255) * op, pa = od[i * 4 + 3] / 255, na = fa + pa * (1 - fa);
+      for (let k = 0; k < 3; k++) od[i * 4 + k] = Math.round((d[i * 4 + k] * fa + od[i * 4 + k] * pa * (1 - fa)) / (na || 1));
+      od[i * 4 + 3] = Math.round(na * 255);
+    }
+  }
 }
 
 // Render a trail state (see trailState) into a w×h ImageData in document pixels
@@ -767,10 +749,15 @@ function renderGlowTrail(t, state, w, h, z) {
     if (!z || all[i].z === z) { if (!cur) runs.push(cur = []); cur.push(all[i]); }
     else cur = null;
   }
-  return renderGlow(runs, t.style, w, h, {
+  // pixel art keeps its glow tight: a wide soft halo would turn into a flat
+  // plate of the faintest opacity step around the trail
+  const st = t.style.pixelGlow ? { ...t.style, glow: (t.style.glow || 0) * 0.5, haze: (t.style.haze || 0) * 0.6 } : t.style;
+  const c = renderGlow(runs, st, w, h, {
     seed: hashSeed(t.id), frame: state.frame || 0, alpha: state.alpha ?? 1, fade: t.style.fade,
-    fx: z !== "back", run: state.run || [], age: state.age || 0,
+    fx: z !== "back", run: state.run || [], age: state.age || 0, ended: !!state.ended, after: state.after || 0,
   });
+  // 像素光效: the same glow, turned into pixel art
+  return t.style.pixelGlow ? pixelateGlow(c, t.style, { size: t.style.pxSize, alpha: t.style.pxAlpha }) : c;
 }
 
 // The same bands + tail rendering for any ribbon given as cross-sections

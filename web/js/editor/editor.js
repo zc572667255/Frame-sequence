@@ -11,8 +11,9 @@ import * as R from "./raster.js";
 import { PALETTES, colorCounts, unpackRGB } from "../imaging/color.js";
 import { openModal } from "../ui/modal.js";
 import { showMenu } from "../ui/menu.js";
-import { TRAIL_PRESETS, TRAIL_DEFAULTS, BAND_LOOK, rasterizeTrail, presetSwatch } from "./trailbrush.js";
-import { GLOW_PRESETS, glowSwatch } from "../trails/glow.js";
+import { TRAIL_PRESETS, TRAIL_DEFAULTS, BAND_LOOK, rasterizeTrail } from "./trailbrush.js";
+import { GLOW_PRESETS } from "../trails/glow.js";
+import { styleThumb } from "./thumbs.js";
 import { TrailMode } from "./trailmode.js";
 import { drawFrameStack } from "../trails/composite.js";
 import { BUILTIN_BRUSHES, builtinBrush } from "../trails/model.js";
@@ -387,31 +388,35 @@ class Editor {
       const b = el("button", { class: "trail-preset" + (t.preset === p.id ? " on" : ""), title: p.name, onclick: () => {
         t.preset = p.id;
         t.bandPick = p.id;
+        t.pixelGlow = false;
         if (p.fade != null) t.fade = p.fade;
         if (p.look && p.look.shape) t.shape = p.look.shape;
         t.edgeBreak = Math.round(((p.look && p.look.edgeBreak) ?? BAND_LOOK.edgeBreak) * 100);
         this.saveTrail();
         this.syncToolUI();
-      } }, el("span", { class: "trail-sw", style: { background: presetSwatch(p, this.primary) } }), el("span", null, p.name));
+      } }, styleThumb("band", p, this.primary), el("span", null, p.name));
       grid.append(b);
     }
     // smooth 光效 styles, stored as "glow:<id>"
     const glowGrid = el("div", { class: "trail-presets" });
+    // 高清 or 像素 first. 像素 lists the glow styles drawn as pixel art, then the
+    // classic bands; switching keeps the glow style and only toggles pixel art
+    const glow = String(t.preset).startsWith("glow:"), hd = glow && !t.pixelGlow;
     for (const p of GLOW_PRESETS) {
       glowGrid.append(el("button", { class: "trail-preset" + (t.preset === "glow:" + p.id ? " on" : ""), title: p.name, onclick: () => {
         t.preset = "glow:" + p.id;
         t.glowPick = p.id;
+        t.pixelGlow = !hd;
         this.saveTrail();
         this.syncToolUI();
-      } }, el("span", { class: "trail-sw glow", style: { background: glowSwatch(p) } }), el("span", null, p.name)));
+      } }, styleThumb(hd ? "hd" : "pixel", p), el("span", null, p.name)));
     }
-    // 高清 (glow) or 像素 (bands) first, then that kind's styles; each kind
-    // remembers its last style
-    const glow = String(t.preset).startsWith("glow:");
     const kind = el("div", { class: "trail-kind" },
-      el("button", { class: glow ? "on" : "", title: "平滑发光的高清特效", onclick: () => { if (!glow) { t.preset = "glow:" + (t.glowPick || GLOW_PRESETS[0].id); this.saveTrail(); this.syncToolUI(); } } }, "高清"),
-      el("button", { class: glow ? "" : "on", title: "硬边像素画色带", onclick: () => { if (glow) { t.preset = t.bandPick || TRAIL_PRESETS[0].id; this.saveTrail(); this.syncToolUI(); } } }, "像素"));
-    o.append(kind, glow ? glowGrid : grid);
+      el("button", { class: hd ? "on" : "", title: "平滑发光的高清特效", onclick: () => { if (!hd) { if (!glow) t.preset = "glow:" + (t.glowPick || GLOW_PRESETS[0].id); t.pixelGlow = false; this.saveTrail(); this.syncToolUI(); } } }, "高清"),
+      el("button", { class: hd ? "" : "on", title: "像素画：同样的光效画成像素，或经典分层色带", onclick: () => { if (hd) { t.pixelGlow = true; this.saveTrail(); this.syncToolUI(); } } }, "像素"));
+    o.append(kind);
+    if (hd) o.append(glowGrid);
+    else o.append(el("div", { class: "ed-opt-sub" }, "像素光效"), glowGrid, el("div", { class: "ed-opt-sub" }, "经典色带"), grid);
     const slider = (label, key, min, max, unit) => {
       const val = el("span", { class: "mono" }, t[key] + unit);
       const r = el("input", { type: "range", min, max, value: t[key], oninput: () => { t[key] = +r.value; val.textContent = r.value + unit; this.saveTrail(); } });
@@ -419,6 +424,13 @@ class Editor {
     };
     slider("宽度", "width", 1, glow ? 240 : 64, "px");
     slider("尾部渐隐", "fade", 0, 100, "%");
+    if (glow && t.pixelGlow) {
+      slider("像素大小", "pxSize", 1, 8, "px");
+      const pa = el("select", { class: "ed-select" },
+        ...[["steps", "4 级透明"], ["dither", "抖动（全实心）"], ["hard", "硬边"]].map(([v, n]) => el("option", { value: v, selected: (t.pxAlpha || "steps") === v }, n)));
+      pa.onchange = () => { t.pxAlpha = pa.value; this.saveTrail(); };
+      o.append(el("div", { class: "ed-opt-title" }, "透明方式"), pa);
+    }
     if (!glow) {
       // how neighbouring colour bands meet (no partial alpha either way)
       const bb = el("select", { class: "ed-select" },
