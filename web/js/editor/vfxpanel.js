@@ -2,7 +2,7 @@
 // the right in place of the colours while an effect layer is the current layer.
 // Where and how big it is can also be set on the canvas (drag it, or a corner).
 import { el } from "../core/util.js";
-import { VFX_KINDS, VFX_PALETTES, renderVfx } from "../vfx/effects.js";
+import { VFX_KINDS, VFX_PALETTES, renderVfx, hasSide } from "../vfx/effects.js";
 import { vfxSettings } from "../vfx/layer.js";
 
 const GROUND = new Set(["shock", "dust", "circle", "heal"]);
@@ -58,6 +58,7 @@ export class VfxPanel {
     const l = this.layer(), li = ed.li;
     ed.change(() => {
       const v = { ...l.vfx, kind: k.id, ...k.defaults };
+      if (!k.side) v.view = "front";
       // a layer still named after its type takes the new type's name
       if (VFX_KINDS.some((x) => l.name === x.name || l.name.startsWith(x.name + " "))) l.name = k.name;
       if (k.around && !v.follow) {
@@ -218,7 +219,7 @@ export class VfxPanel {
     slider("特效大小", "size", 20, 100, "%", "特效在画幅框里占多大：画幅框不变，只缩放特效（超出画幅框的部分会被裁掉）");
     slider("粒子", "amount", 0, 200, "%");
     slider("辉光", "glow", 0, 150, "%");
-    choose("视角", "view", [["front", "正面"], ["side", "侧面"]]);
+    if (hasSide(s.kind)) choose("视角", "view", [["front", "正面"], ["side", "侧面"]]);
     slider("旋转", "rotate", -180, 180, "°", "整个特效绕中心转动（转出画幅框的部分会被裁掉，可以把画幅框拉大）");
     if (GROUND.has(s.kind)) slider("地面倾斜", "tilt", 0, 80, "°", "0° 是从正上方看，越大越扁，像放在地上");
     if (s.kind === "circle") choose("法阵图案", "pattern", [["hex", "六芒星"], ["penta", "五芒星"], ["square", "双方形（八角）"]]);

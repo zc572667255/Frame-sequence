@@ -26,16 +26,20 @@ const lum = (c) => 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
 export const VFX_KINDS = [
   { id: "hit", name: "命中火花", help: "打中的一瞬间：白热闪光、尖刺和飞溅的火花", defaults: { palette: "radiant", frames: 7, loop: false, size: 80 } },
   { id: "explosion", name: "爆炸", help: "火球膨胀、冷却成烟往上飘，带飞散的火星", defaults: { palette: "inferno", frames: 12, loop: false, size: 80 } },
-  { id: "shock", name: "冲击波", help: "向外扩散的环，可以压扁成地面上的冲击波", defaults: { palette: "frost", frames: 8, loop: false, size: 80 } },
+  { id: "shock", name: "冲击波", help: "向外扩散的环，可以压扁成地面上的冲击波；侧面是竖起来侧对着的环", defaults: { palette: "frost", frames: 8, loop: false, size: 80 }, side: true },
   { id: "dust", name: "烟尘", help: "落地、急停、冲刺扬起的烟尘，向两侧散开", defaults: { palette: "quake", frames: 10, loop: false, size: 80 } },
   { id: "charge", name: "蓄力", help: "能量向中心汇聚成发光的球；不循环时最后爆开", defaults: { palette: "spark", frames: 12, loop: true, size: 80 } },
-  { id: "circle", name: "魔法阵", help: "旋转的法阵：圆环、符文、星形，向上飘的光点", defaults: { palette: "crescent", frames: 16, loop: true, size: 80 } },
+  { id: "circle", name: "魔法阵", help: "旋转的法阵：圆环、符文、星形，向上飘的光点；侧面是竖起来侧对着的法阵，像一道传送门", defaults: { palette: "crescent", frames: 16, loop: true, size: 80 }, side: true },
   { id: "heal", name: "治疗光圈", help: "脚下的光圈和升起的光柱、十字光点", defaults: { palette: "venom", frames: 12, loop: true, size: 80 } },
   { id: "aura", name: "环绕光", help: "超级赛亚人那样包住角色的斗气：向上舔动的光焰、中间透明、上升的光束和火花，可加闪电", defaults: { palette: "radiant", frames: 8, loop: true, size: 95 }, around: true },
   { id: "burn", name: "燃烧", help: "从区域底部烧起来的火焰，火舌摇动，火星上飘", defaults: { palette: "blaze", frames: 8, loop: true, size: 95 } },
   { id: "ribbon", name: "流光", help: "柔和流动的光带：几束细丝交织起伏、扭转，带闪烁的光尘", defaults: { palette: "dream", frames: 16, loop: true, size: 95 } },
-  { id: "wings", name: "翅膀", help: "光做的翅膀，重神不重形：一扇从肩部放出的发光笔触、淡淡的光幕，光沿笔触流向翼尖，翼尖飘落光点；循环时扇动一次，不循环时展开后散成光点。正面是一对，侧面是向后展开的近翼和后面的远翼", defaults: { palette: "radiant", frames: 16, loop: true, size: 95 } },
+  { id: "wings", name: "翅膀", help: "光做的翅膀，重神不重形：一扇从肩部放出的发光笔触、淡淡的光幕，光沿笔触流向翼尖，翼尖飘落光点；循环时扇动一次，不循环时展开后散成光点。正面是一对，侧面是向后展开的近翼和后面的远翼", defaults: { palette: "radiant", frames: 16, loop: true, size: 95 }, side: true },
 ];
+
+// does this kind have a side view (视角 侧面)? The others look the same from
+// any side, so they offer no choice
+export const hasSide = (kind) => !!(VFX_KINDS.find((k) => k.id === kind) || {}).side;
 
 export const VFX_DEFAULTS = {
   kind: "hit", palette: "radiant", w: 128, h: 128, frames: 7, fps: 12, loop: false,
@@ -45,7 +49,7 @@ export const VFX_DEFAULTS = {
   tilt: 60,      // 冲击波 / 魔法阵 / 治疗 / 烟尘: how flat the ground is seen, degrees (0 = from above)
   pattern: "hex", // 魔法阵: "hex" 六芒星 | "penta" 五芒星 | "square" 双方形
   bolts: false,  // 环绕光: lightning crawling over it
-  view: "front", // "front" 正面 | "side" 侧面: wings draw their side view; the rest is foreshortened sideways
+  view: "front", // "front" 正面 | "side" 侧面, for the kinds that have one (hasSide)
   rotate: 0,     // degrees, the whole effect turned about its centre
   seed: 1,
   style: "hd",   // "hd" | "pixel"
@@ -95,12 +99,13 @@ function blob(g, x, y, r, stops) {
   g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
 }
 
-// a soft ring of radius r and half-width wd, squashed vertically by k
-function ring(g, x, y, r, wd, k, c, a) {
+// a soft ring of radius r and half-width wd, squashed vertically by k (and
+// sideways by kx: a ring seen edge-on)
+function ring(g, x, y, r, wd, k, c, a, kx = 1) {
   if (r <= 0 || a <= 0.005) return;
   const R = r + wd;
   g.save();
-  g.translate(x, y); g.scale(1, k);
+  g.translate(x, y); g.scale(kx, k);
   const gr = g.createRadialGradient(0, 0, 0, 0, 0, R);
   gr.addColorStop(clamp01((r - wd) / R), rgba(c, 0));
   gr.addColorStop(clamp01(r / R), rgba(c, a));
@@ -423,7 +428,10 @@ const EFFECTS = {
   // speed lines at the front and bits of dust kicked up along it
   shock(g, c) {
     const { t, R, pal } = c;
-    const k = c.squash, cx = c.cx, cy = k < 0.98 ? c.gy : c.cy;
+    // 侧面: the ring stands upright and is seen edge-on — narrowed sideways
+    // (its glow and the flash stay round)
+    const side = c.view === "side", kx = side ? 0.3 : 1;
+    const k = side ? 1 : c.squash, cx = c.cx, cy = k < 0.98 ? c.gy : c.cy;
     g.globalCompositeOperation = "lighter";
     const fl = 1 - smooth(0, 0.3, t);
     g.save(); g.translate(cx, cy); g.scale(1, k);
@@ -431,14 +439,14 @@ const EFFECTS = {
     g.restore();
     // the rings hold their brightness, then fade out by the last frame
     const r1 = R * easeOut(t, 2.6), r2 = R * 0.8 * easeOut((t - 0.12) / 0.88, 2.6), left = 1 - easeIn(t, 2);
-    ring(g, cx, cy, r1, R * 0.11 * (1 - t) + 0.8, k, pal.core, 0.95 * (1 - easeIn(t, 2.2)));
-    ring(g, cx, cy, r1, R * 0.2 * (1 - t) + 1, k, pal.rim, 0.5 * left);
-    if (t > 0.12) ring(g, cx, cy, r2, R * 0.05 * (1 - t) + 0.6, k, pal.rim, 0.7 * left);
+    ring(g, cx, cy, r1, R * 0.11 * (1 - t) + 0.8, k, pal.core, 0.95 * (1 - easeIn(t, 2.2)), kx);
+    ring(g, cx, cy, r1, R * 0.2 * (1 - t) + 1, k, pal.rim, 0.5 * left, kx);
+    if (t > 0.12) ring(g, cx, cy, r2, R * 0.05 * (1 - t) + 0.6, k, pal.rim, 0.7 * left, kx);
     const P = rng(c.seed * 23 + 4), N = Math.round(18 * c.amount);
     for (let i = 0; i < N; i++) {
       const th = P() * TAU, l = 0.1 + 0.15 * P(), a = left * (0.5 + 0.5 * P());
-      const p = [cx + Math.cos(th) * r1 * (1 - l), cy + Math.sin(th) * r1 * (1 - l) * k];
-      const q = [cx + Math.cos(th) * r1 * 1.04, cy + Math.sin(th) * r1 * 1.04 * k];
+      const p = [cx + Math.cos(th) * r1 * (1 - l) * kx, cy + Math.sin(th) * r1 * (1 - l) * k];
+      const q = [cx + Math.cos(th) * r1 * 1.04 * kx, cy + Math.sin(th) * r1 * 1.04 * k];
       streak(g, p, q, pal.rim, pal.core, a, Math.max(0.8, R * 0.02));
     }
     if (k < 0.98) {
@@ -548,7 +556,10 @@ const EFFECTS = {
     const reveal = c.loop ? 1 : easeOut(t / 0.35, 2);
     const env = c.loop ? 1 : 1 - smooth(0.78, 1, t);
     const lw = Math.max(0.8, R * 0.022);
-    const k = c.squash, ox = c.cx, oy = c.gy;
+    // 侧面: the circle stands upright, seen edge-on — a portal: narrowed
+    // sideways instead of laid flat (lines keep their width, motes stay round)
+    const side = c.view === "side", kx = side ? 0.32 : 1;
+    const k = side ? 1 : c.squash, ox = c.cx, oy = side ? c.cy : c.gy;
     // a loop turns each part by exactly one of its symmetry steps, so the last
     // frame leads back into the first: the runes alternate two glyphs (a step
     // of two runes), the star by its own symmetry
@@ -559,7 +570,7 @@ const EFFECTS = {
     // a point drawn flat at (x, y), turned by rot, laid on the ground
     const to = (x, y, rot = 0) => {
       const cs = Math.cos(rot), sn = Math.sin(rot);
-      return [ox + x * cs - y * sn, oy + (x * sn + y * cs) * k];
+      return [ox + (x * cs - y * sn) * kx, oy + (x * sn + y * cs) * k];
     };
     const poly = (pts, rot) => pts.forEach(([x, y], i) => { const [X, Y] = to(x, y, rot); if (i) L.lineTo(X, Y); else L.moveTo(X, Y); });
     const circ = (r) => {
@@ -602,10 +613,10 @@ const EFFECTS = {
     // a faint light pooled on the ground under it, and in the band of runes
     // (高清 only: in pixels it would fill the circle with a solid plate)
     if (!c.pixel) {
-      g.save(); g.translate(ox, oy); g.scale(1, k);
+      g.save(); g.translate(ox, oy); g.scale(kx, k);
       blob(g, 0, 0, R, [[0, pal.rim, 0.12 * env * reveal], [0.85, pal.rim, 0.07 * env * reveal], [1, pal.rim, 0]]);
       g.restore();
-      ring(g, ox, oy, R * 0.94, R * 0.05, k, pal.rim, 0.18 * env * reveal);
+      ring(g, ox, oy, R * 0.94, R * 0.05, k, pal.rim, 0.18 * env * reveal, kx);
     }
     g.globalAlpha = Math.min(1, env * (c.pixel ? 0.35 : 0.9) * c.glow);
     drawBlurred(g, [lay], Math.max(2, R * 0.06));
@@ -626,7 +637,7 @@ const EFFECTS = {
     for (let i = 0; i < M; i++) {
       const th = P() * TAU, rr = Math.sqrt(P()) * R * 0.9, ph = P(), sp = 1 + Math.floor(P() * 2);
       const p = frac(ph + t * sp), a = Math.sin(Math.PI * p) * env * reveal;
-      const x = ox + Math.cos(th) * rr, y = oy + Math.sin(th) * rr * k - R * 0.9 * p;
+      const x = ox + Math.cos(th) * rr * kx, y = oy + Math.sin(th) * rr * k - R * 0.9 * p;
       if (c.pixel) blob(g, x, y, Math.max(1.2, R * 0.035), [[0, pal.core, a], [0.5, pal.rim, 0.5 * a], [1, pal.rim, 0]]);
       else ember(g, pal, x, y, 0, -1, Math.max(0.6, R * 0.012), a);
     }
@@ -1037,7 +1048,7 @@ export function renderVfx(p, i) {
     gy: s.kind === "dust" ? h * 0.85 : ground ? h / 2 + R * squash * 0.5 : h / 2,
     squash: s.kind === "shock" && s.tilt <= 2 ? 1 : squash,
     amount: Math.max(0, s.amount / 100), glow: Math.max(0, s.glow / 100), loop: !!s.loop, pattern: s.pattern,
-    pixel: s.style === "pixel", bolts: !!s.bolts, view: s.view,
+    pixel: s.style === "pixel", bolts: !!s.bolts, view: hasSide(s.kind) ? s.view : "front",
   };
   // what stands on the ground sits low, its ring just inside the bottom edge
   if (s.kind === "circle" || s.kind === "heal") c.gy = Math.max(h / 2, h - R * squash - 4);
@@ -1047,15 +1058,16 @@ export function renderVfx(p, i) {
   draw(bg, c);
   bg.globalCompositeOperation = "source-over";
   bg.globalAlpha = 1;
-  // 视角 and 旋转, for every kind: seen from the side the effect is narrowed
-  // sideways (wings draw their own side view), then the whole picture turns
-  // about its centre — before the bloom and the pixels, so both follow it
-  const rot = ((+s.rotate || 0) % 360) * Math.PI / 180, narrow = s.view === "side" && s.kind !== "wings" ? 0.45 : 1;
-  if (rot || narrow !== 1) {
+  // 旋转, for every kind: the whole picture turns about its centre — before
+  // the bloom and the pixels, so both follow it. (视角 is drawn by the kinds
+  // that have a side view; squashing the finished picture would only stretch
+  // round sparks and flames out of shape.)
+  const rot = ((+s.rotate || 0) % 360) * Math.PI / 180;
+  if (rot) {
     const turned = createCanvas(w, h), tg = turned.getContext("2d");
     tg.imageSmoothingEnabled = true;
     tg.imageSmoothingQuality = "high";
-    tg.translate(w / 2, h / 2); tg.rotate(rot); tg.scale(narrow, 1);
+    tg.translate(w / 2, h / 2); tg.rotate(rot);
     tg.drawImage(base, -w / 2, -h / 2);
     base = turned;
   }

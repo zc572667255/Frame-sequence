@@ -5,7 +5,7 @@ import { defineNode } from "../registry.js";
 import { makeStage, makePlayer } from "../view.js";
 import { framesValue } from "../data.js";
 import { el } from "../../core/util.js";
-import { VFX_KINDS, VFX_DEFAULTS, VFX_PALETTES, renderVfxFrames } from "../../vfx/effects.js";
+import { VFX_KINDS, VFX_DEFAULTS, VFX_PALETTES, renderVfxFrames, hasSide } from "../../vfx/effects.js";
 
 const GROUND = new Set(["shock", "dust", "circle", "heal"]);
 
@@ -57,7 +57,7 @@ defineNode({
     // a new kind starts from its own colours, length and looping
     f.select("类型", "kind", VFX_KINDS.map((k) => [k.id, k.name]), {
       wide: true,
-      onChange: (id) => { const k = VFX_KINDS.find((x) => x.id === id); if (k) ctx.set({ ...k.defaults }); },
+      onChange: (id) => { const k = VFX_KINDS.find((x) => x.id === id); if (k) ctx.set({ ...k.defaults, ...(k.side ? {} : { view: "front" }) }); },
     });
     f.hint(() => (VFX_KINDS.find((k) => k.id === p().kind) || {}).help || "");
     f.select("配色", "palette", VFX_PALETTES, { wide: true });
@@ -78,7 +78,7 @@ defineNode({
     f.slider("大小", "size", { min: 20, max: 100, unit: "%" });
     f.slider("粒子", "amount", { min: 0, max: 200, unit: "%" });
     f.slider("辉光", "glow", { min: 0, max: 150, unit: "%" });
-    f.select("视角", "view", [["front", "正面"], ["side", "侧面"]], { wide: true });
+    const view = f.select("视角", "view", [["front", "正面"], ["side", "侧面"]], { wide: true });
     f.slider("旋转", "rotate", { min: -180, max: 180, unit: "°" });
     const ground = f.slider("地面倾斜", "tilt", { min: 0, max: 80, unit: "°" });
     const pattern = f.select("法阵图案", "pattern", [["hex", "六芒星"], ["penta", "五芒星"], ["square", "双方形（八角）"]], { wide: true });
@@ -89,8 +89,9 @@ defineNode({
       px.style.display = p().style === "pixel" ? "" : "none";
       ground.style.display = GROUND.has(k) ? "" : "none";
       pattern.style.display = k === "circle" ? "" : "none";
+      view.style.display = hasSide(k) ? "" : "none";
     });
     f.buttons(["换一个随机样子", () => ctx.set({ seed: (p().seed % 9973) + 1 + Math.floor(Math.random() * 500) })]);
-    f.hint("「地面倾斜」：0° 是从正上方看，越大越扁，像放在地上（冲击波为 0° 时是空中的圆环）。「视角」侧面：翅膀画成侧面的样子，其他特效横向压窄；「旋转」整体绕中心转动。想手修就右键卡片「烘焙为动画卡片」。");
+    f.hint("「地面倾斜」：0° 是从正上方看，越大越扁，像放在地上（冲击波为 0° 时是空中的圆环）。「视角」（翅膀、冲击波、魔法阵）侧面：翅膀向后展开，冲击波和魔法阵竖起来侧对；「旋转」整体绕中心转动。想手修就右键卡片「烘焙为动画卡片」。");
   },
 });
