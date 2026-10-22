@@ -10,7 +10,7 @@
 // outer) with a greyscale brush texture whose luminance becomes opacity, coloured
 // with one colour, a gradient along u, or the texture's own colours.
 import { createCanvas, hexToRgb } from "../core/util.js";
-import { renderGlow, renderFx, pixelateGlow, hashSeed } from "./glow.js";
+import { renderGlow, renderFx, pixelateGlow, celShade, mixStyle, hashSeed } from "./glow.js";
 import { texTri, uvMap } from "./uv.js";
 
 export const STYLE_DEFAULTS = {
@@ -30,6 +30,8 @@ export const STYLE_DEFAULTS = {
   splits: 0,                        // 分条: cut the width into this many + 1 parallel strips, each with its own colours
   pxDust: 0, pxShards: 0, pxSplatter: 0, pxImpact: 0,   // accents (trails/glow.js renderFx), snapped to the band colours
   pixelGlow: false, pxSize: 1, pxAlpha: "steps",        // glow trails as pixel art (像素光效): block size, opacity steps | dither | hard
+  mixEdge: 100, mixBody: 100, mixGlow: 100, mixFx: 100, mixBurst: 100,   // the shared glow controls (trails/glow.js mixStyle)
+  pxFx: 0,                                               // band trails: one 粒子 slider for dust, shards and splatter
   tailMode: "brush",               // brush (streaks) | dither (dots) | smooth (needs pixel off)
   brush: { kind: "builtin", id: "bristle" },
   color: "#ffffff",
@@ -654,7 +656,8 @@ function renderBands(t, segs, state, w, h, brush) {
 // so the accents are clean pixel art in the same palette. They go on top.
 function bandFx(t, runs, state, bands, w, h, od) {
   const st = t.style, amt = (k) => Math.max(0, Math.min(1, st[k] || 0));
-  const amounts = { dust: amt("pxDust"), shards: amt("pxShards"), splatter: amt("pxSplatter"), impact: amt("pxImpact") };
+  const all = amt("pxFx");
+  const amounts = { dust: Math.max(amt("pxDust"), all), shards: Math.max(amt("pxShards"), all * 0.6), splatter: Math.max(amt("pxSplatter"), all * 0.6), impact: amt("pxImpact") };
   if (!(amounts.dust || amounts.shards || amounts.splatter || amounts.impact) || !state.run) return;
   const colors = bands.map(([c]) => c);                               // outer (dark) -> inner (bright)
   const op = ((st.opacity ?? 100) / 100);
@@ -749,15 +752,19 @@ function renderGlowTrail(t, state, w, h, z) {
     if (!z || all[i].z === z) { if (!cur) runs.push(cur = []); cur.push(all[i]); }
     else cur = null;
   }
-  // pixel art keeps its glow tight: a wide soft halo would turn into a flat
-  // plate of the faintest opacity step around the trail
-  const st = t.style.pixelGlow ? { ...t.style, glow: (t.style.glow || 0) * 0.5, haze: (t.style.haze || 0) * 0.6 } : t.style;
+  // pixel art and cel shading keep the glow tight: a wide soft halo would turn
+  // into a flat plate of the faintest opacity step around the trail
+  const base = mixStyle(t.style);                              // the shared 强度 / 光晕 / 粒子 / 爆发 controls
+  const flat = base.pixelGlow || base.cel > 0;
+  const st = flat ? { ...base, glow: (base.glow || 0) * 0.5, haze: (base.haze || 0) * 0.6 } : base;
   const c = renderGlow(runs, st, w, h, {
     seed: hashSeed(t.id), frame: state.frame || 0, alpha: state.alpha ?? 1, fade: t.style.fade,
     fx: z !== "back", run: state.run || [], age: state.age || 0, ended: !!state.ended, after: state.after || 0,
   });
   // 像素光效: the same glow, turned into pixel art
-  return t.style.pixelGlow ? pixelateGlow(c, t.style, { size: t.style.pxSize, alpha: t.style.pxAlpha }) : c;
+  if (t.style.pixelGlow) return pixelateGlow(c, t.style, { size: t.style.pxSize, alpha: t.style.pxAlpha });
+  // 色阶: flat cel-shaded tones (and an outline), the 2D anime look
+  return t.style.cel > 0 ? celShade(c, t.style, t.style.cel / 100, (t.style.celOutline || 0) / 100) : c;
 }
 
 // The same bands + tail rendering for any ribbon given as cross-sections

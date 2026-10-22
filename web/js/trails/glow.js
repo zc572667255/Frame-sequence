@@ -16,7 +16,14 @@
 //   bolts   — lightning: jagged forking lines along the blade, new every frame
 //   flames  — tongues of fire licking off the blade, flickering every frame
 //   rays    — (holy light) thin beams shining outward from the leading edge
+//   crystal — (ice) faceted ice crystals packed along the leading edge
+//   speed lines — long straight streaks left behind the head
+//   snow    — (fx) six-armed snowflakes turning and twinkling around the trail
 //   embers  — (fx) glowing sparks rising and swaying off the swing
+//   tail tint — the colour shifts along the trail toward a second colour at the
+//             tail (blue tail, red head), changing hue but not brightness
+// Optional finishing (celShade): flat cel-shaded tones with a dark outline, the
+// 2D anime look.
 // Dark palettes (黑炎) are painted rather than added as light: black fire has to
 // cover what is behind it, and only its glowing edge adds light.
 //   bloom   — a blurred copy of strands + core (+ flow) added on top
@@ -36,7 +43,7 @@ export const GLOW_PRESETS = [
   { id: "blaze", name: "烈焰斩", colors: ["#ff5a4a", "#ff7a2a", "#ffad3b", "#ffd27a"], core: "#fffaf0", rim: "#ff9a1a", splat: "#e08a2e",
     look: { strands: 14, core: 90, haze: 60, glow: 50, sparkles: 0, sparkleSize: 6, flash: 80, splatter: 50, erode: 35, flow: 60, impact: 60, flames: 55, embers: 45 } },
   { id: "frost", name: "冰晶", colors: ["#1b4dff", "#38c7ff", "#c4f4ff", "#ffffff"], core: "#ffffff", rim: "#5fd6ff", splat: "#a6e8ff",
-    look: { strands: 40, core: 60, haze: 40, glow: 65, sparkles: 10, sparkleSize: 6, flash: 40, splatter: 0, erode: 35, flow: 25, shards: 50, dust: 40 } },
+    look: { strands: 30, core: 60, haze: 35, glow: 60, sparkles: 8, sparkleSize: 6, flash: 40, splatter: 0, erode: 35, flow: 20, shards: 45, dust: 15, crystal: 60, speedLines: 35, snow: 55 } },
   { id: "spark", name: "雷光", colors: ["#3a0a8a", "#7a2aff", "#c08aff", "#f2e4ff"], core: "#ffffff", rim: "#b47aff", splat: "#d8b8ff",
     look: { strands: 22, core: 70, haze: 25, glow: 80, sparkles: 14, sparkleSize: 5, flash: 100, splatter: 0, erode: 35, flow: 20, impact: 55, dust: 20, bolts: 85 } },
   { id: "radiant", name: "圣光", colors: ["#ff9f2e", "#ffdc7a", "#fff8de", "#ffffff"], core: "#ffffff", rim: "#ffd25c", splat: "#ffe08a",
@@ -46,7 +53,9 @@ export const GLOW_PRESETS = [
   { id: "venom", name: "毒雾", colors: ["#0b7a34", "#35d65a", "#b9ff8c", "#f2ffdc"], core: "#f4ffe8", rim: "#4be06a", splat: "#4caf3c",
     look: { strands: 25, core: 50, haze: 65, glow: 55, sparkles: 4, sparkleSize: 5, flash: 0, splatter: 80, erode: 40, flow: 70, dust: 30 } },
   { id: "shatter", name: "冰刃碎光", colors: ["#1a2f8a", "#2f6bff", "#6fd4ff", "#e8fbff"], core: "#ffffff", rim: "#9fe8ff", splat: "#bfe8ff",
-    look: { strands: 30, core: 55, haze: 35, glow: 60, sparkles: 6, sparkleSize: 4, flash: 0, splatter: 0, erode: 40, flow: 55, shards: 70, dust: 70 } },
+    look: { strands: 30, core: 55, haze: 35, glow: 60, sparkles: 6, sparkleSize: 4, flash: 0, splatter: 0, erode: 40, flow: 45, shards: 75, dust: 40, crystal: 40, snow: 25 } },
+  { id: "glacier", name: "寒冰斩", colors: ["#0a1a6a", "#1a50e0", "#5ab4ff", "#dff4ff"], core: "#ffffff", rim: "#8fd4ff", splat: "#bfe8ff",
+    look: { strands: 18, core: 70, haze: 25, glow: 65, sparkles: 10, sparkleSize: 5, flash: 0, splatter: 0, erode: 30, flow: 15, shards: 30, dust: 25, crystal: 85, speedLines: 75, snow: 25 } },
   { id: "inferno", name: "炎爆", colors: ["#4a0000", "#c40c08", "#ff2e10", "#ff8a2a"], core: "#fff0d8", rim: "#ff4a18", splat: "#b01408",
     look: { strands: 4, core: 80, haze: 45, glow: 55, sparkles: 0, sparkleSize: 6, flash: 0, splatter: 40, erode: 45, flow: 90, impact: 90, dust: 10, flames: 75, embers: 65 } },
   { id: "blackfire", name: "黑炎", colors: ["#030005", "#0e0014", "#24062e", "#4a0c52"], core: "#0a0010", rim: "#c03aff", splat: "#3a0a44",
@@ -57,17 +66,50 @@ export const GLOW_PRESETS = [
     look: { strands: 24, core: 60, haze: 40, glow: 65, sparkles: 8, sparkleSize: 5, flash: 30, splatter: 0, erode: 35, flow: 45, dust: 30, bolts: 60 } },
   { id: "toon", name: "卡通白", colors: ["#9aa3b5", "#d8dde8", "#ffffff", "#ffffff"], core: "#ffffff", rim: "#ffffff", splat: "#ffffff",
     look: { strands: 8, core: 100, haze: 0, glow: 0, sparkles: 0, sparkleSize: 4, flash: 0, splatter: 0, erode: 20, shadow: 70 } },
+  { id: "animefire", name: "动漫炎", colors: ["#a80a04", "#e8260c", "#ff6a10", "#ffc832"], core: "#fff3c0", rim: "#ff9a18", splat: "#c81808",
+    look: { strands: 0, core: 80, haze: 0, glow: 10, sparkles: 0, sparkleSize: 6, flash: 0, splatter: 40, erode: 30, flow: 90, flames: 90, embers: 30, impact: 80, cel: 85, celOutline: 0 } },
+  { id: "animebolt", name: "动漫雷", colors: ["#0a1a6a", "#1a5aff", "#5ac8ff", "#eaffff"], core: "#ffffff", rim: "#7ae0ff", splat: "#9ad8ff",
+    look: { strands: 10, core: 70, haze: 20, glow: 40, sparkles: 6, sparkleSize: 5, flash: 60, splatter: 0, erode: 30, flow: 30, bolts: 90, impact: 60, cel: 50, celOutline: 0 } },
+  { id: "tricolor", name: "三色斩", colors: ["#6a0a1a", "#e8283c", "#ffd8d8", "#ffffff"], core: "#ffffff", rim: "#ff6a7a", splat: "#ff8a9a", tail: "#1a46ff",
+    look: { strands: 8, core: 90, haze: 15, glow: 25, sparkles: 0, sparkleSize: 5, flash: 0, splatter: 0, erode: 25, flow: 20, tailTint: 90, cel: 40, celOutline: 0 } },
+  { id: "icefire", name: "冰火", colors: ["#8a1400", "#ff3a0a", "#ff8a2a", "#ffd8a8"], core: "#fff4e8", rim: "#ff5a1a", splat: "#8ad8ff", tail: "#1a8aff",
+    look: { strands: 18, core: 60, haze: 30, glow: 40, sparkles: 0, sparkleSize: 6, flash: 0, splatter: 0, erode: 35, flow: 60, flames: 50, embers: 30, shards: 35, tailTint: 100 } },
+  { id: "stardust", name: "星痕", colors: ["#3a2a80", "#c87aff", "#ffd27a", "#ffffff"], core: "#ffffff", rim: "#ffe6a0", splat: "#ffe6a0",
+    look: { strands: 40, core: 30, haze: 25, glow: 75, sparkles: 26, sparkleSize: 9, flash: 0, splatter: 0, erode: 25, dust: 90 } },
   { id: "crimson", name: "血刃", colors: ["#6b0014", "#d0162a", "#ff6a6f", "#ffe0e0"], core: "#fff0f0", rim: "#e8283c", splat: "#a0101e",
     look: { strands: 16, core: 85, haze: 55, glow: 45, sparkles: 0, sparkleSize: 6, flash: 50, splatter: 90, erode: 35, flow: 30, impact: 60 } },
 ];
 
 // the style fields a glow preset sets (trail.style / the 拖尾笔's options). Every
 // layer is set, so switching presets never keeps a layer from the last one.
-const LOOK_ZERO = { flow: 0, shards: 0, dust: 0, impact: 0, shadow: 0, bolts: 0, flames: 0, embers: 0, rays: 0 };
+const LOOK_ZERO = { flow: 0, shards: 0, dust: 0, impact: 0, shadow: 0, bolts: 0, flames: 0, embers: 0, rays: 0, tailTint: 0, cel: 0, celOutline: 0, crystal: 0, speedLines: 0, snow: 0 };
 export function glowStyle(p) {
-  return { glowId: p.id, glowColors: p.colors.slice(), glowCore: p.core, glowRim: p.rim, glowSplat: p.splat, ...LOOK_ZERO, ...p.look };
+  return { glowId: p.id, glowColors: p.colors.slice(), glowCore: p.core, glowRim: p.rim, glowSplat: p.splat, glowTail: p.tail || p.colors[0], ...LOOK_ZERO, ...p.look };
 }
 export const GLOW_DEFAULTS = glowStyle(GLOW_PRESETS[0]);
+
+// The controls every glow style shares, whatever its preset. Each one scales
+// the layers that sit in the same place on the effect (0..200 %, 100 = the
+// preset as designed), so the same handful of sliders works on fire, ice,
+// lightning or anything else.
+export const MIX_GROUPS = {
+  mixEdge: ["core", "crystal", "rays", "shadow"],                          // 刀锋: on the leading edge
+  mixBody: ["strands", "flow", "flames", "bolts", "speedLines"],           // 刀身: inside the trail
+  mixGlow: ["glow", "haze"],                                               // 光晕: around it
+  mixFx: ["sparkles", "dust", "snow", "embers", "shards", "splatter"],     // 粒子: scattered about
+  mixBurst: ["flash", "impact"],                                           // 爆发: where the swing starts and ends
+};
+const MIX_LIMIT = { strands: 160, sparkles: 60 };
+export function mixStyle(st) {
+  let out = null;
+  for (const [k, keys] of Object.entries(MIX_GROUPS)) {
+    const m = st[k] == null ? 1 : Math.max(0, +st[k]) / 100;
+    if (m === 1) continue;
+    out = out || { ...st };
+    for (const key of keys) out[key] = Math.min(MIX_LIMIT[key] || 100, (+st[key] || 0) * m);
+  }
+  return out || st;
+}
 
 const lerp = (p, q, t) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t];
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
@@ -135,7 +177,7 @@ export function renderGlow(runs, style, fullW, fullH, ctx = {}) {
   for (const r of runs) for (const q of r) { grow(q.a); grow(q.b); }
   for (const s of run) { grow(s.a); grow(s.b); }
   const big = doFx && ((st.flash > 0 && (ctx.age ?? 0) < 4) || (st.impact > 0 && ctx.ended));
-  const pad = maxW * (big ? 2.8 : st.embers > 0 || st.rays > 0 ? 2.2 : 1.4) + 4;
+  const pad = maxW * (big || st.speedLines > 0 ? 2.8 : st.embers > 0 || st.rays > 0 || st.snow > 0 ? 2.2 : 1.4) + 4;
   x0 = Math.max(0, Math.floor(x0 - pad)); y0 = Math.max(0, Math.floor(y0 - pad));
   x1 = Math.min(fullW, Math.ceil(x1 + pad)); y1 = Math.min(fullH, Math.ceil(y1 + pad));
   if (!(x1 > x0 && y1 > y0)) return null;
@@ -159,7 +201,8 @@ export function renderGlow(runs, style, fullW, fullH, ctx = {}) {
     const haze = pct("haze");
     if (haze > 0) {
       const H = createCanvas(w, h), hg = H.getContext("2d");
-      hg.lineCap = "round"; hg.lineJoin = "round";
+      // butt ends: a round cap on the last segment would bulge past the head
+      hg.lineCap = "butt"; hg.lineJoin = "round";
       const lanes = 6;
       for (const r of runs) for (let l = 0; l < lanes; l++) {
         const v = (l + 0.5) / lanes, col = colorAcross(cols, v);
@@ -304,7 +347,17 @@ export function renderGlow(runs, style, fullW, fullH, ctx = {}) {
       gr.addColorStop(0.45, rgba(rimC, 0.22 * alpha));
       gr.addColorStop(1, rgba(rimC, 0));
       lg.fillStyle = gr;
+      // kept inside the ribbon, so the head has the shape its arc setting gives
+      // it (flat at 0) instead of a round blob of light
+      const hr = runs[runs.length - 1];
+      lg.save();
+      lg.beginPath();
+      hr.forEach((q, i) => (i ? lg.lineTo(q.a[0], q.a[1]) : lg.moveTo(q.a[0], q.a[1])));
+      for (let i = hr.length - 1; i >= 0; i--) lg.lineTo(hr[i].b[0], hr[i].b[1]);
+      lg.closePath();
+      lg.clip();
       lg.beginPath(); lg.arc(c[0], c[1], r, 0, Math.PI * 2); lg.fill();
+      lg.restore();
     }
 
     // ---- lightning
@@ -315,6 +368,11 @@ export function renderGlow(runs, style, fullW, fullH, ctx = {}) {
     og.globalCompositeOperation = "source-over";
     og.drawImage(C, 0, 0);
     if (Bt) { og.globalCompositeOperation = "lighter"; og.drawImage(Bt, 0, 0); og.globalCompositeOperation = "source-over"; }
+    // ---- ice crystals and speed lines
+    const Cr = pct("crystal") > 0 ? crystals(runs, w, h, cols, coreC, seed, alpha, tail, maxW, pct("crystal")) : null;
+    if (Cr) og.drawImage(Cr, 0, 0);
+    const Sl = pct("speedLines") > 0 ? speedLines(runs, w, h, coreC, rimC, seed, frame, alpha, maxW, pct("speedLines")) : null;
+    if (Sl) { og.globalCompositeOperation = "lighter"; og.drawImage(Sl, 0, 0); og.globalCompositeOperation = "source-over"; }
     // ---- rays of light
     const Ry = pct("rays") > 0 ? rays(runs, w, h, coreC, rimC, seed, frame, alpha, maxW, pct("rays")) : null;
     if (Ry) { og.globalCompositeOperation = "lighter"; og.drawImage(Ry, 0, 0); og.globalCompositeOperation = "source-over"; }
@@ -324,7 +382,7 @@ export function renderGlow(runs, style, fullW, fullH, ctx = {}) {
       og.globalCompositeOperation = "lighter";
       for (const [rad, k] of [[maxW / 9, 0.45], [maxW / 3.5, 0.35]]) {
         og.globalAlpha = bloom * k;
-        drawBlurred(og, [L, C, F, Bt, T, Ry].filter(Boolean), Math.max(1, rad));
+        drawBlurred(og, [L, C, F, Bt, T, Ry, Cr, Sl].filter(Boolean), Math.max(1, rad));
       }
       og.globalAlpha = 1;
       og.globalCompositeOperation = "source-over";
@@ -333,12 +391,14 @@ export function renderGlow(runs, style, fullW, fullH, ctx = {}) {
 
   // erosion: as the trail dissolves, noise eats it from the thin parts inward
   // (the usual alpha-erosion of slash VFX) instead of it just turning see-through
+  if (runs.length && pct("tailTint") > 0 && st.glowTail) tintTail(og, w, h, runs, hexToRgb(st.glowTail), pct("tailTint"), maxW);
   if (runs.length) erode(og, w, h, x0, y0, seed, pct("erode"), ctx.alpha ?? 1, maxW, UV);
 
   if (doFx) {
     if (runs.length) {
       sparkles(og, runs, st, cols, seed, frame, alpha, maxW, at);
       dust(og, runs, cols, seed, frame, alpha, maxW, at, pct("dust"));
+      snow(og, runs, coreC, rimC, seed, frame, alpha, maxW, at, pct("snow"));
     }
     if (run.length) {
       flash(og, run, st, coreC, rimC, seed, frame, ctx.age ?? 0, alpha, pct("flash"));
@@ -527,6 +587,14 @@ function star(og, p, s, c, a, tilt) {
     og.lineWidth = Math.max(0.6, s / 6);
     og.beginPath(); og.moveTo(x0, y0); og.lineTo(x1, y1); og.stroke();
   }
+  // the lens streak: long and faint, always level
+  const fl = s * 4.5, fx = og.createLinearGradient(p[0] - fl, p[1], p[0] + fl, p[1]);
+  fx.addColorStop(0, rgba(c, 0));
+  fx.addColorStop(0.5, rgba(c, 0.45 * a));
+  fx.addColorStop(1, rgba(c, 0));
+  og.strokeStyle = fx;
+  og.lineWidth = Math.max(0.5, s / 10);
+  og.beginPath(); og.moveTo(p[0] - fl, p[1]); og.lineTo(p[0] + fl, p[1]); og.stroke();
 }
 
 // a starburst where the swing starts: rays, a bright dot and an expanding ring,
@@ -698,42 +766,150 @@ function dust(og, runs, cols, seed, frame, alpha, maxW, at, amount) {
   og.globalCompositeOperation = "source-over";
 }
 
-// glassy shards (碎片): thin angular slivers with bright edges, breaking off the
-// inner side of the blade and drifting back toward the grip side
+// one ice crystal: a long kite pointed at both ends, split down its length into
+// a light face and a shaded face with a bright ridge between them — the look of
+// a faceted shard catching the light. along / out: unit vectors (its length
+// runs along `along`); light: the bright colour, dark: the shaded one.
+function crystal(og, c, along, out, len, wid, light, dark, ridge, a) {
+  const f = [c[0] + along[0] * len * 0.62, c[1] + along[1] * len * 0.62];
+  const bk = [c[0] - along[0] * len * 0.38, c[1] - along[1] * len * 0.38];
+  const s1 = [c[0] + out[0] * wid * 0.5 + along[0] * len * 0.06, c[1] + out[1] * wid * 0.5 + along[1] * len * 0.06];
+  const s2 = [c[0] - out[0] * wid * 0.42 - along[0] * len * 0.04, c[1] - out[1] * wid * 0.42 - along[1] * len * 0.04];
+  const tri = (p, q, r, col) => { og.fillStyle = col; og.beginPath(); og.moveTo(p[0], p[1]); og.lineTo(q[0], q[1]); og.lineTo(r[0], r[1]); og.closePath(); og.fill(); };
+  tri(f, s1, bk, rgba(light, 0.8 * a));
+  tri(f, bk, s2, rgba(dark, 0.7 * a));
+  og.strokeStyle = rgba(ridge, 0.9 * a);
+  og.lineWidth = Math.max(0.5, wid / 9);
+  og.beginPath(); og.moveTo(f[0], f[1]); og.lineTo(bk[0], bk[1]); og.stroke();
+}
+
+// Shards (碎片): ice crystals breaking off the blade's edge. Each is born on one
+// stick of the swing, near its outer half, lying along the swing; it drifts a
+// little back and out and fades over several frames.
 function shards(og, run, cols, coreC, seed, age, alpha, amount) {
-  const K = Math.round(amount * 16);
+  const K = Math.round(amount * 14);
   if (!K || alpha <= 0.01 || run.length < 2) return;
   const first = age - (run.length - 1);
-  og.globalCompositeOperation = "lighter";
+  const light = colorAcross(cols, 0.85), dark = colorAcross(cols, 0.4);
   for (let k = 0; k < K; k++) {
     const R = rng(seed * 53 + k * 7907);
     const bi = 1 + Math.floor(R() * Math.max(1, Math.min(run.length, 8) - 1) * 1.5);
     const since = age - (first + bi);
     if (since < 0 || bi >= run.length) continue;
-    const s = run[bi], L = widthOf(s);
-    const life = alpha * clamp01(1 - since / 9);
+    const s = run[bi], p = run[bi - 1], L = widthOf(s);
+    const life = alpha * clamp01(1 - since / 8);
     if (life <= 0.02) continue;
-    let nx = s.a[0] - s.b[0], ny = s.a[1] - s.b[1];                  // toward the grip
-    const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
-    const tx = -ny, ty = nx;                                        // along the swing
-    const travel = L * (0.05 + 0.3 * R()) * (1 - Math.exp(-(since + 1) / 2));
-    const c0 = lerp(s.a, s.b, 0.3 + 0.55 * R());
-    const c = [c0[0] + nx * travel, c0[1] + ny * travel];
-    const len = L * (0.14 + 0.26 * R()), wid = len * (0.15 + 0.25 * R());
-    const sk = (R() - 0.5) * 0.6, back = 0.2 + 0.4 * R();
-    const pts = [
-      [c[0] + tx * len * 0.5, c[1] + ty * len * 0.5],
-      [c[0] + nx * wid * 0.5 + tx * len * sk, c[1] + ny * wid * 0.5 + ty * len * sk],
-      [c[0] - tx * len * 0.5, c[1] - ty * len * 0.5],
-      [c[0] - nx * wid * back - tx * len * sk * 0.5, c[1] - ny * wid * back - ty * len * sk * 0.5],
-    ];
+    let ox = s.b[0] - s.a[0], oy = s.b[1] - s.a[1];                 // out of the blade
+    const ol = Math.hypot(ox, oy) || 1; ox /= ol; oy /= ol;
+    let tx = s.b[0] - p.b[0], ty = s.b[1] - p.b[1];                 // the way the blade moves
+    const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
+    const c0 = lerp(s.a, s.b, 0.55 + 0.5 * R());
+    const drift = L * (0.04 + 0.2 * R()) * (1 - Math.exp(-(since + 1) / 2));
+    const c = [c0[0] - tx * drift * 1.5 + ox * drift * (R() - 0.3), c0[1] - ty * drift * 1.5 + oy * drift * (R() - 0.3)];
+    const tilt = (R() - 0.5) * 0.7, ct = Math.cos(tilt), st = Math.sin(tilt);
+    const along = [tx * ct - ty * st, tx * st + ty * ct], out = [-along[1], along[0]];
+    const len = L * (0.16 + 0.24 * R()), wid = len * (0.22 + 0.16 * R());
+    crystal(og, c, along, out, len, wid, light, dark, coreC, life);
+  }
+}
+
+// Crystal (结晶): the front of the trail built from packed ice crystals along
+// the leading edge, all lying along the swing — the faceted, jagged crescent of
+// an ice slash. Fixed to the trail, so they ride with it.
+function crystals(runs, w, h, cols, coreC, seed, alpha, tail, maxW, amount) {
+  const r = runs[runs.length - 1];
+  if (r.length < 2) return null;
+  const N = Math.round(amount * 46);
+  const S = rng(seed * 113 + 9);
+  const C = createCanvas(w, h), g = C.getContext("2d");
+  const light = colorAcross(cols, 0.9), dark = colorAcross(cols, 0.45);
+  for (let k = 0; k < N; k++) {
+    const u = 0.35 + 0.65 * Math.pow(S(), 0.6);
+    const v = 0.5 + 0.5 * Math.pow(S(), 0.7);
+    const { pt, across } = onRun(r, u, v);
+    const behind = onRun(r, Math.max(0, u - 0.03), v).pt;
+    let tx = pt[0] - behind[0], ty = pt[1] - behind[1];
+    const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
+    const tilt = (S() - 0.5) * 0.5, ct = Math.cos(tilt), st = Math.sin(tilt);
+    const along = [tx * ct - ty * st, tx * st + ty * ct], out = [across[0], across[1]];
+    const L = maxW * (0.5 + 0.5 * u);
+    const len = L * (0.18 + 0.3 * S()), wid = len * (0.25 + 0.2 * S());
+    const a = alpha * smooth(0, tail, u) * (0.5 + 0.5 * u);
+    if (a <= 0.03) continue;
+    crystal(g, pt, along, out, len, wid, light, dark, coreC, a);
+  }
+  return C;
+}
+
+// Speed lines (速度线): long straight streaks left behind the head, running back
+// along the swing — straight, not following the curve, as if the air was cut.
+// Their length flickers frame to frame.
+function speedLines(runs, w, h, coreC, rimC, seed, frame, alpha, maxW, amount) {
+  const r = runs[runs.length - 1];
+  if (r.length < 2) return null;
+  const N = Math.round(amount * 22);
+  const S = rng(seed * 131 + 3), P = rng(seed * 131 + frame * 557 + 1);
+  const C = createCanvas(w, h), g = C.getContext("2d");
+  g.lineCap = "round";
+  for (let k = 0; k < N; k++) {
+    const u = 0.55 + 0.45 * Math.pow(S(), 0.5), v = 0.15 + 0.9 * S();
+    const { pt } = onRun(r, u, v);
+    const behind = onRun(r, Math.max(0, u - 0.04), v).pt;
+    let bx = behind[0] - pt[0], by = behind[1] - pt[1];
+    const bl = Math.hypot(bx, by) || 1; bx /= bl; by /= bl;
+    const len = maxW * (0.8 + 2.2 * Math.pow(S(), 1.5)) * (0.6 + 0.6 * P());
+    const end = [pt[0] + bx * len, pt[1] + by * len];
+    const a = alpha * (0.35 + 0.5 * P()) * u;
+    const gr = g.createLinearGradient(pt[0], pt[1], end[0], end[1]);
+    gr.addColorStop(0, rgba(coreC, 0.85 * a));
+    gr.addColorStop(0.3, rgba(rimC, 0.5 * a));
+    gr.addColorStop(1, rgba(rimC, 0));
+    g.strokeStyle = gr;
+    g.lineWidth = Math.max(0.6, maxW / (30 + 50 * S()));
+    g.beginPath(); g.moveTo(pt[0], pt[1]); g.lineTo(end[0], end[1]); g.stroke();
+  }
+  return C;
+}
+
+// Snow (雪花): six-armed snowflakes with side branches around the trail, turning
+// slowly and twinkling, fixed to the trail
+function snow(og, runs, coreC, rimC, seed, frame, alpha, maxW, at, amount) {
+  const N = Math.round(amount * 26);
+  if (!N) return;
+  const r = runs[runs.length - 1];
+  const R = rng(seed * 149 + 5), T = rng(seed * 151 + frame * 263);
+  og.globalCompositeOperation = "lighter";
+  og.lineCap = "round";
+  for (let k = 0; k < N; k++) {
+    const u = 0.15 + 0.85 * Math.pow(R(), 0.7), v = -0.35 + 1.6 * R();
+    const size = maxW * (0.05 + 0.08 * Math.pow(R(), 2));
+    const spin = R() * Math.PI + frame * (R() - 0.5) * 0.3;
+    const tw = (0.35 + 0.65 * T()) * alpha * (0.4 + 0.6 * u);
+    let i = 1;
+    while (i < r.length - 1 && r[i].u < u) i++;
+    const p = at(r[i], v);
+    if (tw < 0.06) continue;
+    // a soft glow behind it
+    const halo = og.createRadialGradient(p[0], p[1], 0, p[0], p[1], size * 1.2);
+    halo.addColorStop(0, rgba(rimC, 0.35 * tw));
+    halo.addColorStop(1, rgba(rimC, 0));
+    og.fillStyle = halo;
+    og.beginPath(); og.arc(p[0], p[1], size * 1.2, 0, Math.PI * 2); og.fill();
+    og.strokeStyle = rgba(coreC, 0.9 * tw);
+    og.lineWidth = Math.max(0.5, size / 9);
     og.beginPath();
-    pts.forEach((p, i) => (i ? og.lineTo(p[0], p[1]) : og.moveTo(p[0], p[1])));
-    og.closePath();
-    og.fillStyle = rgba(colorAcross(cols, 0.45 + 0.5 * R()), 0.4 * life);
-    og.fill();
-    og.strokeStyle = rgba(coreC, 0.85 * life);
-    og.lineWidth = Math.max(0.6, L / 110);
+    for (let arm = 0; arm < 6; arm++) {
+      const th = spin + (arm * Math.PI) / 3, dx = Math.cos(th), dy = Math.sin(th);
+      og.moveTo(p[0], p[1]); og.lineTo(p[0] + dx * size, p[1] + dy * size);
+      // two pairs of side branches, swept toward the tip
+      for (const [at0, bl] of [[0.45, 0.32], [0.7, 0.22]]) {
+        const bx = p[0] + dx * size * at0, by = p[1] + dy * size * at0;
+        for (const sgn of [1, -1]) {
+          const bt = th + sgn * Math.PI / 3;
+          og.moveTo(bx, by); og.lineTo(bx + Math.cos(bt) * size * bl, by + Math.sin(bt) * size * bl);
+        }
+      }
+    }
     og.stroke();
   }
   og.globalCompositeOperation = "source-over";
@@ -760,6 +936,17 @@ function impact(og, run, coreC, rimC, splatC, seed, frame, after, opacity, amoun
   gl.addColorStop(1, rgba(rimC, 0));
   og.fillStyle = gl;
   og.beginPath(); og.arc(c[0], c[1], R0, 0, Math.PI * 2); og.fill();
+  // sharp spikes flung out: the pointed burst of 2D impact effects
+  for (let k = 0; k < 10; k++) {
+    const th = P() * Math.PI * 2, len = R0 * (0.8 + 1.0 * P()) * (0.8 + 0.4 * F()), wid = R0 * (0.06 + 0.1 * P());
+    const ex = c[0] + Math.cos(th) * len, ey = c[1] + Math.sin(th) * len, nx = -Math.sin(th) * wid, ny = Math.cos(th) * wid;
+    const sg = og.createLinearGradient(c[0], c[1], ex, ey);
+    sg.addColorStop(0, rgba(coreC, 0.85 * f));
+    sg.addColorStop(0.45, rgba(rimC, 0.5 * f));
+    sg.addColorStop(1, rgba(rimC, 0));
+    og.fillStyle = sg;
+    og.beginPath(); og.moveTo(c[0] + nx, c[1] + ny); og.lineTo(ex, ey); og.lineTo(c[0] - nx, c[1] - ny); og.closePath(); og.fill();
+  }
   og.lineCap = "round";
   for (let k = 0; k < 18; k++) {
     const th = P() * Math.PI * 2, len = R0 * (0.6 + 1.1 * P()) * (0.8 + 0.4 * F());
@@ -785,8 +972,11 @@ function impact(og, run, coreC, rimC, splatC, seed, frame, after, opacity, amoun
 // Lightning (闪电): a few jagged bolts running along the blade, each made by
 // midpoint displacement (every segment split and its middle knocked sideways,
 // less at each level), with forks breaking off it, mostly outward past the
-// edge. A fresh set every frame, so it flickers. Drawn as a wide glow in the
-// rim colour under a thin white-hot line.
+// edge. A fresh set every frame, so it flickers. Each bolt is a band whose width
+// changes along it — thick near its root, thinning to a point, swelling and
+// pinching on the way — and a fork starts as thick as the bolt where it splits
+// off and tapers from there. Drawn as a wide glow in the rim colour under a
+// white-hot core of the same shape.
 function bolts(runs, w, h, coreC, rimC, seed, frame, alpha, maxW, amount) {
   if (amount <= 0 || alpha <= 0.01) return null;
   const r = runs[runs.length - 1];
@@ -814,6 +1004,19 @@ function bolts(runs, w, h, coreC, rimC, seed, frame, alpha, maxW, amount) {
     }
     return cur;
   };
+  // relative widths along a path: from w0 to w1, with a smoothed random swell
+  // and pinch; a bolt (not a fork) also narrows into its very first stretch
+  const widths = (n, w0, w1, root) => {
+    const out = [];
+    let r = 1;
+    for (let i = 0; i < n; i++) {
+      const t = n > 1 ? i / (n - 1) : 0;
+      r = 0.6 * r + 0.4 * (0.5 + P());
+      const start = root ? 0.35 + 0.65 * smooth(0, 0.1, t) : 1;
+      out.push(Math.max(0.04, (w0 + (w1 - w0) * t) * r * start));
+    }
+    return out;
+  };
   const paths = [];
   const count = 1 + Math.round(amount * 3);
   for (let k = 0; k < count; k++) {
@@ -821,7 +1024,8 @@ function bolts(runs, w, h, coreC, rimC, seed, frame, alpha, maxW, amount) {
     const pts = [];
     for (let s = 0; s <= 6; s++) pts.push(sample(u0 + (1 - u0) * s / 6, Math.max(0.1, Math.min(1.05, v0 + (P() - 0.5) * 0.4))).pt);
     const main = jag(pts, 0.5, 4);
-    paths.push([main, 1]);
+    const mw = widths(main.length, 1, 0.25, true);
+    paths.push([main, mw]);
     const forks = 1 + Math.floor(P() * 3 * amount + 0.5);
     for (let f = 0; f < forks; f++) {
       const at = Math.floor(main.length * (0.2 + 0.7 * P()));
@@ -831,23 +1035,34 @@ function bolts(runs, w, h, coreC, rimC, seed, frame, alpha, maxW, amount) {
       let dx = out[0] / ol * side, dy = out[1] / ol * side;
       [dx, dy] = [dx * Math.cos(turn) - dy * Math.sin(turn), dx * Math.sin(turn) + dy * Math.cos(turn)];
       const len = maxW * (0.25 + 0.55 * P());
-      paths.push([jag([start, [start[0] + dx * len, start[1] + dy * len]], 0.6, 3), 0.55]);
+      const fork = jag([start, [start[0] + dx * len, start[1] + dy * len]], 0.6, 3);
+      paths.push([fork, widths(fork.length, mw[Math.min(mw.length - 1, at)] * 0.7, 0.06, false)]);
     }
   }
   const B = createCanvas(w, h), g = B.getContext("2d");
-  g.lineCap = "round"; g.lineJoin = "round";
   const flick = alpha * (0.75 + 0.25 * P());
-  const line = (pts) => { g.beginPath(); pts.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]))); g.stroke(); };
-  for (const [pts, wt] of paths) {
-    g.strokeStyle = rgba(rimC, 0.45 * flick * wt);
-    g.lineWidth = Math.max(1.5, maxW / 12) * wt;
-    line(pts);
-  }
-  for (const [pts, wt] of paths) {
-    g.strokeStyle = rgba(coreC, 0.95 * flick);
-    g.lineWidth = Math.max(0.8, maxW / 45) * (0.6 + 0.4 * wt);
-    line(pts);
-  }
+  // a path as a filled band, ws[i] × scale wide at point i
+  const band = (pts, ws, scale) => {
+    const L = [], Rt = [];
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i], a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+      let dx = b[0] - a[0], dy = b[1] - a[1];
+      const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
+      const half = (ws[i] * scale) / 2;
+      L.push([p[0] - dy * half, p[1] + dx * half]);
+      Rt.push([p[0] + dy * half, p[1] - dx * half]);
+    }
+    g.beginPath();
+    L.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])));
+    for (let i = Rt.length - 1; i >= 0; i--) g.lineTo(Rt[i][0], Rt[i][1]);
+    g.closePath();
+    g.fill();
+  };
+  const glowW = Math.max(3, maxW / 6), coreW = Math.max(1.4, maxW / 22);
+  g.fillStyle = rgba(rimC, 0.4 * flick);
+  for (const [pts, ws] of paths) band(pts, ws, glowW);
+  g.fillStyle = rgba(coreC, 0.95 * flick);
+  for (const [pts, ws] of paths) band(pts, ws, coreW);
   return B;
 }
 
@@ -1002,9 +1217,11 @@ const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 // The palette a pixelated glow snaps to: the preset's own colours sorted dark to
 // bright, with an in-between shade added between every two neighbours
 const palettes = new Map();
-function glowPalette(st) {
-  const src = [...(st.glowColors || GLOW_DEFAULTS.glowColors), st.glowRim, st.glowCore, st.glowSplat].filter(Boolean);
-  const key = src.join(",");
+function glowPalette(st, mids = true) {
+  const tc = st.tailTint > 0 && st.glowTail ? hexToRgb(st.glowTail) : null;
+  const tails = tc ? [st.glowTail, toHex(tc.map((v) => Math.round(v * 0.55))), toHex(tc.map((v) => Math.round(v + (255 - v) * 0.5)))] : [];
+  const src = [...(st.glowColors || GLOW_DEFAULTS.glowColors), st.glowRim, st.glowCore, st.glowSplat, ...tails].filter(Boolean);
+  const key = src.join(",") + (mids ? "" : ":flat");
   if (palettes.has(key)) return palettes.get(key);
   const lum = (c) => 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
   const base = [];
@@ -1012,7 +1229,7 @@ function glowPalette(st) {
   base.sort((p, q) => lum(p) - lum(q));
   const pal = [];
   base.forEach((c, i) => {
-    if (i) { const p = base[i - 1]; pal.push([0, 1, 2].map((j) => Math.round(Math.sqrt((p[j] * p[j] + c[j] * c[j]) / 2)))); }
+    if (i && mids) { const p = base[i - 1]; pal.push([0, 1, 2].map((j) => Math.round(Math.sqrt((p[j] * p[j] + c[j] * c[j]) / 2)))); }
     pal.push(c);
   });
   palettes.set(key, pal);
@@ -1062,5 +1279,101 @@ export function pixelateGlow(src, st, opts = {}) {
   const out = createCanvas(W, H), og = out.getContext("2d");
   og.imageSmoothingEnabled = false;
   og.drawImage(small, 0, 0, bw, bh, bx0, by0, bw * k, bh * k);
+  return out;
+}
+
+const toHex = (c) => "#" + c.map((v) => Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0")).join("");
+
+// Tail tint (尾部变色): the trail shifts toward a second colour as it goes back
+// from the head — a blue tail behind a red head. A wash of that colour, strongest
+// at the tail and spread over the glow around it, is laid on with the "color"
+// blend: hue and saturation change, brightness doesn't, so the white-hot core
+// stays white. Kept to where something was already drawn.
+function tintTail(og, w, h, runs, tint, amount, maxW) {
+  const M = createCanvas(w, h), mg = M.getContext("2d");
+  const at = (q, v) => lerp(q.a, q.b, v);
+  for (const r of runs) for (let i = 1; i < r.length; i++) {
+    const p = r[i - 1], q = r[i];
+    // the front quarter keeps its own colours; from there back it turns
+    const back = clamp01((0.75 - (p.u + q.u) / 2) / 0.75);
+    mg.fillStyle = rgba(tint, Math.min(1, amount * 1.15 * Math.pow(back, 0.8)));
+    mg.beginPath();
+    for (const [x, y] of [at(p, -0.6), at(p, 1.6), at(q, 1.6), at(q, -0.6)]) mg.lineTo(x, y);
+    mg.fill();
+  }
+  const S = createCanvas(w, h), sg = S.getContext("2d");
+  sg.filter = `blur(${Math.max(2, maxW / 5)}px)`;
+  sg.drawImage(M, 0, 0);
+  const C2 = createCanvas(w, h), cg = C2.getContext("2d");
+  cg.drawImage(og.canvas, 0, 0);
+  cg.globalCompositeOperation = "color";
+  cg.drawImage(S, 0, 0);
+  cg.globalCompositeOperation = "destination-in";
+  cg.drawImage(og.canvas, 0, 0);
+  og.save();
+  og.globalCompositeOperation = "copy";
+  og.drawImage(C2, 0, 0);
+  og.restore();
+}
+
+// 色阶: a glow trail as flat, cel-shaded 2D effect art — the same recipe as the
+// pixel glows (pixelateGlow) but at full resolution with smooth edges. Every
+// pixel snaps to the preset's palette (its colours plus in-between shades, and
+// the tail colour's when it shifts) and its opacity to a few flat steps, so soft
+// glow stays a see-through layer instead of becoming a solid lump. amount 0..1:
+// how hard — 6 opacity steps at the soft end, solid-or-nothing at the hard end. outline 0..1:
+// an optional dark outline around the whole shape.
+export function celShade(src, st, amount, outline) {
+  if (!src) return src;
+  const W = src.width, H = src.height;
+  const bb = src.bbox || { x0: 0, y0: 0, w: W, h: H };
+  const { x0, y0, w, h } = bb;
+  if (w <= 0 || h <= 0) return src;
+  const c = createCanvas(w, h), g = c.getContext("2d", { willReadFrequently: true });
+  g.drawImage(src, x0, y0, w, h, 0, 0, w, h);
+  const img = g.getImageData(0, 0, w, h), d = img.data;
+  const steps = amount >= 0.75 ? 2 : amount >= 0.35 ? 4 : 6;
+  // the hard end keeps to the preset's own colours: flat, clean layers, no muddy
+  // blends between them
+  const pal = glowPalette(st, steps > 2);
+  for (let i = 0; i < d.length; i += 4) {
+    const a = d[i + 3] / 255;
+    if (a < 0.2) { d[i + 3] = 0; continue; }
+    const r = d[i], gg = d[i + 1], b = d[i + 2];
+    let best = pal[0], bd = Infinity;
+    for (const t of pal) {
+      const dr = t[0] - r, dg = t[1] - gg, db = t[2] - b;
+      const dd = 2 * dr * dr + 4 * dg * dg + 3 * db * db;
+      if (dd < bd) { bd = dd; best = t; }
+    }
+    d[i] = best[0]; d[i + 1] = best[1]; d[i + 2] = best[2];
+    // the hard end is solid or nothing: a half-see-through bright colour over a
+    // dark background reads as a muddy brown
+    if (steps <= 2 && a < 0.45) { d[i + 3] = 0; continue; }
+    d[i + 3] = steps <= 2 ? 255 : Math.round(255 * Math.max(1 / steps, Math.round(a * steps) / steps));
+  }
+  g.putImageData(img, 0, 0);
+  const out = createCanvas(W, H), og = out.getContext("2d");
+  const ow = outline > 0 ? Math.max(1, Math.round(outline * Math.max(2, Math.max(w, h) / 140))) : 0;
+  if (ow) {
+    // the outline follows only the solid part of the shape, not the see-through glow
+    const S = createCanvas(w, h), sg = S.getContext("2d");
+    const solid = new ImageData(new Uint8ClampedArray(d), w, h);
+    for (let i = 3; i < solid.data.length; i += 4) solid.data[i] = solid.data[i] >= 190 ? 255 : 0;
+    sg.putImageData(solid, 0, 0);
+    sg.globalCompositeOperation = "source-in";
+    sg.fillStyle = rgba(pal[0], 1);
+    sg.fillRect(0, 0, w, h);
+    og.globalAlpha = 0.8;
+    for (let k = 0; k < 8; k++) {
+      const th = (k * Math.PI) / 4;
+      og.drawImage(S, x0 + Math.cos(th) * ow, y0 + Math.sin(th) * ow);
+    }
+    og.globalAlpha = 1;
+  }
+  og.filter = "blur(0.35px)";
+  og.drawImage(c, x0, y0);
+  og.filter = "none";
+  out.bbox = { x0: Math.max(0, x0 - ow), y0: Math.max(0, y0 - ow), w: w + ow * 2, h: h + ow * 2 };
   return out;
 }

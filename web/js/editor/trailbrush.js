@@ -9,14 +9,15 @@
 // The bands and tail are rendered by trails/model.js, shared with attack trails.
 import { hexToRgb } from "../core/util.js";
 import { renderStroke } from "../trails/model.js";
-import { GLOW_PRESETS, glowStyle, hashSeed, renderGlow, pixelateGlow } from "../trails/glow.js";
+import { GLOW_PRESETS, glowStyle, mixStyle, hashSeed, renderGlow, pixelateGlow, celShade } from "../trails/glow.js";
 
 // bands: outer -> inner, [colour, width factor]. look: the rest of the band
 // style a preset sets (see BAND_LOOK); the 弧光 styles light the blade-tip edge
 // and let the grip side fade out in ragged streaks.
-// the classic styles: crisp and solid, lit along the edge, only a touch ragged
-const CLASSIC = { bandLayout: "edge", edgeFade: 0.2, edgeBreak: 0.3, streaks: 0.25, bandBlend: "steps", bandShade: 0.2, fadeSteps: false, shape: "crescent" };
-const ARC = { bandLayout: "edge", edgeFade: 0.55, streaks: 0.6, edgeBreak: 0.6, fadeSteps: true, bandBlend: "steps", bandShade: 0, shape: "crescent" };
+// the classic styles: crisp and solid, lit along the edge, only a touch ragged,
+// thin at the tail and full at the head
+const CLASSIC = { bandLayout: "edge", edgeFade: 0.2, edgeBreak: 0.3, streaks: 0.25, bandBlend: "steps", bandShade: 0.2, fadeSteps: false, shape: "head" };
+const ARC = { bandLayout: "edge", edgeFade: 0.55, streaks: 0.6, edgeBreak: 0.6, fadeSteps: true, bandBlend: "steps", bandShade: 0, shape: "head" };
 export const TRAIL_PRESETS = [
   { id: "arc-ice", name: "冰蓝弧光", bands: [["#8c7fd6", 1], ["#5d8ff0", 0.62], ["#7fdcff", 0.34], ["#ffffff", 0.1]], look: ARC },
   { id: "arc-fire", name: "烈焰弧光", bands: [["#a8322e", 1], ["#f77622", 0.62], ["#feae34", 0.34], ["#fff3b0", 0.1]], look: ARC },
@@ -39,7 +40,7 @@ export const TRAIL_PRESETS = [
 // what a band preset without its own look gets: bright middle, clean-ish edges
 export const BAND_LOOK = { bandLayout: "center", edgeFade: 0, streaks: 0, edgeBreak: 0.3, fadeSteps: false, splits: 0, pxDust: 0, pxShards: 0, pxSplatter: 0, pxImpact: 0 };
 
-export const TRAIL_DEFAULTS = { preset: "glow:dream", width: 10, shape: "head", fade: 45, sparks: false, toFxLayer: true, tailMode: "brush", brushId: "bristle", brushData: null, bandBlend: "steps", bandSoft: 60, bandShade: 40, edgeBreak: 40, pixelGlow: false, pxSize: 1, pxAlpha: "steps" };
+export const TRAIL_DEFAULTS = { preset: "glow:dream", width: 10, shape: "head", fade: 45, sparks: false, toFxLayer: true, tailMode: "brush", brushId: "bristle", brushData: null, bandBlend: "steps", bandSoft: 60, bandShade: 40, edgeBreak: 40, pixelGlow: false, pxSize: 1, pxAlpha: "steps", mixEdge: 100, mixBody: 100, mixGlow: 100, mixFx: 100, mixBurst: 100 };
 
 // ---------- stroke geometry ----------
 // resample the raw pointer path at ~1px spacing, then smooth it so a shaky hand
@@ -154,13 +155,14 @@ export function rasterizeTrail(raw, opts, w, h, primary, brushCanvas) {
 function glowStroke(curve, sections, p, opts, w, h, fade) {
   const n = sections.length - 1, run = [];
   for (let k = 0; k <= 6; k++) run.push(sections[Math.round(n * (0.3 + 0.7 * k / 6))]);
-  const st0 = glowStyle(p);
-  const st = opts.pixelGlow ? { ...st0, glow: st0.glow * 0.5, haze: st0.haze * 0.6 } : st0;   // see model.js: tight pixel glows
+  const st0 = mixStyle({ ...glowStyle(p), mixEdge: opts.mixEdge ?? 100, mixBody: opts.mixBody ?? 100, mixGlow: opts.mixGlow ?? 100, mixFx: opts.mixFx ?? 100, mixBurst: opts.mixBurst ?? 100 });
+  const st = opts.pixelGlow || st0.cel > 0 ? { ...st0, glow: st0.glow * 0.5, haze: st0.haze * 0.6 } : st0;   // see model.js: tight glows
   let c = renderGlow([sections], st, w, h, {
     seed: hashSeed(curve.length + ":" + Math.round(curve[0].x) + ":" + Math.round(curve[0].y)),
     frame: 0, alpha: 1, fade, fx: true, run, age: run.length + 3, ended: true, after: 0,
   });
   if (c && opts.pixelGlow) c = pixelateGlow(c, st, { size: opts.pxSize, alpha: opts.pxAlpha });
+  else if (c && st.cel > 0) c = celShade(c, st, st.cel / 100, (st.celOutline || 0) / 100);
   return c && c.getContext("2d").getImageData(0, 0, w, h);
 }
 

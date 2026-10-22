@@ -424,6 +424,14 @@ class Editor {
     };
     slider("宽度", "width", 1, glow ? 240 : 64, "px");
     slider("尾部渐隐", "fade", 0, 100, "%");
+    if (glow) {
+      // the shared glow controls (see the attack trail panel)
+      slider("刀锋", "mixEdge", 0, 200, "%");
+      slider("刀身", "mixBody", 0, 200, "%");
+      slider("光晕", "mixGlow", 0, 200, "%");
+      slider("粒子", "mixFx", 0, 200, "%");
+      slider("爆发", "mixBurst", 0, 200, "%");
+    }
     if (glow && t.pixelGlow) {
       slider("像素大小", "pxSize", 1, 8, "px");
       const pa = el("select", { class: "ed-select" },

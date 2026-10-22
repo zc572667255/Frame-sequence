@@ -29,6 +29,7 @@ export class TrailMode {
     this.showSticks = true;   // 棍: stick handles
     this.showPath = true;     // 轨: earlier frames' sticks and the tip path
     this.carry = true;        // going to the next frame copies the stick over
+    this.openGroups = new Set(); // panel: which ▸ detail groups are open
     this.drag = null;
     this.live = false;        // a slider drag already took its undo checkpoint
     this.panel = el("div", { class: "tm-panel" });
@@ -702,11 +703,12 @@ export class TrailMode {
       };
       P.append(el("div", { class: "tm-row" }, el("span", { class: "tm-label" }, "内 → 外"),
         el("div", { class: "tm-colors" }, ...gc.map((v, i) => pick(v, (x) => { t.style.glowColors = gc.slice(); t.style.glowColors[i] = x; }, "第 " + (i + 1) + " 色（1 = 握柄一侧，" + gc.length + " = 刀尖一侧）")))));
-      P.append(el("div", { class: "tm-row" }, el("span", { class: "tm-label" }, "刀芯 / 描边 / 飞溅"),
+      P.append(el("div", { class: "tm-row" }, el("span", { class: "tm-label" }, "其他颜色"),
         el("div", { class: "tm-colors" },
           pick(st.glowCore || "#ffffff", (x) => { t.style.glowCore = x; }, "刀芯（最亮的月牙）"),
-          pick(st.glowRim || "#ffffff", (x) => { t.style.glowRim = x; }, "刀芯描边和最外侧亮线"),
-          pick(st.glowSplat || "#ffffff", (x) => { t.style.glowSplat = x; }, "飞溅墨点"))));
+          pick(st.glowRim || "#ffffff", (x) => { t.style.glowRim = x; }, "外缘亮线（和刀芯的描边）"),
+          pick(st.glowSplat || "#ffffff", (x) => { t.style.glowSplat = x; }, "飞溅墨点"),
+          pick(st.glowTail || gc[0], (x) => { t.style.glowTail = x; }, "尾部颜色（「尾部变色」往这个颜色过渡）"))));
     } else if (st.colorMode !== "original" && st.colorMode !== "bands") {
       const c = el("input", { type: "color", value: st.color || "#ffffff" });
       c.oninput = () => this.liveEdit(() => { t.style.color = c.value; });
@@ -723,67 +725,140 @@ export class TrailMode {
         el("button", { class: "btn small" + (st.invert ? " primary" : ""), onclick: () => this.edit(() => { t.style.invert = !t.style.invert; }) }, "反色"),
         el("button", { class: "btn small" + (t.flip ? " primary" : ""), title: "纹理内外侧对调", onclick: () => this.edit(() => { t.flip = !t.flip; }) }, "翻面")));
 
-    const slider = (label, key, min, max, scale, unit) => {
+    const slider = (label, key, min, max, scale, unit, into = P) => {
       const v = st[key] ?? STYLE_DEFAULTS[key] ?? GLOW_DEFAULTS[key] ?? 0;
       const val = el("span", { class: "mono tm-num" }, Math.round(v * scale) + unit);
       const r = el("input", { type: "range", min, max, value: Math.round(v * scale) });
       r.oninput = () => this.liveEdit(() => { t.style[key] = +r.value / scale; val.textContent = r.value + unit; });
       r.onchange = () => this.endLive();
-      P.append(el("div", { class: "tm-row" }, el("span", { class: "tm-label" }, label), r, val));
+      const row = el("div", { class: "tm-row" }, el("span", { class: "tm-label" }, label), r, val);
+      into.append(row);
+      return row;
     };
-    if ((st.shape || "head") === "head") slider("尾端收窄", "taper", 0, 100, 100, "%");
+    const choose = (label, key, options, def, into = P, title) => {
+      const cur = String(st[key] ?? def);
+      const sel = el("select", { class: "ed-select", title }, ...options.map(([v, n]) => el("option", { value: String(v), selected: cur === String(v) }, n)));
+      sel.onchange = () => this.edit(() => { const v = sel.value; t.style[key] = v === "true" ? true : v === "false" ? false : v; });
+      into.append(el("div", { class: "tm-row" }, el("span", { class: "tm-label" }, label), sel));
+    };
+    // a control with its fine-grained parts folded under it: ▸ opens them, and
+    // they stay open while you work
+    const group = (id, row, details) => {
+      const open = this.openGroups.has(id);
+      row.classList.add("has-more");
+      row.append(el("button", {
+        class: "tm-more" + (open ? " on" : ""), title: open ? "收起细节" : "展开细节调整",
+        onclick: () => { if (open) this.openGroups.delete(id); else this.openGroups.add(id); this.refresh(); },
+      }, open ? "细节 ▾" : "细节 ▸"));
+      if (open) { const box = el("div", { class: "tm-details" }); P.append(box); details(box); }
+    };
+    const heading = (label) => {
+      const row = el("div", { class: "tm-row tm-group-head" }, el("span", { class: "tm-label" }, label), el("span"), el("span"));
+      P.append(row);
+      return row;
+    };
+
+    // the effect controls get their own section, so they are easy to find
+    P.append(title("效果调整"), el("p", { class: "ed-hint" }, "每项右边的「细节 ▸」展开这个位置的每一层单独调。"));
     if ((st.shape || "head") !== "crescent") slider("头部弧度", "headArc", 0, 100, 100, "%");
-    slider("尾部长度", "fade", 0, 100, 100, "%");
-    // how neighbouring colour bands meet, and how the tail shifts to the outer colours
+    // 尾部: one slider for the tail — a longer, softer tail is also a thinner one;
+    // its two parts can be set apart under ▸
+    {
+      const tv = Math.round((st.fade ?? STYLE_DEFAULTS.fade) * 100);
+      const tr = el("input", { type: "range", min: 0, max: 100, value: tv, title: "尾巴拖多长、多细：越大尾巴越长、渐隐越慢、尾端越细" });
+      const tvv = el("span", { class: "mono tm-num" }, tv + "%");
+      tr.oninput = () => this.liveEdit(() => {
+        const v = +tr.value / 100;
+        t.style.fade = v;
+        t.style.taper = Math.max(0.05, 0.6 - 0.55 * v);
+        tvv.textContent = tr.value + "%";
+      });
+      tr.onchange = () => this.endLive();
+      const row = el("div", { class: "tm-row" }, el("span", { class: "tm-label" }, "尾部"), tr, tvv);
+      P.append(row);
+      group("tail", row, (box) => {
+        slider("渐隐长度", "fade", 0, 100, 100, "%", box);
+        if ((st.shape || "head") === "head") slider("尾端收窄", "taper", 0, 100, 100, "%", box);
+      });
+    }
+    // colour bands: a few controls, each with its parts under ▸
     if (st.colorMode === "bands") {
-      const bb = el("select", { class: "ed-select", title: "相邻两条色带怎么衔接。都不产生半透明像素" },
-        ...[["steps", "色阶（插入中间色）"], ["dither", "抖动（网点过渡）"], ["smooth", "平滑渐变"], ["hard", "硬边"]].map(([v, n]) => el("option", { value: v, selected: (st.bandBlend || "steps") === v }, n)));
-      bb.onchange = () => this.edit(() => { t.style.bandBlend = bb.value; });
-      P.append(el("div", { class: "tm-row" }, el("span", { class: "tm-label" }, "色带过渡"), bb));
-      if ((st.bandBlend || "steps") !== "hard") slider("过渡宽度", "bandSoft", 0, 100, 100, "%");
-      slider("尾部变暗", "bandShade", 0, 100, 100, "%");
-      // where the light sits across the width, how the far side dies away, and
-      // how ragged the edges are
-      const lay = el("select", { class: "ed-select", title: "居中：中间最亮、两侧暗；外缘：刀尖一侧一道亮边，往握柄一侧变暗（弧光）" },
-        ...[["center", "居中（中间最亮）"], ["edge", "外缘（刀尖一侧最亮）"]].map(([v, n]) => el("option", { value: v, selected: (st.bandLayout || "center") === v }, n)));
-      lay.onchange = () => this.edit(() => { t.style.bandLayout = lay.value; });
-      P.append(el("div", { class: "tm-row" }, el("span", { class: "tm-label" }, "亮边位置"), lay));
-      slider(st.bandLayout === "edge" ? "内侧渐隐" : "边缘渐隐", "edgeFade", 0, 100, 100, "%");
-      slider("破碎", "edgeBreak", 0, 100, 100, "%");
-      slider("速度线", "streaks", 0, 100, 100, "%");
-      slider("分条", "splits", 0, 4, 1, " 道");
-      // accents, snapped to these band colours as solid pixels
-      slider("粒子", "pxDust", 0, 100, 100, "%");
-      slider("碎片", "pxShards", 0, 100, 100, "%");
-      slider("飞溅", "pxSplatter", 0, 100, 100, "%");
-      slider("命中爆点", "pxImpact", 0, 100, 100, "%");
-      if (st.pixel !== false) {
-        const fm = el("select", { class: "ed-select", title: "渐隐的地方怎么画：网格抖动（全是实心像素）或 4 级透明度" },
-          ...[["dither", "抖动（全实心像素）"], ["steps", "分级透明（4 级）"]].map(([v, n]) => el("option", { value: v, selected: (st.fadeSteps ? "steps" : "dither") === v }, n)));
-        fm.onchange = () => this.edit(() => { t.style.fadeSteps = fm.value === "steps"; });
-        P.append(el("div", { class: "tm-row" }, el("span", { class: "tm-label" }, "渐隐方式"), fm));
-      }
+      // 破碎 covers the edges: their raggedness and how far the inner side fades
+      const bv = Math.round((st.edgeBreak ?? 0.3) * 100);
+      const br = el("input", { type: "range", min: 0, max: 100, value: bv, title: "边缘：参差破碎的程度，以及握柄一侧碎开渐隐的范围" });
+      const bvv = el("span", { class: "mono tm-num" }, bv + "%");
+      br.oninput = () => this.liveEdit(() => {
+        const v = +br.value / 100;
+        t.style.edgeBreak = v;
+        if (t.style.bandLayout === "edge") t.style.edgeFade = Math.min(0.85, v * 0.9);
+        bvv.textContent = br.value + "%";
+      });
+      br.onchange = () => this.endLive();
+      const brow = el("div", { class: "tm-row" }, el("span", { class: "tm-label" }, "破碎"), br, bvv);
+      P.append(brow);
+      group("b-edge", brow, (box) => {
+        slider("边缘破碎", "edgeBreak", 0, 100, 100, "%", box);
+        slider(st.bandLayout === "edge" ? "内侧渐隐" : "边缘渐隐", "edgeFade", 0, 100, 100, "%", box);
+        choose("亮边位置", "bandLayout", [["center", "居中（中间最亮）"], ["edge", "外缘（刀尖一侧最亮）"]], "center", box, "居中：中间最亮、两侧暗；外缘：刀尖一侧一道亮边，往握柄一侧变暗");
+      });
+      group("b-streak", slider("速度线", "streaks", 0, 100, 100, "%"), (box) => {
+        slider("分条", "splits", 0, 4, 1, " 道", box);
+      });
+      group("b-fx", slider("粒子", "pxFx", 0, 100, 100, "%"), (box) => {
+        slider("粉尘", "pxDust", 0, 100, 100, "%", box);
+        slider("碎片", "pxShards", 0, 100, 100, "%", box);
+        slider("飞溅", "pxSplatter", 0, 100, 100, "%", box);
+      });
+      slider("爆发", "pxImpact", 0, 100, 100, "%");
+      group("b-bands", heading("色带细节"), (box) => {
+        choose("色带过渡", "bandBlend", [["steps", "色阶（插入中间色）"], ["dither", "抖动（网点过渡）"], ["smooth", "平滑渐变"], ["hard", "硬边"]], "steps", box, "相邻两条色带怎么衔接");
+        slider("过渡宽度", "bandSoft", 0, 100, 100, "%", box);
+        slider("尾部变暗", "bandShade", 0, 100, 100, "%", box);
+        if (st.pixel !== false) choose("渐隐方式", "fadeSteps", [[false, "抖动（全实心像素）"], [true, "分级透明（4 级）"]], false, box, "渐隐的地方怎么画");
+      });
     }
     const glow = st.colorMode === "glow";
     if (glow) {
-      slider("光丝", "strands", 0, 160, 1, " 条");
-      slider("刀芯", "core", 0, 100, 1, "%");
-      slider("残影", "haze", 0, 100, 1, "%");
-      slider("辉光", "glow", 0, 100, 1, "%");
-      slider("侵蚀", "erode", 0, 100, 1, "%");
-      slider("星光", "sparkles", 0, 60, 1, " 颗");
-      slider("星光大小", "sparkleSize", 1, 20, 1, "");
-      slider("起手闪光", "flash", 0, 100, 1, "%");
-      slider("飞溅", "splatter", 0, 100, 1, "%");
-      slider("流体", "flow", 0, 100, 1, "%");
-      slider("碎片", "shards", 0, 100, 1, "%");
-      slider("粒子", "dust", 0, 100, 1, "%");
-      slider("命中爆点", "impact", 0, 100, 1, "%");
-      slider("阴影", "shadow", 0, 100, 1, "%");
-      slider("闪电", "bolts", 0, 100, 1, "%");
-      slider("火舌", "flames", 0, 100, 1, "%");
-      slider("余烬", "embers", 0, 100, 1, "%");
-      slider("光芒", "rays", 0, 100, 1, "%");
+      // the same controls for every glow style, by where on the effect they act;
+      // each scales its layers (100 % = the preset as designed), and ▸ opens the
+      // layers themselves for fine tuning
+      group("g-edge", slider("刀锋", "mixEdge", 0, 200, 1, "%"), (box) => {
+        slider("刀芯", "core", 0, 100, 1, "%", box);
+        slider("结晶", "crystal", 0, 100, 1, "%", box);
+        slider("光芒", "rays", 0, 100, 1, "%", box);
+        slider("阴影", "shadow", 0, 100, 1, "%", box);
+      });
+      group("g-body", slider("刀身", "mixBody", 0, 200, 1, "%"), (box) => {
+        slider("光丝", "strands", 0, 160, 1, " 条", box);
+        slider("流体", "flow", 0, 100, 1, "%", box);
+        slider("火舌", "flames", 0, 100, 1, "%", box);
+        slider("闪电", "bolts", 0, 100, 1, "%", box);
+        slider("速度线", "speedLines", 0, 100, 1, "%", box);
+      });
+      group("g-glow", slider("光晕", "mixGlow", 0, 200, 1, "%"), (box) => {
+        slider("辉光", "glow", 0, 100, 1, "%", box);
+        slider("残影", "haze", 0, 100, 1, "%", box);
+      });
+      group("g-fx", slider("粒子", "mixFx", 0, 200, 1, "%"), (box) => {
+        slider("星光", "sparkles", 0, 60, 1, " 颗", box);
+        slider("星光大小", "sparkleSize", 1, 20, 1, "", box);
+        slider("粉尘", "dust", 0, 100, 1, "%", box);
+        slider("雪花", "snow", 0, 100, 1, "%", box);
+        slider("余烬", "embers", 0, 100, 1, "%", box);
+        slider("碎片", "shards", 0, 100, 1, "%", box);
+        slider("飞溅", "splatter", 0, 100, 1, "%", box);
+      });
+      group("g-burst", slider("爆发", "mixBurst", 0, 200, 1, "%"), (box) => {
+        slider("起手闪光", "flash", 0, 100, 1, "%", box);
+        slider("命中爆点", "impact", 0, 100, 1, "%", box);
+      });
+      if (!st.pixelGlow) slider("平涂", "cel", 0, 100, 1, "%");
+      group("g-more", heading("其他细节"), (box) => {
+        slider("侵蚀", "erode", 0, 100, 1, "%", box);
+        slider("尾部变色", "tailTint", 0, 100, 1, "%", box);
+        if (!st.pixelGlow) slider("平涂描边", "celOutline", 0, 100, 1, "%", box);
+      });
+      P.append(el("p", { class: "ed-hint" }, "这些总控所有光效通用，按作用的位置分，100% 是预设原样，换预设时保留。"));
     }
     // how the tail ends: brush streaks (default), dither dots, or a soft fade.
     // Glow trails are smooth light: no tail texture, no pixel mode
