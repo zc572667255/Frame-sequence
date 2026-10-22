@@ -1477,29 +1477,30 @@ function rockShape(og, c, size, spin, rnd, cols, a) {
   }
 }
 
-// Rocks set into the blade (岩石): the trail itself made of stones, from tail to
-// head and across its width, riding with it — a few big ones, many small ones
-// (sizes fall off steeply), smaller and fainter toward the tail, and a scatter
-// of grit around them
+// Rocks set into the blade (岩石): the trail itself made of stones, tail to near
+// the head and across its width, riding with it — a few big, many small (sizes
+// fall off steeply), smaller and fainter toward the tail, with a scatter of
+// grit. The head itself, where the stick is, stays clear.
 function rockBody(runs, w, h, cols, seed, alpha, tail, amount) {
   const r = runs[runs.length - 1];
   if (r.length < 2) return null;
-  const N = Math.round(amount * 40);
+  const N = Math.round(amount * 36);
   const S = rng(seed * 223 + 1);
   const C = createCanvas(w, h), g = C.getContext("2d");
   const width = (u) => { const a = onRun(r, u, 0).pt, b = onRun(r, u, 1).pt; return Math.hypot(b[0] - a[0], b[1] - a[1]); };
   for (let k = 0; k < N; k++) {
-    const u = 0.06 + 0.94 * Math.pow(S(), 0.8), v = 0.05 + 0.92 * S();
-    const { pt: c } = onRun(r, u, v);
-    const size = width(u) * (0.04 + 0.2 * Math.pow(S(), 3)) * (0.45 + 0.55 * u);
+    // all along the trail inside the blade, but none at the head, on the stick
+    const u = 0.05 + 0.83 * Math.pow(S(), 0.8), v = 0.05 + 0.92 * S();
+    const c = onRun(r, u, v).pt;
+    const size = width(u) * (0.05 + 0.2 * Math.pow(S(), 3)) * (0.5 + 0.5 * u);
     const a = alpha * smooth(0, tail, u);
     if (a <= 0.03 || size < 0.8) { S(); S(); continue; }
     rockShape(g, c, size, S() * 6.28, S, cols, a);
   }
-  // grit: tiny stones in and just around the blade
+  // grit: tiny stones in and just around the blade, also clear of the stick
   const G = Math.round(amount * 90);
   for (let k = 0; k < G; k++) {
-    const u = 0.1 + 0.9 * Math.pow(S(), 0.7), v = -0.25 + 1.4 * S();
+    const u = 0.08 + 0.82 * Math.pow(S(), 0.7), v = -0.25 + 1.4 * S();
     const { pt: c } = onRun(r, u, Math.max(0, Math.min(1, v)));
     const ac = onRun(r, u, 1).pt, ai = onRun(r, u, 0).pt, off = v < 0 ? v : v > 1 ? v - 1 : 0;
     const p = [c[0] + (ac[0] - ai[0]) * off, c[1] + (ac[1] - ai[1]) * off];
@@ -1514,7 +1515,7 @@ function rockBody(runs, w, h, cols, seed, alpha, tail, amount) {
 // Flying rocks: a few chunks thrown off anywhere along the blade, flying out
 // and on with the swing and dropping under gravity, tumbling
 function rocks(og, run, cols, seed, age, opacity, maxW, amount) {
-  const K = Math.round(amount * 10);
+  const K = Math.round(amount * 20);
   if (!K || run.length < 2) return;
   const first = age - (run.length - 1);
   for (let k = 0; k < K; k++) {
@@ -1530,7 +1531,8 @@ function rocks(og, run, cols, seed, age, opacity, maxW, amount) {
     const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
     const base = lerp(s.a, s.b, 0.15 + 0.9 * R());
     const sp = maxW * (0.06 + 0.1 * R()), fw = maxW * 0.06 * R(), g = maxW * 0.025;
-    const t = since + 0.5;
+    if (since < 1) continue;                                      // not on the stick it comes off
+    const t = since + 1.6;                                        // already clear of the blade when first seen
     const c = [base[0] + ox * sp * t + tx * fw * t, base[1] + oy * sp * t + ty * fw * t + g * t * t];
     const size = maxW * (0.035 + 0.07 * Math.pow(R(), 1.5));
     const a = opacity * clamp01(1 - (since - life * 0.6) / (life * 0.4));
