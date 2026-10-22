@@ -834,6 +834,9 @@ export class TrailMode {
         slider("火舌", "flames", 0, 100, 1, "%", box);
         slider("闪电", "bolts", 0, 100, 1, "%", box);
         slider("速度线", "speedLines", 0, 100, 1, "%", box);
+        slider("风刃", "curls", 0, 100, 1, "%", box);
+        slider("锯齿", "serrate", 0, 100, 1, "%", box);
+        slider("水纹", "caustic", 0, 100, 1, "%", box);
       });
       group("g-glow", slider("光晕", "mixGlow", 0, 200, 1, "%"), (box) => {
         slider("辉光", "glow", 0, 100, 1, "%", box);
@@ -847,6 +850,10 @@ export class TrailMode {
         slider("余烬", "embers", 0, 100, 1, "%", box);
         slider("碎片", "shards", 0, 100, 1, "%", box);
         slider("飞溅", "splatter", 0, 100, 1, "%", box);
+        slider("气泡", "bubbles", 0, 100, 1, "%", box);
+        slider("岩石", "rocks", 0, 100, 1, "%", box);
+        slider("叶片", "leaves", 0, 100, 1, "%", box);
+        slider("水滴", "drops", 0, 100, 1, "%", box);
       });
       group("g-burst", slider("爆发", "mixBurst", 0, 200, 1, "%"), (box) => {
         slider("起手闪光", "flash", 0, 100, 1, "%", box);
@@ -855,6 +862,7 @@ export class TrailMode {
       if (!st.pixelGlow) slider("平涂", "cel", 0, 100, 1, "%");
       group("g-more", heading("其他细节"), (box) => {
         slider("侵蚀", "erode", 0, 100, 1, "%", box);
+        slider("撕裂", "tear", 0, 100, 1, "%", box);
         slider("尾部变色", "tailTint", 0, 100, 1, "%", box);
         if (!st.pixelGlow) slider("平涂描边", "celOutline", 0, 100, 1, "%", box);
       });

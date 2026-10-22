@@ -19,6 +19,15 @@
 //   crystal — (ice) faceted ice crystals packed along the leading edge
 //   speed lines — long straight streaks left behind the head
 //   snow    — (fx) six-armed snowflakes turning and twinkling around the trail
+//   bubbles — (fx, water) hollow bubbles drifting up
+//   rocks   — (fx, earth) chunks of rock flung off the edge, falling as they fly
+//   curls   — (wind) wind blades: soft bands of wind wound round the blade
+//   serrate — (wind) saw teeth along the blade's inner side
+//   caustic — (water) the rippling net of light inside the water
+//   drops   — (fx, water) teardrops flung off the edge
+//   tear    — (water) the body torn into streaming strands, like a waterfall
+//   leaves  — (fx, wind) leaves caught up by the swing, tumbling and fluttering
+// Solid matter (earth, `solid` in the look) is painted like a dark palette.
 //   embers  — (fx) glowing sparks rising and swaying off the swing
 //   tail tint — the colour shifts along the trail toward a second colour at the
 //             tail (blue tail, red head), changing hue but not brightness
@@ -56,6 +65,12 @@ export const GLOW_PRESETS = [
     look: { strands: 30, core: 55, haze: 35, glow: 60, sparkles: 6, sparkleSize: 4, flash: 0, splatter: 0, erode: 40, flow: 45, shards: 75, dust: 40, crystal: 40, snow: 25 } },
   { id: "glacier", name: "寒冰斩", colors: ["#0a1a6a", "#1a50e0", "#5ab4ff", "#dff4ff"], core: "#ffffff", rim: "#8fd4ff", splat: "#bfe8ff",
     look: { strands: 18, core: 70, haze: 25, glow: 65, sparkles: 10, sparkleSize: 5, flash: 0, splatter: 0, erode: 30, flow: 15, shards: 30, dust: 25, crystal: 85, speedLines: 75, snow: 25 } },
+  { id: "torrent", name: "激流", colors: ["#0a2a7a", "#1a5ae0", "#5ac0ff", "#e0f6ff"], core: "#ffffff", rim: "#a8e8ff", splat: "#8fd8ff",
+    look: { strands: 20, core: 60, haze: 20, glow: 45, sparkles: 0, sparkleSize: 5, flash: 0, splatter: 0, erode: 30, flow: 75, dust: 0, bubbles: 25, speedLines: 10, tear: 40, caustic: 60, drops: 75 } },
+  { id: "quake", name: "岩崩", colors: ["#26221c", "#57504a", "#8a8278", "#c8c0b0"], core: "#e0d4b8", rim: "#a89878", splat: "#4a4238",
+    look: { strands: 0, core: 55, haze: 60, glow: 5, sparkles: 0, sparkleSize: 5, flash: 0, splatter: 30, erode: 45, flow: 85, dust: 45, impact: 0, rocks: 100, cel: 45, solid: true } },
+  { id: "gale", name: "疾风", colors: ["#0a4a4a", "#14a8a0", "#5af0e0", "#e8fff8"], core: "#ffffff", rim: "#7af8e8", splat: "#c8fff4",
+    look: { strands: 35, core: 65, haze: 15, glow: 50, sparkles: 0, sparkleSize: 5, flash: 0, splatter: 0, erode: 30, flow: 15, dust: 12, speedLines: 40, curls: 75, serrate: 0, leaves: 30, cel: 0 } },
   { id: "inferno", name: "炎爆", colors: ["#4a0000", "#c40c08", "#ff2e10", "#ff8a2a"], core: "#fff0d8", rim: "#ff4a18", splat: "#b01408",
     look: { strands: 4, core: 80, haze: 45, glow: 55, sparkles: 0, sparkleSize: 6, flash: 0, splatter: 40, erode: 45, flow: 90, impact: 90, dust: 10, flames: 75, embers: 65 } },
   { id: "blackfire", name: "黑炎", colors: ["#030005", "#0e0014", "#24062e", "#4a0c52"], core: "#0a0010", rim: "#c03aff", splat: "#3a0a44",
@@ -82,7 +97,7 @@ export const GLOW_PRESETS = [
 
 // the style fields a glow preset sets (trail.style / the 拖尾笔's options). Every
 // layer is set, so switching presets never keeps a layer from the last one.
-const LOOK_ZERO = { flow: 0, shards: 0, dust: 0, impact: 0, shadow: 0, bolts: 0, flames: 0, embers: 0, rays: 0, tailTint: 0, cel: 0, celOutline: 0, crystal: 0, speedLines: 0, snow: 0 };
+const LOOK_ZERO = { flow: 0, shards: 0, dust: 0, impact: 0, shadow: 0, bolts: 0, flames: 0, embers: 0, rays: 0, tailTint: 0, cel: 0, celOutline: 0, crystal: 0, speedLines: 0, snow: 0, bubbles: 0, rocks: 0, curls: 0, leaves: 0, tear: 0, serrate: 0, caustic: 0, drops: 0, solid: false };
 export function glowStyle(p) {
   return { glowId: p.id, glowColors: p.colors.slice(), glowCore: p.core, glowRim: p.rim, glowSplat: p.splat, glowTail: p.tail || p.colors[0], ...LOOK_ZERO, ...p.look };
 }
@@ -94,9 +109,9 @@ export const GLOW_DEFAULTS = glowStyle(GLOW_PRESETS[0]);
 // lightning or anything else.
 export const MIX_GROUPS = {
   mixEdge: ["core", "crystal", "rays", "shadow"],                          // 刀锋: on the leading edge
-  mixBody: ["strands", "flow", "flames", "bolts", "speedLines"],           // 刀身: inside the trail
+  mixBody: ["strands", "flow", "flames", "bolts", "speedLines", "curls", "serrate", "caustic"],   // 刀身: inside the trail
   mixGlow: ["glow", "haze"],                                               // 光晕: around it
-  mixFx: ["sparkles", "dust", "snow", "embers", "shards", "splatter"],     // 粒子: scattered about
+  mixFx: ["sparkles", "dust", "snow", "embers", "shards", "splatter", "bubbles", "rocks", "leaves", "drops"],   // 粒子: scattered about
   mixBurst: ["flash", "impact"],                                           // 爆发: where the swing starts and ends
 };
 const MIX_LIMIT = { strands: 160, sparkles: 60 };
@@ -162,7 +177,7 @@ export function renderGlow(runs, style, fullW, fullH, ctx = {}) {
   const pct = (k) => clamp01((+st[k] || 0) / 100);
   // a dark palette (black fire) is painted over, not added as light
   const lum = (c) => (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]) / 255;
-  const dark = cols.reduce((s, c) => s + lum(c), 0) / cols.length < 0.18;
+  const dark = !!st.solid || cols.reduce((s, c) => s + lum(c), 0) / cols.length < 0.18;
 
   // size of everything: the widest cross-section (or the longest stick)
   let maxW = 1;
@@ -177,7 +192,7 @@ export function renderGlow(runs, style, fullW, fullH, ctx = {}) {
   for (const r of runs) for (const q of r) { grow(q.a); grow(q.b); }
   for (const s of run) { grow(s.a); grow(s.b); }
   const big = doFx && ((st.flash > 0 && (ctx.age ?? 0) < 4) || (st.impact > 0 && ctx.ended));
-  const pad = maxW * (big || st.speedLines > 0 ? 2.8 : st.embers > 0 || st.rays > 0 || st.snow > 0 ? 2.2 : 1.4) + 4;
+  const pad = maxW * (big || st.speedLines > 0 || st.rocks > 0 || st.leaves > 0 || st.drops > 0 ? 2.8 : st.embers > 0 || st.rays > 0 || st.snow > 0 || st.bubbles > 0 ? 2.2 : 1.4) + 4;
   x0 = Math.max(0, Math.floor(x0 - pad)); y0 = Math.max(0, Math.floor(y0 - pad));
   x1 = Math.min(fullW, Math.ceil(x1 + pad)); y1 = Math.min(fullH, Math.ceil(y1 + pad));
   if (!(x1 > x0 && y1 > y0)) return null;
@@ -217,13 +232,21 @@ export function renderGlow(runs, style, fullW, fullH, ctx = {}) {
 
     // where each pixel sits on the ribbon (half size): the flowing body and the
     // inner-side-first erosion both work in (u, v)
-    UV = pct("flow") > 0 || pct("erode") > 0 ? halfUV(runs, w, h) : null;
+    UV = pct("flow") > 0 || pct("erode") > 0 || pct("tear") > 0 || pct("caustic") > 0 ? halfUV(runs, w, h) : null;
 
     // ---- flow: the textured body
     if (UV && pct("flow") > 0) {
       F = flowLayer(UV, cols, coreC, seed, frame, alpha, tail, pct("flow"));
       og.drawImage(F, 0, 0, UV.mw * UV.k, UV.mh * UV.k);
     }
+
+    // ---- rocks set into the blade
+    const Rk = pct("rocks") > 0 ? rockBody(runs, w, h, cols, seed, alpha, tail, pct("rocks")) : null;
+    if (Rk) og.drawImage(Rk, 0, 0);
+
+    // ---- wind wound round the blade: its back half goes under the blade
+    const Cw = pct("curls") > 0 ? curls(runs, w, h, coreC, rimC, seed, frame, alpha, maxW, pct("curls")) : null;
+    if (Cw) { og.globalCompositeOperation = "lighter"; og.drawImage(Cw.back, 0, 0); og.globalCompositeOperation = "source-over"; }
 
     // ---- flames: tongues of fire off the blade
     const T = pct("flames") > 0 ? flames(runs, w, h, cols, coreC, rimC, seed, frame, alpha, tail, maxW, pct("flames"), dark) : null;
@@ -373,6 +396,16 @@ export function renderGlow(runs, style, fullW, fullH, ctx = {}) {
     if (Cr) og.drawImage(Cr, 0, 0);
     const Sl = pct("speedLines") > 0 ? speedLines(runs, w, h, coreC, rimC, seed, frame, alpha, maxW, pct("speedLines")) : null;
     if (Sl) { og.globalCompositeOperation = "lighter"; og.drawImage(Sl, 0, 0); og.globalCompositeOperation = "source-over"; }
+    // ---- caustics inside the water
+    const Ca = UV && pct("caustic") > 0 ? caustics(UV, colorAcross(cols, 0.85), seed, frame, alpha, pct("caustic")) : null;
+    if (Ca) { og.globalCompositeOperation = "lighter"; og.drawImage(Ca, 0, 0, UV.mw * UV.k, UV.mh * UV.k); og.globalCompositeOperation = "source-over"; }
+    // ---- saw teeth along the inner side
+    const Sr = pct("serrate") > 0 ? serrate(runs, w, h, cols, coreC, seed, alpha, tail, pct("serrate")) : null;
+    if (Sr) og.drawImage(Sr, 0, 0);
+    // ---- whirls of air
+    // (the front half of the wind, over the blade)
+    const Cu = Cw ? Cw.front : null;
+    if (Cu) { og.globalCompositeOperation = "lighter"; og.drawImage(Cu, 0, 0); og.globalCompositeOperation = "source-over"; }
     // ---- rays of light
     const Ry = pct("rays") > 0 ? rays(runs, w, h, coreC, rimC, seed, frame, alpha, maxW, pct("rays")) : null;
     if (Ry) { og.globalCompositeOperation = "lighter"; og.drawImage(Ry, 0, 0); og.globalCompositeOperation = "source-over"; }
@@ -382,7 +415,7 @@ export function renderGlow(runs, style, fullW, fullH, ctx = {}) {
       og.globalCompositeOperation = "lighter";
       for (const [rad, k] of [[maxW / 9, 0.45], [maxW / 3.5, 0.35]]) {
         og.globalAlpha = bloom * k;
-        drawBlurred(og, [L, C, F, Bt, T, Ry, Cr, Sl].filter(Boolean), Math.max(1, rad));
+        drawBlurred(og, [L, C, F, Bt, T, Ry, Cr, Sl, Cu, Sr].filter(Boolean), Math.max(1, rad));
       }
       og.globalAlpha = 1;
       og.globalCompositeOperation = "source-over";
@@ -391,6 +424,7 @@ export function renderGlow(runs, style, fullW, fullH, ctx = {}) {
 
   // erosion: as the trail dissolves, noise eats it from the thin parts inward
   // (the usual alpha-erosion of slash VFX) instead of it just turning see-through
+  if (UV && pct("tear") > 0) tear(og, UV, seed, frame, pct("tear"));
   if (runs.length && pct("tailTint") > 0 && st.glowTail) tintTail(og, w, h, runs, hexToRgb(st.glowTail), pct("tailTint"), maxW);
   if (runs.length) erode(og, w, h, x0, y0, seed, pct("erode"), ctx.alpha ?? 1, maxW, UV);
 
@@ -399,11 +433,16 @@ export function renderGlow(runs, style, fullW, fullH, ctx = {}) {
       sparkles(og, runs, st, cols, seed, frame, alpha, maxW, at);
       dust(og, runs, cols, seed, frame, alpha, maxW, at, pct("dust"));
       snow(og, runs, coreC, rimC, seed, frame, alpha, maxW, at, pct("snow"));
+      bubbles(og, runs, coreC, rimC, seed, frame, alpha, maxW, at, pct("bubbles"));
     }
     if (run.length) {
       flash(og, run, st, coreC, rimC, seed, frame, ctx.age ?? 0, alpha, pct("flash"));
       splatter(og, run, w, h, st, splatC, seed, ctx.age ?? 0, alpha, pct("splatter"));
       shards(og, run, cols, coreC, seed, ctx.age ?? 0, alpha, pct("shards"));
+      rocks(og, run, cols, seed, ctx.age ?? 0, clamp01((st.opacity ?? 100) / 100), maxW, pct("rocks"));
+      leaves(og, run, cols, seed, ctx.age ?? 0, clamp01((st.opacity ?? 100) / 100), maxW, pct("leaves"));
+      drops(og, run, cols, coreC, seed, ctx.age ?? 0, clamp01((st.opacity ?? 100) / 100), maxW, pct("drops"));
+      if (runs.length && pct("drops") > 0) dropsBody(og, runs, cols, coreC, seed, frame, alpha, tail, pct("drops"));
       embers(og, run, coreC, rimC, seed, frame, ctx.age ?? 0, clamp01((st.opacity ?? 100) / 100), maxW, pct("embers"), dark);
       if (ctx.ended) impact(og, run, coreC, rimC, splatC, seed, frame, ctx.after ?? 0, clamp01((st.opacity ?? 100) / 100), pct("impact"));
     }
@@ -1376,4 +1415,401 @@ export function celShade(src, st, amount, outline) {
   og.filter = "none";
   out.bbox = { x0: Math.max(0, x0 - ow), y0: Math.max(0, y0 - ow), w: w + ow * 2, h: h + ow * 2 };
   return out;
+}
+
+// Bubbles (气泡): hollow bubbles around the trail with a glint, rising slowly
+// frame by frame and wobbling, fixed to the trail like the dust
+function bubbles(og, runs, coreC, rimC, seed, frame, alpha, maxW, at, amount) {
+  const N = Math.round(amount * 30);
+  if (!N) return;
+  const r = runs[runs.length - 1];
+  const R = rng(seed * 167 + 7);
+  og.globalCompositeOperation = "lighter";
+  for (let k = 0; k < N; k++) {
+    const u = 0.2 + 0.8 * Math.pow(R(), 0.7), v = -0.3 + 1.5 * R();
+    const size = maxW * (0.02 + 0.045 * Math.pow(R(), 1.5));
+    const speed = maxW * (0.03 + 0.05 * R()), phase = R() * 6.28;
+    let i = 1;
+    while (i < r.length - 1 && r[i].u < u) i++;
+    const p0 = at(r[i], v);
+    const p = [p0[0] + Math.sin(frame * 0.8 + phase) * size * 0.6, p0[1] - speed * (frame % 12) * 0.3];
+    const a = alpha * (0.4 + 0.6 * u);
+    og.strokeStyle = rgba(rimC, 0.75 * a);
+    og.lineWidth = Math.max(0.6, size / 5);
+    og.beginPath(); og.arc(p[0], p[1], size, 0, Math.PI * 2); og.stroke();
+    og.fillStyle = rgba(rimC, 0.12 * a);
+    og.fill();
+    og.fillStyle = rgba(coreC, 0.9 * a);
+    og.beginPath(); og.arc(p[0] - size * 0.35, p[1] - size * 0.35, Math.max(0.5, size * 0.22), 0, Math.PI * 2); og.fill();
+  }
+  og.globalCompositeOperation = "source-over";
+}
+
+// one stone: an irregular polygon shaded like a solid lit from the upper left —
+// a gradient from the light colour to the dark one across it, a lit top facet,
+// a shadowed lower facet and a thin dark outline. rnd: the random source that
+// shapes it.
+function rockShape(og, c, size, spin, rnd, cols, a) {
+  const n = 6 + Math.floor(rnd() * 3), pts = [];
+  for (let i = 0; i < n; i++) {
+    const th = spin + (i / n) * Math.PI * 2 + (rnd() - 0.5) * 0.5, rr = size * (0.62 + 0.45 * rnd());
+    pts.push([c[0] + Math.cos(th) * rr, c[1] + Math.sin(th) * rr]);
+  }
+  const poly = (q) => { og.beginPath(); q.forEach((v, i) => (i ? og.lineTo(v[0], v[1]) : og.moveTo(v[0], v[1]))); og.closePath(); };
+  const gr = og.createLinearGradient(c[0] - size, c[1] - size, c[0] + size, c[1] + size);
+  gr.addColorStop(0, rgba(cols[2], a));
+  gr.addColorStop(0.55, rgba(cols[1], a));
+  gr.addColorStop(1, rgba(cols[0], a));
+  poly(pts);
+  og.fillStyle = gr; og.fill();
+  og.strokeStyle = rgba(cols[0], 0.9 * a); og.lineWidth = Math.max(0.5, size / 8); og.stroke();
+  // the lit top facet: the upper-left vertices pulled toward the centre
+  const lit = pts.filter((v) => (v[0] - c[0]) + (v[1] - c[1]) < size * 0.2);
+  if (lit.length >= 2) {
+    poly([...lit, [c[0] + size * 0.05, c[1] + size * 0.05]]);
+    og.fillStyle = rgba(cols[3] || cols[2], 0.75 * a); og.fill();
+  }
+  // a shadowed facet below-right
+  const dark = pts.filter((v) => (v[0] - c[0]) + (v[1] - c[1]) > size * 0.35);
+  if (dark.length >= 2) {
+    poly([...dark, [c[0] + size * 0.15, c[1] + size * 0.15]]);
+    og.fillStyle = rgba(cols[0], 0.55 * a); og.fill();
+  }
+}
+
+// Rocks set into the blade (岩石): the trail itself made of stones, from tail to
+// head and across its width, riding with it — a few big ones, many small ones
+// (sizes fall off steeply), smaller and fainter toward the tail, and a scatter
+// of grit around them
+function rockBody(runs, w, h, cols, seed, alpha, tail, amount) {
+  const r = runs[runs.length - 1];
+  if (r.length < 2) return null;
+  const N = Math.round(amount * 40);
+  const S = rng(seed * 223 + 1);
+  const C = createCanvas(w, h), g = C.getContext("2d");
+  const width = (u) => { const a = onRun(r, u, 0).pt, b = onRun(r, u, 1).pt; return Math.hypot(b[0] - a[0], b[1] - a[1]); };
+  for (let k = 0; k < N; k++) {
+    const u = 0.06 + 0.94 * Math.pow(S(), 0.8), v = 0.05 + 0.92 * S();
+    const { pt: c } = onRun(r, u, v);
+    const size = width(u) * (0.04 + 0.2 * Math.pow(S(), 3)) * (0.45 + 0.55 * u);
+    const a = alpha * smooth(0, tail, u);
+    if (a <= 0.03 || size < 0.8) { S(); S(); continue; }
+    rockShape(g, c, size, S() * 6.28, S, cols, a);
+  }
+  // grit: tiny stones in and just around the blade
+  const G = Math.round(amount * 90);
+  for (let k = 0; k < G; k++) {
+    const u = 0.1 + 0.9 * Math.pow(S(), 0.7), v = -0.25 + 1.4 * S();
+    const { pt: c } = onRun(r, u, Math.max(0, Math.min(1, v)));
+    const ac = onRun(r, u, 1).pt, ai = onRun(r, u, 0).pt, off = v < 0 ? v : v > 1 ? v - 1 : 0;
+    const p = [c[0] + (ac[0] - ai[0]) * off, c[1] + (ac[1] - ai[1]) * off];
+    const size = Math.max(0.6, width(u) * (0.01 + 0.02 * S()));
+    const a = alpha * smooth(0, tail, u) * (0.5 + 0.5 * S());
+    g.fillStyle = rgba(S() < 0.5 ? cols[1] : cols[2], a);
+    g.beginPath(); g.arc(p[0], p[1], size, 0, Math.PI * 2); g.fill();
+  }
+  return C;
+}
+
+// Flying rocks: a few chunks thrown off anywhere along the blade, flying out
+// and on with the swing and dropping under gravity, tumbling
+function rocks(og, run, cols, seed, age, opacity, maxW, amount) {
+  const K = Math.round(amount * 10);
+  if (!K || run.length < 2) return;
+  const first = age - (run.length - 1);
+  for (let k = 0; k < K; k++) {
+    const R = rng(seed * 179 + k * 4391);
+    const bi = 1 + Math.floor(R() * (run.length - 1));
+    const since = age - (first + bi);
+    const life = 6 + R() * 5;
+    if (since < 0 || since > life || bi >= run.length) continue;
+    const s = run[bi], p = run[bi - 1];
+    let ox = s.b[0] - s.a[0], oy = s.b[1] - s.a[1];
+    const ol = Math.hypot(ox, oy) || 1; ox /= ol; oy /= ol;
+    let tx = s.b[0] - p.b[0], ty = s.b[1] - p.b[1];
+    const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
+    const base = lerp(s.a, s.b, 0.15 + 0.9 * R());
+    const sp = maxW * (0.06 + 0.1 * R()), fw = maxW * 0.06 * R(), g = maxW * 0.025;
+    const t = since + 0.5;
+    const c = [base[0] + ox * sp * t + tx * fw * t, base[1] + oy * sp * t + ty * fw * t + g * t * t];
+    const size = maxW * (0.035 + 0.07 * Math.pow(R(), 1.5));
+    const a = opacity * clamp01(1 - (since - life * 0.6) / (life * 0.4));
+    rockShape(og, c, size, R() * 6.28 + since * (R() - 0.5) * 0.8, R, cols, a);
+  }
+}
+
+// Wind blades (风刃): soft bands of wind wound round the blade, like brush
+// strokes. Each winds along the trail like a rope round a stick, swinging out
+// past both edges and back, smooth and tapered at both ends. Where it passes
+// behind the blade it is drawn into `back`, which goes under everything (and so
+// disappears behind the blade); where it comes round the front it goes into
+// `front`, over the blade but see-through, wider and with a thin bright core.
+// The winding turns on every frame. Returns { back, front } canvases.
+function curls(runs, w, h, coreC, rimC, seed, frame, alpha, maxW, amount) {
+  const r = runs[runs.length - 1];
+  if (r.length < 2) return null;
+  const N = 2 + Math.round(amount * 2);
+  const S = rng(seed * 191 + 3);
+  const back = createCanvas(w, h), front = createCanvas(w, h);
+  const gb = back.getContext("2d"), gf = front.getContext("2d");
+  const ext = (u, v) => { const i = onRun(r, u, 0).pt, o = onRun(r, u, 1).pt; return [i[0] + (o[0] - i[0]) * v, i[1] + (o[1] - i[1]) * v]; };
+  const bandW = Math.max(3, maxW / 6), coreW = Math.max(0.8, maxW / 45);
+  for (let k = 0; k < N; k++) {
+    const u0 = 0.02 + 0.3 * S(), u1 = Math.min(1, u0 + 0.6 + 0.4 * S());
+    const turns = 0.6 + 0.4 * S(), amp = 0.75 + 0.2 * S();
+    const phase = S() * 6.28 + frame * (0.45 + 0.25 * S());
+    const fat = 0.7 + 0.5 * S();
+    const n = 48;
+    const pts = [], ws = [], fr = [];
+    for (let i = 0; i <= n; i++) {
+      const t = i / n, u = u0 + (u1 - u0) * t, ang = phase + t * turns * Math.PI * 2;
+      pts.push(ext(u, 0.5 + amp * Math.sin(ang)));
+      const z = Math.cos(ang);
+      fr.push(z >= 0);
+      ws.push(fat * Math.pow(Math.sin(Math.PI * t), 0.8) * (0.55 + 0.45 * Math.max(0, z)));
+    }
+    const a = alpha * (0.55 + 0.45 * u1);
+    const band = (g, i0, i1, scale) => {
+      const lo = [], hi = [];
+      for (let i = i0; i <= i1; i++) {
+        const p = pts[i], q = pts[Math.min(n, i + 1)], o = pts[Math.max(0, i - 1)];
+        let dx = q[0] - o[0], dy = q[1] - o[1];
+        const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
+        const hw = (ws[i] * scale) / 2;
+        lo.push([p[0] - dy * hw, p[1] + dx * hw]); hi.push([p[0] + dy * hw, p[1] - dx * hw]);
+      }
+      g.beginPath();
+      lo.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])));
+      for (let i = hi.length - 1; i >= 0; i--) g.lineTo(hi[i][0], hi[i][1]);
+      g.closePath();
+      g.fill();
+    };
+    let i0 = 0;
+    for (let i = 1; i <= n; i++) {
+      if (i < n && fr[i] === fr[i0]) continue;
+      if (fr[i0]) {
+        gf.fillStyle = rgba(rimC, 0.32 * a); band(gf, i0, i, bandW);
+        gf.fillStyle = rgba(coreC, 0.6 * a); band(gf, i0, i, coreW);
+      } else {
+        gb.fillStyle = rgba(rimC, 0.28 * a); band(gb, i0, i, bandW * 0.8);
+      }
+      i0 = i;
+    }
+  }
+  // soften both into brushy wind
+  const soft = (c) => { const o = createCanvas(w, h), g = o.getContext("2d"); g.filter = `blur(${Math.max(0.6, maxW / 90)}px)`; g.drawImage(c, 0, 0); return o; };
+  return { back: soft(back), front: soft(front) };
+}
+
+// Serrated edge (锯齿): sharp teeth along the inner side of the blade, pointing
+// back toward the tail and in toward the grip — the feathered, saw-toothed
+// edge of a wind blade. Fixed to the trail.
+function serrate(runs, w, h, cols, coreC, seed, alpha, tail, amount) {
+  const r = runs[runs.length - 1];
+  if (r.length < 2) return null;
+  const N = Math.max(1, Math.round(amount * 11));
+  const S = rng(seed * 229 + 7);
+  const C = createCanvas(w, h), g = C.getContext("2d");
+  for (let k = 0; k < N; k++) {
+    // spread over the middle and back of the blade, none at the head
+    const u = 0.3 + 0.55 * (k + 0.2 + S() * 0.6) / N, du = 0.045 + 0.04 * S();
+    const b1 = onRun(r, Math.min(1, u + du * 0.4), 0.62).pt, b2 = onRun(r, Math.max(0, u - du * 0.6), 0.52).pt;
+    const tip = onRun(r, Math.max(0, u - du * (3 + 1.5 * S())), 0.04 + 0.14 * S()).pt;
+    const a = alpha * smooth(0, tail, u) * (0.65 + 0.35 * u);
+    if (a <= 0.03) continue;
+    const gr = g.createLinearGradient(b1[0], b1[1], tip[0], tip[1]);
+    gr.addColorStop(0, rgba(cols[2], 0.95 * a));
+    gr.addColorStop(0.7, rgba(cols[1], 0.75 * a));
+    gr.addColorStop(1, rgba(cols[1], 0.2 * a));
+    g.fillStyle = gr;
+    g.beginPath(); g.moveTo(b1[0], b1[1]); g.quadraticCurveTo((b1[0] + tip[0]) / 2, (b1[1] + tip[1]) / 2, tip[0], tip[1]); g.lineTo(b2[0], b2[1]); g.closePath(); g.fill();
+    // the cutting edge: a bright line down the outer side of the tooth
+    const eg = g.createLinearGradient(b1[0], b1[1], tip[0], tip[1]);
+    eg.addColorStop(0, rgba(coreC, 0.85 * a));
+    eg.addColorStop(1, rgba(coreC, 0));
+    g.strokeStyle = eg;
+    g.lineWidth = 1.2;
+    g.beginPath(); g.moveTo(b1[0], b1[1]); g.lineTo(tip[0], tip[1]); g.stroke();
+  }
+  return C;
+}
+
+// Leaves (叶片): small leaves caught up by the swing — each born on one stick,
+// thrown out and back, fluttering side to side and turning over as it goes
+function leaves(og, run, cols, seed, age, opacity, maxW, amount) {
+  const K = Math.round(amount * 16);
+  if (!K || run.length < 2) return;
+  const first = age - (run.length - 1);
+  for (let k = 0; k < K; k++) {
+    const R = rng(seed * 197 + k * 5279);
+    const bi = 1 + Math.floor(R() * (run.length - 1));
+    const since = age - (first + bi);
+    const life = 7 + R() * 6;
+    if (since < 0 || since > life || bi >= run.length) continue;
+    const s = run[bi], p = run[bi - 1];
+    let ox = s.b[0] - s.a[0], oy = s.b[1] - s.a[1];
+    const ol = Math.hypot(ox, oy) || 1; ox /= ol; oy /= ol;
+    let tx = s.b[0] - p.b[0], ty = s.b[1] - p.b[1];
+    const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
+    const base = lerp(s.a, s.b, 0.5 + 0.6 * R());
+    const t = since + 0.5, sp = maxW * (0.06 + 0.08 * R());
+    const flutter = Math.sin(t * 1.7 + R() * 6) * maxW * 0.08;
+    const c = [base[0] + ox * sp * t - tx * sp * 0.6 * t + -oy * flutter, base[1] + oy * sp * t - ty * sp * 0.6 * t + ox * flutter];
+    const size = maxW * (0.04 + 0.04 * R());
+    const turn = R() * 6.28 + t * (R() - 0.5) * 1.6, flip = Math.abs(Math.cos(t * 1.3 + R() * 6));   // turning over
+    const ax = Math.cos(turn), ay = Math.sin(turn), nx = -ay * flip, ny = ax * flip;
+    const a = opacity * clamp01(1 - (since - life * 0.6) / (life * 0.4));
+    const tip = [c[0] + ax * size, c[1] + ay * size], tail = [c[0] - ax * size, c[1] - ay * size];
+    og.beginPath();
+    og.moveTo(tail[0], tail[1]);
+    og.quadraticCurveTo(c[0] + nx * size * 0.9, c[1] + ny * size * 0.9, tip[0], tip[1]);
+    og.quadraticCurveTo(c[0] - nx * size * 0.9, c[1] - ny * size * 0.9, tail[0], tail[1]);
+    og.closePath();
+    og.fillStyle = rgba(cols[1], 0.9 * a); og.fill();
+    og.strokeStyle = rgba(cols[2], 0.9 * a); og.lineWidth = Math.max(0.5, size / 8);
+    og.beginPath(); og.moveTo(tail[0], tail[1]); og.lineTo(tip[0], tip[1]); og.stroke();
+  }
+}
+
+// Tearing (撕裂): the body pulled apart into streaming strands and gaps, like
+// falling water — noise stretched along the flow, moving along it every frame,
+// tearing most at the tail and on the grip side so the leading edge holds.
+// Works on the uv map; pixels off the ribbon (the glow around) are kept.
+function tear(og, UV, seed, frame, amount) {
+  const { k, mw, mh, d } = UV;
+  const fbm = fbmNoise(seed * 211 + 5);
+  const img = new ImageData(mw, mh), o = img.data;
+  for (let i = 0; i < mw * mh * 4; i += 4) {
+    if (d[i + 3] < 8) { o[i + 3] = 255; continue; }
+    const u = d[i] / 255, v = d[i + 1] / 255;
+    const n = fbm(u * 2.6 - frame * 0.15, v * 34);
+    const t = amount * (0.25 + 0.5 * (1 - u) + 0.4 * (1 - v));
+    let m = (n - t + 0.06) / 0.12;
+    m = m <= 0 ? 0 : m >= 1 ? 1 : m * m * (3 - 2 * m);
+    // round holes punched through the body, in some of the cells of a cellular
+    // noise, drifting with the flow; none on the leading edge
+    if (v < 0.85) {
+      const c = worley(u * 7 - frame * 0.1, v * 2.6, seed * 7 + 1);
+      if (c.h < 0.35 * amount) m *= smooth(0.14, 0.24, c.f1);
+    }
+    o[i + 3] = Math.round(m * 255);
+  }
+  const M = createCanvas(mw, mh);
+  M.getContext("2d").putImageData(img, 0, 0);
+  og.save();
+  og.globalCompositeOperation = "destination-in";
+  og.drawImage(M, 0, 0, mw * k, mh * k);
+  og.restore();
+}
+
+// Cellular noise: scattered points, one per unit cell, jittered; returns the
+// distance to the nearest (f1) and second nearest (f2) point and a random value
+// for the nearest one's cell (h)
+function worley(x, y, seed) {
+  const hash = (a, b, o) => {
+    let v = Math.imul(a + o * 131, 374761393) ^ Math.imul(b - o * 977, 668265263) ^ seed;
+    v = Math.imul(v ^ (v >>> 13), 1274126177);
+    return ((v ^ (v >>> 16)) >>> 0) / 4294967295;
+  };
+  const ix = Math.floor(x), iy = Math.floor(y);
+  let f1 = 9, f2 = 9, h = 0;
+  for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+    const cx = ix + i, cy = iy + j;
+    const px = cx + hash(cx, cy, 1), py = cy + hash(cx, cy, 2);
+    const dd = Math.hypot(px - x, py - y);
+    if (dd < f1) { f2 = f1; f1 = dd; h = hash(cx, cy, 3); } else if (dd < f2) f2 = dd;
+  }
+  return { f1, f2, h };
+}
+
+// Caustics (水纹): the rippling net of light inside water — bright lines along
+// the borders of a cellular pattern (where the nearest two points are about as
+// far), stretched along the flow and drifting with it, brightest toward the
+// leading edge. Added as light over the body, on the uv map.
+function caustics(UV, lightC, seed, frame, alpha, amount) {
+  const { mw, mh, d } = UV;
+  const img = new ImageData(mw, mh), o = img.data;
+  for (let i = 0; i < mw * mh * 4; i += 4) {
+    if (d[i + 3] < 8) continue;
+    const u = d[i] / 255, v = d[i + 1] / 255;
+    const x = u * 9 - frame * 0.18, y = v * 3.2 + Math.sin(u * 23 + frame * 0.4) * 0.12;
+    const c = worley(x, y, seed * 5 + 3);
+    const line = 1 - smooth(0.02, 0.13, c.f2 - c.f1);
+    const a = 0.7 * line * amount * alpha * (0.35 + 0.65 * v) * (d[i + 3] / 255);
+    if (a <= 0.02) continue;
+    o[i] = lightC[0]; o[i + 1] = lightC[1]; o[i + 2] = lightC[2]; o[i + 3] = Math.round(255 * Math.min(1, a));
+  }
+  const C = createCanvas(mw, mh);
+  C.getContext("2d").putImageData(img, 0, 0);
+  return C;
+}
+
+// one teardrop at c heading (dx, dy): round at the front, drawn out to a point
+// behind, a light body fading toward the tail and a white glint
+function teardrop(og, c, dx, dy, r, tailLen, cols, coreC, a) {
+  const nx = -dy, ny = dx, back = [c[0] - dx * tailLen, c[1] - dy * tailLen];
+  og.beginPath();
+  og.moveTo(back[0], back[1]);
+  og.quadraticCurveTo(c[0] + nx * r * 1.1 - dx * r * 0.6, c[1] + ny * r * 1.1 - dy * r * 0.6, c[0] + dx * r, c[1] + dy * r);
+  og.quadraticCurveTo(c[0] - nx * r * 1.1 - dx * r * 0.6, c[1] - ny * r * 1.1 - dy * r * 0.6, back[0], back[1]);
+  og.closePath();
+  const gr = og.createLinearGradient(back[0], back[1], c[0] + dx * r, c[1] + dy * r);
+  gr.addColorStop(0, rgba(cols[1], 0.4 * a));
+  gr.addColorStop(1, rgba(cols[2], 0.95 * a));
+  og.fillStyle = gr; og.fill();
+  og.fillStyle = rgba(coreC, 0.9 * a);
+  og.beginPath(); og.arc(c[0] + nx * r * 0.3, c[1] + ny * r * 0.3, Math.max(0.5, r * 0.3), 0, Math.PI * 2); og.fill();
+}
+
+// Drops along the blade (水滴): water shed all along the trail, tail to head —
+// mostly just past the leading edge, some past the grip side or over the body —
+// riding with it, lying along the swing, smaller and fainter toward the tail,
+// and drifting out a little each frame
+function dropsBody(og, runs, cols, coreC, seed, frame, alpha, tail, amount) {
+  const r = runs[runs.length - 1];
+  if (r.length < 2) return;
+  const N = Math.round(amount * 30);
+  const S = rng(seed * 239 + 5);
+  const ext = (u, v) => { const i = onRun(r, u, 0).pt, o = onRun(r, u, 1).pt; return { p: [i[0] + (o[0] - i[0]) * v, i[1] + (o[1] - i[1]) * v], wd: Math.hypot(o[0] - i[0], o[1] - i[1]) }; };
+  for (let k = 0; k < N; k++) {
+    const u = 0.08 + 0.92 * Math.pow(S(), 0.85);
+    const pick = S(), drift = ((frame * 0.03 + S()) % 1) * 0.25;
+    const v = pick < 0.55 ? 1.03 + 0.35 * S() + drift : pick < 0.8 ? -0.03 - 0.35 * S() - drift : 0.15 + 0.7 * S();
+    const { p, wd } = ext(u, v);
+    const ahead = ext(Math.min(1, u + 0.03), v).p;
+    let dx = ahead[0] - p[0], dy = ahead[1] - p[1];
+    const dl = Math.hypot(dx, dy) || 1; dx /= dl; dy /= dl;
+    const r0 = wd * (0.035 + 0.06 * Math.pow(S(), 1.5)) * (0.45 + 0.55 * u);
+    const a = alpha * smooth(0, tail, u) * (0.55 + 0.45 * u);
+    if (a <= 0.03 || r0 < 0.6) { S(); continue; }
+    teardrop(og, p, dx, dy, r0, r0 * (2.2 + 2 * S()), cols, coreC, a);
+  }
+}
+
+// Flung drops: a few thrown clear of the blade from anywhere along it, flying
+// out and on and dropping a little
+function drops(og, run, cols, coreC, seed, age, opacity, maxW, amount) {
+  const K = Math.round(amount * 9);
+  if (!K || run.length < 2) return;
+  const first = age - (run.length - 1);
+  for (let k = 0; k < K; k++) {
+    const R = rng(seed * 233 + k * 3779);
+    const bi = 1 + Math.floor(R() * (run.length - 1));
+    const since = age - (first + bi);
+    const life = 4 + R() * 5;
+    if (since < 0 || since > life || bi >= run.length) continue;
+    const s = run[bi], p = run[bi - 1];
+    let ox = s.b[0] - s.a[0], oy = s.b[1] - s.a[1];
+    const ol = Math.hypot(ox, oy) || 1; ox /= ol; oy /= ol;
+    let tx = s.b[0] - p.b[0], ty = s.b[1] - p.b[1];
+    const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
+    const base = lerp(s.a, s.b, 0.2 + 0.9 * R());
+    const t = since + 0.6, so = maxW * (0.05 + 0.1 * R()), sf = maxW * (0.03 + 0.08 * R()), g = maxW * 0.012;
+    const vx = ox * so + tx * sf, vy = oy * so + ty * sf + g * t * 2;
+    const c = [base[0] + (ox * so + tx * sf) * t, base[1] + (oy * so + ty * sf) * t + g * t * t];
+    const vl = Math.hypot(vx, vy) || 1;
+    const r = maxW * (0.012 + 0.03 * Math.pow(R(), 1.5));
+    const a = opacity * clamp01(1 - (since - life * 0.6) / (life * 0.4));
+    teardrop(og, c, vx / vl, vy / vl, r, r * (2.5 + 2 * R()), cols, coreC, a);
+  }
 }

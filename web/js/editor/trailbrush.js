@@ -34,6 +34,7 @@ export const TRAIL_PRESETS = [
   { id: "blood", name: "鲜血", bands: [["#2a0c14", 1], ["#6a1020", 0.74], ["#b01c2c", 0.5], ["#ec4a4a", 0.26], ["#ffc0b0", 0.1]], look: CLASSIC },
   { id: "holy", name: "圣光金", bands: [["#6a3a1c", 1], ["#b8742c", 0.74], ["#f0b23c", 0.5], ["#fde58a", 0.28], ["#ffffff", 0.1]], look: CLASSIC },
   { id: "wind", name: "风刃", bands: [["#5a6a7c", 1], ["#9fb4c4", 0.6], ["#e8f4f4", 0.28], ["#ffffff", 0.1]], fade: 85, look: { ...CLASSIC, edgeFade: 0.5, streaks: 0.6, edgeBreak: 0.5 } },
+  { id: "earth", name: "岩土", bands: [["#2a1a0c", 1], ["#5a3a1c", 0.74], ["#946030", 0.5], ["#d0a060", 0.28], ["#f4dca0", 0.1]], look: { ...CLASSIC, edgeBreak: 0.5 } },
   { id: "mono", name: "主色", bands: null, look: CLASSIC },
 ];
 
