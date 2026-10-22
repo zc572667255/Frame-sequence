@@ -7,6 +7,7 @@ import "./pixelize.js";
 import "./slice.js";
 import "./reframe.js";
 import "./align.js";
+import "./interpolate.js";
 import "./recolor.js";
 import "./preview.js";
 import "./export.js";

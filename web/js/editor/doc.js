@@ -11,6 +11,7 @@ const HISTORY_LIMIT = 100;
 
 // Animation card params, any vintage -> { w, h, fps, layers, frames, palette }
 //   layers: [{ id, name, visible, opacity }]  bottom -> top
+//           (+ trail: id for an attack trail layer, ghost: {…} for a 残影 layer)
 //   frames: [{ id, duration, cels: { [layerId]: assetId } }]
 export function normalizeAnim(p) {
   const w = p.w || 32, h = p.h || 32;
@@ -63,7 +64,7 @@ export class EditorDoc {
     }
     const doc = new EditorDoc({
       w: n.w, h: n.h, fps: n.fps,
-      layers: n.layers.map((l) => ({ ...l })),
+      layers: n.layers.map((l) => ({ ...l, ...(l.ghost ? { ghost: { ...l.ghost } } : {}) })),
       frames: n.frames.map((f) => ({ id: f.id, duration: f.duration })),
       cels, palette: [...n.palette], trails: JSON.parse(JSON.stringify(n.trails)),
     });
@@ -93,7 +94,7 @@ export class EditorDoc {
   snapshot() {
     return {
       w: this.w, h: this.h, fps: this.fps,
-      layers: this.layers.map((l) => ({ ...l })),
+      layers: this.layers.map((l) => ({ ...l, ...(l.ghost ? { ghost: { ...l.ghost } } : {}) })),
       frames: this.frames.map((f) => ({ ...f })),
       cels: new Map(this.cels),
       palette: [...this.palette],
@@ -140,6 +141,8 @@ export class EditorDoc {
       for (const l of this.layers) {
         const img = this.cels.get(src.id + "|" + l.id);
         if (img) this.cels.set(f.id + "|" + l.id, img);
+        // a copied frame keeps its ghosts (frames lists are replaced, never edited in place)
+        if (l.ghost && Array.isArray(l.ghost.frames) && l.ghost.frames.includes(src.id)) l.ghost.frames = [...l.ghost.frames, f.id];
       }
     }
     return at;
@@ -171,6 +174,7 @@ export class EditorDoc {
   duplicateLayer(li) {
     const src = this.layers[li];
     const l = { ...src, id: uid("L"), name: src.name + " 副本" };
+    if (src.ghost) l.ghost = { ...src.ghost };
     if (src.trail) {
       // a trail layer's content is its trail: copy that
       const t = this.trails.find((x) => x.id === src.trail);
@@ -193,6 +197,8 @@ export class EditorDoc {
     const l = this.layers.splice(li, 1)[0];
     for (const f of this.frames) this.cels.delete(f.id + "|" + l.id);
     if (l.trail) this.trails = this.trails.filter((t) => t.id !== l.trail);
+    // a ghost that copied this layer copies all layers instead
+    for (const o of this.layers) if (o.ghost && o.ghost.source === l.id) o.ghost.source = "all";
     return true;
   }
 
@@ -206,6 +212,15 @@ export class EditorDoc {
 
   trailLayerIndex(trailId) { return this.layers.findIndex((l) => l.trail === trailId); }
 
+  // a ghost (残影) layer, created right below layer `li`: the afterimage goes
+  // behind what it copies
+  addGhostLayer(li, ghost) {
+    const n = this.layers.filter((l) => l.ghost).length;
+    const l = { id: uid("L"), name: "残影" + (n ? " " + (n + 1) : ""), visible: true, opacity: 100, ghost };
+    this.layers.splice(li, 0, l);
+    return li;
+  }
+
   moveLayer(li, d) {
     const to = li + d;
     if (to < 0 || to >= this.layers.length) return li;
@@ -215,7 +230,8 @@ export class EditorDoc {
   }
 
   mergeDown(li) {
-    if (li < 1 || this.layers[li].trail || this.layers[li - 1].trail) return false;
+    const special = (l) => l.trail || l.ghost;
+    if (li < 1 || special(this.layers[li]) || special(this.layers[li - 1])) return false;
     const top = this.layers[li];
     for (let fi = 0; fi < this.frames.length; fi++) {
       const a = this.cel(fi, li);
@@ -273,7 +289,7 @@ export class EditorDoc {
     }
     return {
       w: this.w, h: this.h, fps: this.fps,
-      layers: this.layers.map((l) => ({ id: l.id, name: l.name, visible: l.visible !== false, opacity: l.opacity ?? 100, locked: !!l.locked, ...(l.trail ? { trail: l.trail } : {}) })),
+      layers: this.layers.map((l) => ({ id: l.id, name: l.name, visible: l.visible !== false, opacity: l.opacity ?? 100, locked: !!l.locked, ...(l.trail ? { trail: l.trail } : {}), ...(l.ghost ? { ghost: { ...l.ghost } } : {}) })),
       frames,
       palette: [...this.palette],
       trails: JSON.parse(JSON.stringify(this.trails)),

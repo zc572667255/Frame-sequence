@@ -6,6 +6,7 @@
 // behind the character part of the way.
 import { createCanvas } from "../core/util.js";
 import { renderTrail, builtinTexture, builtinBrush, normalizeTrail, trailState } from "./model.js";
+import { renderGhost, drawGhostCanvas } from "./ghost.js";
 
 const textures = new Map(); // asset id -> canvas (once loaded)
 
@@ -132,9 +133,11 @@ export function drawTrail(g, raw, frameIds, fi, z, w, h) {
 }
 
 // A whole frame in stack order: "back" parts of visible trail layers, then each
-// layer bottom to top — pixel layers through drawCel(layer), trail layers as
-// their "front" parts. Shared by the editor's thumbnails and the card's output.
-export function drawFrameStack(g, layers, trails, frameIds, fi, w, h, drawCel) {
+// layer bottom to top — pixel layers through drawCel(layer, frame, g), trail
+// layers as their "front" parts, ghost layers (trails/ghost.js) as earlier
+// frames of the layers they copy. Shared by the editor's thumbnails and the
+// card's output. celKey: see renderGhost.
+export function drawFrameStack(g, layers, trails, frameIds, fi, w, h, drawCel, celKey) {
   const byId = new Map((trails || []).map((t) => [t.id, t]));
   for (const l of layers) {
     if (l.trail && l.visible !== false) {
@@ -146,7 +149,8 @@ export function drawFrameStack(g, layers, trails, frameIds, fi, w, h, drawCel) {
     if (l.visible === false) continue;
     g.globalAlpha = (l.opacity ?? 100) / 100;
     if (l.trail) drawTrail(g, byId.get(l.trail), frameIds, fi, "front", w, h);
-    else drawCel(l);
+    else if (l.ghost) drawGhostCanvas(g, l, renderGhost(l, layers, frameIds, fi, w, h, drawCel, celKey));
+    else drawCel(l, fi, g);
   }
   g.globalAlpha = 1;
 }

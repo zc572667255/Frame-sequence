@@ -278,4 +278,6 @@
 .tm-toggles .tool-btn { height: 26px; min-width: 30px; }
 .tl-name.trail { color: var(--k-frames); }
 .tl-cel.trail.has i { background: var(--k-frames); border-color: var(--k-frames); }
+.tl-name.ghost { color: var(--k-same); }
+.tl-cel.ghost.has i { background: var(--k-same); border-color: var(--k-same); box-shadow: 0 0 0 2px color-mix(in srgb, var(--k-same) 35%, transparent); }
 .tm-brush-pv { width: 120px; height: 28px; border-radius: 5px; border: 1px solid var(--line-strong); background: #000; image-rendering: pixelated; }

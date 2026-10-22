@@ -29,16 +29,16 @@ defineNode({
     const frames = n.frames.map((f, i) => {
       const c = createCanvas(n.w, n.h);
       const g = c.getContext("2d");
-      // pixel layers and trail layers in stack order (trails/composite.js)
-      drawFrameStack(g, n.layers, n.trails, frameIds, i, n.w, n.h, (l) => {
-        const aid = f.cels[l.id];
-        if (aid) g.drawImage(loaded.get(aid), 0, 0);
+      // pixel, trail and ghost layers in stack order (trails/composite.js)
+      drawFrameStack(g, n.layers, n.trails, frameIds, i, n.w, n.h, (l, j, into) => {
+        const aid = n.frames[j].cels[l.id];
+        if (aid) into.drawImage(loaded.get(aid), 0, 0);
       });
       return { canvas: c, index: i, duration: f.duration || null };
     });
     return {
       outputs: { out: framesValue(frames, n.w, n.h, { fps: n.fps }) },
-      info: { text: frames.length + " 帧 · " + n.layers.length + " 图层" + (n.trails.length ? "（含 " + n.trails.length + " 拖尾）" : "") + " · " + n.w + "×" + n.h },
+      info: { text: frames.length + " 帧 · " + n.layers.length + " 图层" + (n.trails.length ? "（含 " + n.trails.length + " 拖尾）" : "") + (n.layers.some((l) => l.ghost) ? "（含残影）" : "") + " · " + n.w + "×" + n.h },
     };
   },
 

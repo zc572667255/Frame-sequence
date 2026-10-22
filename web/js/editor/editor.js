@@ -17,6 +17,8 @@ import { styleThumb } from "./thumbs.js";
 import { TrailMode } from "./trailmode.js";
 import { drawFrameStack } from "../trails/composite.js";
 import { BUILTIN_BRUSHES, builtinBrush } from "../trails/model.js";
+import { GHOST_DEFAULTS, renderGhost, drawGhostCanvas, ghostSettings, ghostOn } from "../trails/ghost.js";
+import { GhostPanel } from "./ghostpanel.js";
 
 const TOOLS = [
   { id: "pencil", label: "铅笔", key: "B", icon: "✎" },
@@ -67,6 +69,17 @@ function celCanvas(img) {
   return e.c;
 }
 
+// what a cel looks like, as a short string (for the ghost cache): cels are
+// copy-on-write and R.touch counts in-place edits, so object + count says it
+const celTokens = new WeakMap();
+let celTokenN = 0;
+function celToken(img) {
+  if (!img) return "-";
+  let t = celTokens.get(img);
+  if (!t) { t = ++celTokenN; celTokens.set(img, t); }
+  return t + "." + (img.__v || 0);
+}
+
 // colours actually painted, most used first
 function usedColors(doc, limit = 64) {
   const imgs = [...new Set(doc.cels.values())];
@@ -115,6 +128,7 @@ class Editor {
     this.trail = { ...TRAIL_DEFAULTS, ...saved };
     this.trailPreview = null;
     this.tm = new TrailMode(this); // 攻击拖尾模式
+    this.gp = new GhostPanel(this); // 残影图层的设置
     this.zoom = 8; this.panX = 0; this.panY = 0;
     this.sel = null;       // { x, y, w, h }
     this.float = null;     // { img, x, y, whole }
@@ -276,7 +290,7 @@ class Editor {
       el("p", { class: "ed-hint" }, "左键选主色，右键选副色。点主色色块或「取色器…」可以任选颜色。"),
     );
     this.tm.panel.style.display = "none";
-    const side = el("div", { class: "ed-side" }, this.colorPanel, this.tm.panel);
+    const side = el("div", { class: "ed-side" }, this.colorPanel, this.tm.panel, this.gp.panel);
 
     // timeline
     this.tlBar = el("div", { class: "tl-bar" });
@@ -617,7 +631,12 @@ class Editor {
     this.fi = clamp(this.fi, 0, this.doc.frames.length - 1);
     this.li = clamp(this.li, 0, this.doc.layers.length - 1);
     this.updateTitle();
-    if (structural) this.rebuildTimeline(); else this.refreshThumb(this.fi);
+    if (structural) this.rebuildTimeline();
+    else if (this.doc.layers.some((l) => l.ghost)) {
+      // later frames show this one as their ghost
+      for (let fi = 0; fi < this.doc.frames.length; fi++) this.refreshThumb(fi);
+    } else this.refreshThumb(this.fi);
+    this.gp.sync();
     this.requestRender();
   }
 
@@ -745,6 +764,7 @@ class Editor {
     if (l.locked) { this.app.toast("图层「" + l.name + "」已锁定。", "warn"); return false; }
     if (l.visible === false) { this.app.toast("图层「" + l.name + "」是隐藏的，先显示它再画。", "warn"); return false; }
     if (l.trail) { this.app.toast("「" + l.name + "」是拖尾图层：在攻击拖尾模式里调棍子；想手修像素，先「栅格化本帧到特效图层」。", "warn"); return false; }
+    if (l.ghost) { this.app.toast("「" + l.name + "」是残影图层：内容自动来自前几帧，在右侧调设置；要画画请选别的图层。", "warn"); return false; }
     return true;
   }
 
@@ -755,6 +775,7 @@ class Editor {
       const t = this.doc.trails.find((x) => x.id === l.trail);
       return !!(t && t.keys && t.keys[this.doc.frames[fi].id]);
     }
+    if (l && l.ghost) return ghostOn(ghostSettings(l), this.doc.frames[fi].id);
     const img = this.doc.cel(fi, li);
     return !!img && !R.isEmpty(img);
   }
@@ -768,6 +789,7 @@ class Editor {
     this.syncTimelineSel();
     this.tm.onFrameChange(prev); // trail mode: carry the stick to the next frame
     this.tm.refresh();
+    if (!this.playing) this.gp.sync(); // 「本帧」 follows the frame
     this.requestRender();
   }
 
@@ -783,7 +805,58 @@ class Editor {
       this.tm.selId = l.trail;
       if (!this.tm.active) this.tm.toggle(true); else this.tm.refresh();
     } else if (this.tm.active) this.tm.toggle(false);
+    this.gp.sync(); // a ghost layer shows its settings on the right
     this.requestRender();
+  }
+
+  // a 残影 layer right below the current layer. It copies the current layer when
+  // that is one of several pixel layers (the character, not the effects), else
+  // every pixel layer.
+  addGhost() {
+    const cur = this.doc.layers[this.li];
+    const pixel = this.doc.layers.filter((l) => !l.trail && !l.ghost);
+    const source = cur && !cur.trail && !cur.ghost && pixel.length > 1 ? cur.id : "all";
+    if (this.tm.active) this.tm.toggle(false);
+    // only the current frame to begin with: ghosts belong to the fast moments
+    this.change(() => { this.li = this.doc.addGhostLayer(this.li, { ...GHOST_DEFAULTS, source, frames: [this.doc.frames[this.fi].id] }); });
+    this.goLayer(this.li);
+    if (this.doc.frames.length < 2) this.app.toast("残影来自前几帧：动画至少要 2 帧才看得到。", "warn");
+    else this.app.toast("已在第 " + (this.fi + 1) + " 帧加入残影。到其他帧再点「残影 ＋」加入，「－」去掉。");
+  }
+
+  // the ghost layer 残影 ＋ / － works on: the current layer if it is one, else
+  // the one copying the current layer, else one copying every layer
+  ghostTarget() {
+    const ls = this.doc.layers, cur = ls[this.li];
+    if (cur && cur.ghost) return cur;
+    return ls.find((l) => l.ghost && cur && l.ghost.source === cur.id) || ls.find((l) => l.ghost && ghostSettings(l).source === "all") || null;
+  }
+
+  // 残影 ＋: ghosts on the current frame (a new ghost layer the first time)
+  ghostPlus() {
+    const l = this.ghostTarget();
+    if (!l) { this.addGhost(); return; }
+    const id = this.doc.frames[this.fi].id;
+    if (ghostOn(ghostSettings(l), id)) { this.app.toast("第 " + (this.fi + 1) + " 帧已经有残影了。", "warn"); return; }
+    this.change(() => this.setGhostFrame(l, id, true));
+    if (this.fi === 0 && !ghostSettings(l).loop) this.app.toast("第 1 帧前面没有帧，残影要在后面的帧才看得到（或在残影设置里勾「循环动画」）。", "warn");
+  }
+
+  // 残影 －: no ghosts on the current frame (from the current ghost layer, or
+  // from every ghost layer when a pixel layer is selected)
+  ghostMinus() {
+    const cur = this.doc.layers[this.li], id = this.doc.frames[this.fi].id;
+    const from = (cur && cur.ghost ? [cur] : this.doc.layers.filter((l) => l.ghost)).filter((l) => ghostOn(ghostSettings(l), id));
+    if (!from.length) { this.app.toast("第 " + (this.fi + 1) + " 帧没有残影。", "warn"); return; }
+    this.change(() => { for (const l of from) this.setGhostFrame(l, id, false); });
+  }
+
+  // a ghost layer on / off on one frame (inside a change; the list is replaced,
+  // never edited in place, so history snapshots stay exact)
+  setGhostFrame(l, frameId, on) {
+    const all = this.doc.frames.map((f) => f.id);
+    const cur = (Array.isArray(l.ghost.frames) ? l.ghost.frames : all).filter((id) => all.includes(id) && id !== frameId);
+    l.ghost.frames = on ? [...cur, frameId] : cur;
   }
 
   // ---------- stage input ----------
@@ -1144,11 +1217,19 @@ class Editor {
     const c = createCanvas(this.doc.w, this.doc.h);
     const g = c.getContext("2d");
     const doc = this.doc;
-    drawFrameStack(g, doc.layers, doc.trails, doc.frames.map((f) => f.id), fi, doc.w, doc.h, (l) => {
-      const img = doc.cel(fi, doc.layers.indexOf(l));
-      if (img) g.drawImage(celCanvas(img), 0, 0);
-    });
+    drawFrameStack(g, doc.layers, doc.trails, doc.frames.map((f) => f.id), fi, doc.w, doc.h, this.drawCelAt, this.celKey);
     return c;
+  }
+
+  // drawFrameStack / renderGhost callbacks: layer l's cel of frame j
+  drawCelAt = (l, j, into) => {
+    const img = this.doc.cel(j, this.doc.layers.indexOf(l));
+    if (img) into.drawImage(celCanvas(img), 0, 0);
+  };
+  celKey = (l, j) => celToken(this.doc.cel(j, this.doc.layers.indexOf(l)));
+
+  ghostCanvas(l, fi = this.fi) {
+    return renderGhost(l, this.doc.layers, this.doc.frames.map((f) => f.id), fi, this.doc.w, this.doc.h, this.drawCelAt, this.celKey);
   }
 
   onionLayer(fi, tint) {
@@ -1222,6 +1303,7 @@ class Editor {
       if (l.visible === false) return;
       g.globalAlpha = (l.opacity ?? 100) / 100;
       if (l.trail) { this.tm.drawLayer(g, l, ox, oy, iw, ih); g.globalAlpha = 1; return; }
+      if (l.ghost) { drawGhostCanvas(g, l, this.ghostCanvas(l), ox, oy, iw, ih); g.globalAlpha = 1; return; }
       const img = doc.cel(this.fi, li);
       if (img) g.drawImage(celCanvas(img), ox, oy, iw, ih);
       if (li !== this.li) return;
@@ -1347,8 +1429,14 @@ class Editor {
         b("⤓", "向下合并", () => {
           if (this.li < 1) return;
           if (this.doc.layers[this.li].trail || this.doc.layers[this.li - 1].trail) { this.app.toast("拖尾图层不能合并：先「栅格化本帧到特效图层」，再合并特效图层。", "warn"); return; }
+          if (this.doc.layers[this.li].ghost || this.doc.layers[this.li - 1].ghost) { this.app.toast("残影图层不能合并：它的内容是自动生成的。", "warn"); return; }
           this.change(() => { this.doc.mergeDown(this.li); this.li--; });
         })),
+      el("span", { class: "tl-sep" }),
+      el("span", { class: "tl-group" }, "残影",
+        b("＋", "当前帧加入残影：重复前几帧的画面，做冲刺、快速挥动的残影（第一次会在当前图层下方新建残影图层）", () => this.ghostPlus()),
+        b("－", "去掉当前帧的残影", () => this.ghostMinus())),
+      el("span", { class: "tl-sep" }),
       el("label", { class: "tl-field" }, "不透明度", this.opacityIn, this.opacityVal),
     );
   }
@@ -1374,7 +1462,8 @@ class Editor {
       eye.onclick = (e) => { e.stopPropagation(); l.visible = l.visible === false; this.markDirty(); this.rebuildTimeline(); this.requestRender(); };
       const lock = el("button", { class: "tl-ico lock" + (l.locked ? " on" : ""), title: l.locked ? "已锁定 · 点击解锁" : "点击锁定（锁定后不能画）" }, "锁");
       lock.onclick = (e) => { e.stopPropagation(); l.locked = !l.locked; this.markDirty(); this.rebuildTimeline(); };
-      const name = el("span", { class: "tl-name" + (l.trail ? " trail" : "") }, (l.trail ? "☄ " : "") + l.name);
+      const kind = l.trail ? "trail" : l.ghost ? "ghost" : "";
+      const name = el("span", { class: "tl-name" + (kind ? " " + kind : "") }, (l.trail ? "☄ " : l.ghost ? "◌ " : "") + l.name);
       const head = el("div", { class: "tl-lhead", dataset: { li } }, eye, lock, name);
       head.addEventListener("click", () => this.goLayer(li));
       head.addEventListener("dblclick", () => {
@@ -1383,7 +1472,7 @@ class Editor {
       });
       g.append(head);
       doc.frames.forEach((f, fi) => {
-        const cell = el("div", { class: "tl-cel" + (this.hasContent(fi, li) ? " has" : "") + (l.trail ? " trail" : ""), dataset: { fi, li } }, el("i"));
+        const cell = el("div", { class: "tl-cel" + (this.hasContent(fi, li) ? " has" : "") + (kind ? " " + kind : ""), dataset: { fi, li } }, el("i"));
         cell.addEventListener("click", () => { this.goLayer(li); this.goFrame(fi); });
         g.append(cell);
       });
