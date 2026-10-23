@@ -109,9 +109,9 @@ export function cloneCanvas(src) {
   return c;
 }
 
-export function canvasToBlob(canvas, type = "image/png") {
+export function canvasToBlob(canvas, type = "image/png", quality) {
   return new Promise((resolve, reject) => {
-    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("浏览器没能生成图片，可能是尺寸过大"))), type);
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("浏览器没能生成图片，可能是尺寸过大"))), type, quality);
   });
 }
 

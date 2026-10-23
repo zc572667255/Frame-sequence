@@ -665,6 +665,7 @@ class App {
     }
     if (def && def.open) items.push({ label: "打开编辑器", action: () => def.open(this.board.ctxOf(id)) });
     if (this.canBake(id)) items.push({ label: "烘焙为动画卡片", action: () => this.bake(id) });
+    if (card.type === "animation") items.push({ label: "分层导出（Godot）…", action: () => import("./godot/layers.js").then((m) => m.openLayeredExport(this, id)) });
     if (card.type === "animation" || this.canBake(id)) {
       const chars = Object.values(this.store.cards).filter((c) => c.type === "character");
       items.push({ label: "加入角色…", action: () => {

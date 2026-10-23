@@ -9,7 +9,7 @@
 //
 // Every trail is a layer (layers[i].trail = trail id), created with the trail:
 // its place in the stack is its depth, its eye / lock / opacity apply as usual.
-import { el, uid, blobToCanvas, canvasToBlob } from "../core/util.js";
+import { el, uid, blobToCanvas, canvasToBlob, downloadBlob } from "../core/util.js";
 import { putBlobAsset, getAssetCanvas } from "../core/assets.js";
 import { showMenu } from "../ui/menu.js";
 import { STYLE_DEFAULTS, BUILTIN_PRESETS, BUILTIN_BRUSHES, SHAPES, newTrail, normalizeTrail, trailState, stickReversed } from "../trails/model.js";
@@ -18,6 +18,7 @@ import { TRAIL_PRESETS, BAND_LOOK } from "./trailbrush.js";
 import { GLOW_PRESETS, GLOW_DEFAULTS, glowStyle } from "../trails/glow.js";
 import { styleThumb } from "./thumbs.js";
 import { controlKit, headTailControls, glowControls } from "./effectpanel.js";
+import { trailData, trailGodot, trailJSON, attachStrips } from "../godot/trail.js";
 
 // a new trail starts as the 梦幻 glow; the pixel bands are one click away
 const NEW_TRAIL_STYLE = { ...STYLE_DEFAULTS, colorMode: "glow", pixel: false, fade: 0.7, ...glowStyle(GLOW_PRESETS[0]) };
@@ -817,6 +818,29 @@ export class TrailMode {
       el("button", { class: "btn small", title: "把当前帧的拖尾画进「特效」图层，变成可以手修的像素", onclick: () => this.rasterize() }, "栅格化本帧到特效图层"),
       el("button", { class: "btn small danger", onclick: () => this.removeTrail() }, "删除这段拖尾（连同图层）")));
     P.append(el("p", { class: "ed-hint" }, "每帧的拖尾 = 最近「拖尾长度」帧里棍子扫过的区域，刀尖一侧最亮。拖尾图层在图层列表里的位置决定前后；某几帧设为「后方」则垫到所有图层下面。细腻度默认 20。"));
+
+    // the same trails drawn by the game at run time (godot/trail.js)
+    P.append(title("导出给程序"));
+    P.append(el("div", { class: "tm-row" }, el("span", { class: "tm-label" }, "全部分段"), el("div", { class: "tm-colors" },
+      el("button", { class: "btn small", title: "Godot 4 脚本：挂到角色精灵下的 Node2D 上，运行时按每帧的棍子画出这个动作的所有拖尾，数据已填好", onclick: () => this.exportFor("godot") }, "Godot 脚本"),
+      el("button", { class: "btn small", title: "通用 JSON：每帧的棍子、形状参数、配色 + 计算公式，Unity / Cocos / 自研引擎照着实现", onclick: () => this.exportFor("json") }, "JSON 参数"))));
+    P.append(el("p", { class: "ed-hint" }, "运行时按每帧的棍子画拖尾：带子上的火焰、光丝、流光、刷痕是烘焙好的贴图，飞出去的火星、闪光、命中爆点是烘焙好的逐帧图，都内嵌在脚本里。"));
+  }
+
+  // every segment of this animation's trails, for the game to draw at run time
+  async exportFor(kind) {
+    const doc = this.doc;
+    const card = this.ed.app.store.cards[this.ed.cardId];
+    const data = trailData(doc.trails, this.frameIds(), doc.w, doc.h, doc.fps, card && card.title);
+    if (!data.trails.length) { this.ed.app.toast("还没有画好的拖尾（每段至少要有棍子）。", "warn"); return; }
+    // the look and the fx frames rendered here, embedded: the script works on its own
+    const t = this.ed.app.toast("正在烘焙拖尾贴图…");
+    try { await attachStrips(data, doc.trails, this.frameIds(), "embed"); } finally { t.remove(); }
+    if (kind === "godot") downloadBlob(new Blob([trailGodot(data)], { type: "text/plain" }), "attack_trail.gd");
+    else downloadBlob(new Blob([trailJSON(data)], { type: "application/json" }), "attack_trail.json");
+    this.ed.app.toast(kind === "godot"
+      ? "已导出 attack_trail.gd（" + data.trails.length + " 段）：在 Godot 里新建 Node2D 放到角色精灵下面，挂上这个脚本即可。"
+      : "已导出 attack_trail.json：每帧的棍子、参数和计算公式都在里面（notes 字段）。");
   }
 
   // bake the current frame's trails into the 特效 layer

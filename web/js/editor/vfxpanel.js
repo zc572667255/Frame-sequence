@@ -1,12 +1,13 @@
 // The 特效 panel: settings of the selected effect layer (vfx/layer.js), shown on
 // the right in place of the colours while an effect layer is the current layer.
 // Where and how big it is can also be set on the canvas (drag it, or a corner).
-import { el } from "../core/util.js";
+import { el, downloadBlob } from "../core/util.js";
 import { VFX_KINDS, VFX_DEFAULTS, VFX_PALETTES, VFX_EDGES as EDGES, hasSide } from "../vfx/effects.js";
 import { vfxSettings, renderVfxAsync } from "../vfx/layer.js";
 import { ACCENTS, ACC_MODES, autoAccents } from "../vfx/accents.js";
 import { GLOW_PRESETS } from "../trails/glow.js";
 import { GROUND_AURAS } from "../vfx/kinds/auras.js";
+import { vfxData, vfxGodot, vfxJSON, attachVfxSheet } from "../godot/vfx.js";
 
 const GROUND = new Set(["shock", "dust", "circle", "heal"]);
 
@@ -260,5 +261,26 @@ export class VfxPanel {
       btn("换一个随机样子", "同样的设置，换一组随机细节", () => this.edit({ seed: (s.seed % 9973) + 1 + Math.floor(Math.random() * 500) })),
       btn("转为像素图层", "把每一帧的特效画进一个普通图层，之后可以用画笔手修（不再能调特效设置）", () => this.ed.rasterizeVfx())), el("span"));
     P.append(el("p", { class: "ed-hint" }, "在画布上拖动特效移动位置；拖画幅框的边或角改变大小（对边不动，Shift 保持比例，Alt 以中心缩放）。特效图层可以用 ↑ ↓ 移到角色前面或后面。"));
+
+    // the same effect played by the game (godot/vfx.js)
+    P.append(el("div", { class: "ed-panel-title" }, "导出给程序"));
+    row("脚本", el("div", { class: "tm-colors" },
+      btn("Godot 脚本", "Godot 4 脚本：可以跟着角色动画播（和这里一样），也可以在游戏里单独 play() / play_at() 播放、循环、改色、缩放；特效画面已内嵌", () => this.exportFor("godot")),
+      btn("JSON 参数", "通用 JSON：特效序列图（内嵌）、每帧显示哪一帧、放在哪 + 说明，Unity / Cocos / 自研引擎照着实现", () => this.exportFor("json"))), el("span"));
+  }
+
+  async exportFor(kind) {
+    const l = this.layer();
+    if (!l) return;
+    const ids = this.doc.frames.map((f) => f.id);
+    const data = vfxData(l, ids, this.doc.w, this.doc.h, this.doc.fps, this.ed.vfxCtx(), l.name);
+    if (!data.timeline.some(Boolean)) { this.ed.app.toast("这个特效在动画里一帧都没有显示（检查开始帧和持续帧数）。", "warn"); return; }
+    const t = this.ed.app.toast("正在渲染特效序列图…");
+    try { await attachVfxSheet(data, l, "embed"); } finally { t.remove(); }
+    if (kind === "godot") downloadBlob(new Blob([vfxGodot(data)], { type: "text/plain" }), "vfx_effect.gd");
+    else downloadBlob(new Blob([vfxJSON(data)], { type: "application/json" }), "vfx_effect.json");
+    this.ed.app.toast(kind === "godot"
+      ? "已导出 vfx_effect.gd：新建 Node2D 挂上它，放到角色精灵下面就跟着动画播；mode 选「单独播放」可以在任意位置 play()。"
+      : "已导出 vfx_effect.json：序列图、每帧位置和说明都在里面（notes 字段）。");
   }
 }

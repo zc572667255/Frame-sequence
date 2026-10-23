@@ -9,6 +9,7 @@ import { createCanvas } from "../../core/util.js";
 import { loadTextures, drawFrameStack } from "../../trails/composite.js";
 import { prefetchVfxLayer, layerBBox } from "../../vfx/layer.js";
 import { prefetchStrokeLayer } from "../../trails/stroke.js";
+import { openLayeredExport } from "../../godot/layers.js";
 
 defineNode({
   type: "animation",
@@ -70,7 +71,8 @@ defineNode({
       const n = normalizeAnim(ctx.params());
       return [["尺寸", n.w + " × " + n.h], ["帧数", String(n.frames.length)], ["图层", String(n.layers.length)], ["色板", n.palette.length + " 色"]];
     });
-    f.buttons(["打开像素编辑器", () => ctx.app.openEditor(ctx.id), { primary: true }]);
+    f.buttons(["打开像素编辑器", () => ctx.app.openEditor(ctx.id), { primary: true }],
+      ["分层导出（Godot）…", () => openLayeredExport(ctx.app, ctx.id), { title: "每个图层单独导出成序列图，并生成叠好的 Godot 4 场景；攻击拖尾可以导出成运行时脚本" }]);
     const strip = makeFilmstrip();
     let key = null;
     f.section("帧").custom(strip.el, () => {
