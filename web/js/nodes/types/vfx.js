@@ -5,7 +5,10 @@ import { defineNode } from "../registry.js";
 import { makeStage, makePlayer } from "../view.js";
 import { framesValue } from "../data.js";
 import { el } from "../../core/util.js";
-import { VFX_KINDS, VFX_DEFAULTS, VFX_PALETTES, VFX_EDGES as EDGES, renderVfxFrames, hasSide } from "../../vfx/effects.js";
+import { VFX_KINDS, VFX_DEFAULTS, VFX_PALETTES, VFX_EDGES as EDGES, hasSide } from "../../vfx/effects.js";
+import { renderVfxAsync } from "../../vfx/layer.js";
+import { ACCENTS, ACC_MODES, autoAccents } from "../../vfx/accents.js";
+import { GLOW_PRESETS } from "../../trails/glow.js";
 
 const GROUND = new Set(["shock", "dust", "circle", "heal"]);
 
@@ -21,9 +24,11 @@ defineNode({
   defaults: () => ({ ...VFX_DEFAULTS }),
   persist: ["paused"],
 
-  evaluate(p) {
+  // the frames rendered in the background, all at once
+  async evaluate(p) {
     const s = { ...VFX_DEFAULTS, ...p };
-    const canvases = renderVfxFrames(s);
+    const n = Math.max(1, Math.min(64, s.frames | 0));
+    const canvases = await Promise.all(Array.from({ length: n }, (_, i) => renderVfxAsync(s, i)));
     const frames = canvases.map((canvas, i) => ({ canvas, index: i, duration: null }));
     const kind = VFX_KINDS.find((k) => k.id === s.kind);
     return {
@@ -84,8 +89,18 @@ defineNode({
     const pattern = f.select("法阵图案", "pattern", [["hex", "六芒星"], ["penta", "五芒星"], ["square", "双方形（八角）"]], { wide: true });
     const edge = f.select("边缘特效", "edge", EDGES, { wide: true });
     const bolts = f.check("带闪电（超级赛亚人 2 那样在斗气上窜动）", "bolts");
+    // 光效点缀: the trails' accents; 自定义 starts from the palette's own mix
+    const presetOf = () => GLOW_PRESETS.find((x) => x.id === p().palette) || GLOW_PRESETS[0];
+    f.select("光效点缀", "acc", ACC_MODES, { wide: true, onChange: (v) => { if (v === "custom") ctx.set(autoAccents(presetOf())); } });
+    const accHint = f.hint(() => {
+      const auto = autoAccents(presetOf()), names = ACCENTS.filter((a) => auto["acc_" + a.id] > 0).map((a) => a.name);
+      return names.length ? "「" + presetOf().name + "」配色带：" + names.join("、") + "（和同名拖尾一样）" : "「" + presetOf().name + "」配色没有点缀，可以选「自定义」自己加";
+    });
+    const accSliders = ACCENTS.map((a) => f.slider(a.name, "acc_" + a.id, { min: 0, max: 100, unit: "%" }));
     f.custom(el("span"), () => {
-      const k = p().kind;
+      const k = p().kind, mode = p().acc || "auto";
+      accHint.style.display = mode === "auto" ? "" : "none";
+      for (const sl of accSliders) sl.style.display = mode === "custom" ? "" : "none";
       bolts.style.display = k === "aura" ? "" : "none";
       px.style.display = p().style === "pixel" ? "" : "none";
       ground.style.display = GROUND.has(k) ? "" : "none";

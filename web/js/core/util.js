@@ -63,6 +63,8 @@ export function el(tag, attrs, ...children) {
 }
 
 export function createCanvas(w, h) {
+  // in a worker (vfx/worker.js) there is no document: an OffscreenCanvas draws the same
+  if (typeof document === "undefined") return new OffscreenCanvas(Math.max(1, w | 0), Math.max(1, h | 0));
   const c = document.createElement("canvas");
   c.width = Math.max(1, w | 0);
   c.height = Math.max(1, h | 0);

@@ -99,18 +99,42 @@ export function noiseGrid(seed, w, h, ox, oy, cell) {
   return out;
 }
 
+// The lattice of a noise seed: the hashed value of every whole point from −128
+// to 127 each way, in a 256 × 256 table. The per-pixel effects sample noise
+// several times a pixel; looking the corners up instead of hashing them each
+// time is most of their cost saved. Kept for the last few seeds (an effect
+// uses the same seeds on every frame).
+const lattices = new Map();
+const latticeHash = (x, y, seed) => {
+  let v = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ seed;
+  v = Math.imul(v ^ (v >>> 13), 1274126177);
+  return ((v ^ (v >>> 16)) >>> 0) / 4294967295;
+};
+function lattice(seed) {
+  let L = lattices.get(seed);
+  if (L) return L;
+  L = new Float64Array(65536);
+  for (let y = -128; y < 128; y++) for (let x = -128; x < 128; x++) L[((y + 128) << 8) | (x + 128)] = latticeHash(x, y, seed);
+  lattices.set(seed, L);
+  if (lattices.size > 32) lattices.delete(lattices.keys().next().value);
+  return L;
+}
+
 // smooth fractal value noise, 3 octaves, 0..1
 export function fbmNoise(seed) {
-  const hash = (x, y) => {
-    let v = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ seed;
-    v = Math.imul(v ^ (v >>> 13), 1274126177);
-    return ((v ^ (v >>> 16)) >>> 0) / 4294967295;
-  };
+  const L = lattice(seed);
   const one = (x, y) => {
     const ix = Math.floor(x), iy = Math.floor(y);
     let tx = x - ix, ty = y - iy;
     tx = tx * tx * (3 - 2 * tx); ty = ty * ty * (3 - 2 * ty);
-    const a = hash(ix, iy), b = hash(ix + 1, iy), c = hash(ix, iy + 1), d = hash(ix + 1, iy + 1);
+    let a, b, c, d;
+    // inside the table its corners are looked up, outside hashed — the same values
+    if (ix >= -128 && ix < 127 && iy >= -128 && iy < 127) {
+      const i = ((iy + 128) << 8) | (ix + 128);
+      a = L[i]; b = L[i + 1]; c = L[i + 256]; d = L[i + 257];
+    } else {
+      a = latticeHash(ix, iy, seed); b = latticeHash(ix + 1, iy, seed); c = latticeHash(ix, iy + 1, seed); d = latticeHash(ix + 1, iy + 1, seed);
+    }
     return a + (b - a) * tx + (c - a) * ty + (a - b - c + d) * tx * ty;
   };
   return (x, y) => one(x, y) * 0.55 + one(x * 2.1 + 17.3, y * 2.1 + 3.1) * 0.3 + one(x * 4.3 + 7.7, y * 4.3 + 29.5) * 0.15;

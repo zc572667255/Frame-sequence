@@ -2,24 +2,29 @@
 // the right in place of the colours while an effect layer is the current layer.
 // Where and how big it is can also be set on the canvas (drag it, or a corner).
 import { el } from "../core/util.js";
-import { VFX_KINDS, VFX_PALETTES, VFX_EDGES as EDGES, renderVfx, hasSide } from "../vfx/effects.js";
-import { vfxSettings } from "../vfx/layer.js";
+import { VFX_KINDS, VFX_DEFAULTS, VFX_PALETTES, VFX_EDGES as EDGES, hasSide } from "../vfx/effects.js";
+import { vfxSettings, renderVfxAsync } from "../vfx/layer.js";
+import { ACCENTS, ACC_MODES, autoAccents } from "../vfx/accents.js";
+import { GLOW_PRESETS } from "../trails/glow.js";
 
 const GROUND = new Set(["shock", "dust", "circle", "heal"]);
 
-// a kind's picture for the type grid: one telling frame, cached
-const thumbs = new Map();
+// a kind's picture for the type grid: one telling frame, rendered in the
+// background (the card shows empty until it comes) and kept
+const thumbs = new Map(); // key -> the picture, or a Promise of it
 const THUMB_FRAME = { hit: 1, explosion: 3, shock: 3, dust: 4, charge: 2, circle: 0, heal: 0, aura: 0, burn: 0, ribbon: 0 };
 function vfxThumb(kind, palette, style) {
   const key = kind.id + ":" + palette + ":" + style;
-  let src = thumbs.get(key);
-  if (!src) {
-    const tall = kind.id === "aura" || kind.id === "burn";
-    src = renderVfx({ ...kind.defaults, kind: kind.id, palette, style, pxSize: 1, w: tall ? 36 : 48, h: 48, size: 90 }, THUMB_FRAME[kind.id] || 0);
-    thumbs.set(key, src);
-  }
   const c = el("canvas", { class: "trail-thumb vfx-thumb" + (style === "pixel" ? " px" : ""), width: 48, height: 48 });
-  c.getContext("2d").drawImage(src, (48 - src.width) / 2, 0);
+  const draw = (src) => c.getContext("2d").drawImage(src, (48 - src.width) / 2, 0);
+  let got = thumbs.get(key);
+  if (!got) {
+    const tall = kind.id === "aura" || kind.id === "burn";
+    got = renderVfxAsync({ ...VFX_DEFAULTS, ...kind.defaults, kind: kind.id, palette, style, pxSize: 1, w: tall ? 36 : 48, h: 48, size: 90 }, THUMB_FRAME[kind.id] || 0)
+      .then((src) => { thumbs.set(key, src); return src; });
+    thumbs.set(key, got);
+  }
+  if (got instanceof Promise) got.then(draw); else draw(got);
   return c;
 }
 
@@ -164,6 +169,13 @@ export class VfxPanel {
 
     // where and how big: following a layer, keyed frame by frame, or fixed
     P.append(el("div", { class: "ed-panel-title" }, "画幅框（位置与大小）"));
+    // past the canvas, what is out there isn't shown (or exported)
+    {
+      const r = this.ed.vfxRegionNow(l), W = this.doc.w, H = this.doc.h;
+      const over = { 上: -(r.y - r.h / 2), 下: r.y + r.h / 2 - H, 左: -(r.x - r.w / 2), 右: r.x + r.w / 2 - W };
+      const sides = Object.entries(over).filter(([, v]) => v > 2).map(([k, v]) => k + " " + Math.round(v) + "px");
+      if (sides.length) P.append(el("p", { class: "ed-hint warn" }, "画幅框超出画布（" + sides.join("，") + "），超出的部分不会显示也不会导出。可以用顶部「画布尺寸…」把画布加大" + (s.follow ? "，或减小「外扩」。" : "，或把画幅框缩小、挪回画布里。")));
+    }
     const pixelLayers = this.doc.layers.filter((o) => !o.trail && !o.ghost && !o.vfx);
     choose("跟随图层", "follow", [["", "不跟随"], ...pixelLayers.map((o) => [o.id, o.name])], (v) => ({ follow: v || null }));
     const here = this.ed.fi;
@@ -230,6 +242,19 @@ export class VfxPanel {
       const bolts = el("input", { type: "checkbox", checked: !!s.bolts, onchange: () => this.edit({ bolts: bolts.checked }) });
       P.append(el("label", { class: "ed-check" }, bolts, "带闪电（超级赛亚人 2 那样在斗气上窜动）"));
     }
+    // 光效点缀: the trails' accents over it — the palette's own mix, none, or
+    // each set by hand (starting from the palette's mix)
+    P.append(el("div", { class: "ed-panel-title" }, "光效点缀（来自拖尾）"));
+    const preset = GLOW_PRESETS.find((x) => x.id === s.palette) || GLOW_PRESETS[0];
+    const auto = autoAccents(preset), mode = s.acc || "auto";
+    choose("点缀", "acc", ACC_MODES, (v) => (v === "custom" && mode !== "custom" ? { acc: v, ...auto } : { acc: v }));
+    if (mode === "auto") {
+      const names = ACCENTS.filter((a) => auto["acc_" + a.id] > 0).map((a) => a.name);
+      P.append(el("p", { class: "ed-hint" }, names.length
+        ? "「" + preset.name + "」配色带：" + names.join("、") + "，和同名拖尾一样。想单独调就选「自定义」。"
+        : "「" + preset.name + "」配色没有点缀，可以选「自定义」自己加。"));
+    } else if (mode === "custom") for (const a of ACCENTS) slider(a.name, "acc_" + a.id, 0, 100, "%");
+
     row("", el("div", { class: "tm-colors" },
       btn("换一个随机样子", "同样的设置，换一组随机细节", () => this.edit({ seed: (s.seed % 9973) + 1 + Math.floor(Math.random() * 500) })),
       btn("转为像素图层", "把每一帧的特效画进一个普通图层，之后可以用画笔手修（不再能调特效设置）", () => this.ed.rasterizeVfx())), el("span"));

@@ -96,6 +96,7 @@
 .ed-pal-cell:hover { transform: scale(1.12); }
 .ed-pal-cell.on { outline: 2px solid var(--text); outline-offset: 1px; }
 .ed-hint { font-size: 11.5px; color: var(--text-faint); margin: 8px 0 0; }
+.ed-hint.warn { color: #e0a43c; }
 
 /* timeline */
 .ed-timeline {

@@ -21,7 +21,7 @@ import { GHOST_DEFAULTS, renderGhost, drawGhostCanvas, ghostSettings, ghostOn, g
 import { GhostPanel } from "./ghostpanel.js";
 import { VfxPanel } from "./vfxpanel.js";
 import { VFX_KINDS } from "../vfx/effects.js";
-import { VFX_LAYER_DEFAULTS, vfxSettings, vfxFrame, vfxRegion, vfxRect, drawVfxLayer, layerBBox } from "../vfx/layer.js";
+import { VFX_LAYER_DEFAULTS, vfxSettings, vfxFrame, vfxRegion, vfxRect, drawVfxLayer, layerBBox, prefetchVfxLayer, onVfxReady, vfxFrameReady } from "../vfx/layer.js";
 
 const TOOLS = [
   { id: "pencil", label: "铅笔", key: "B", icon: "✎" },
@@ -96,6 +96,7 @@ function resizeBox(r, hd, q, keepShape, fromCentre) {
   return { x: (x0 + x1) / 2, y: (y0 + y1) / 2, w: x1 - x0, h: y1 - y0 };
 }
 
+const emptyCache = new WeakMap(); // ImageData -> { v, empty } (hasContent)
 const celCache = new WeakMap();
 function celCanvas(img) {
   let e = celCache.get(img);
@@ -198,7 +199,26 @@ class Editor {
     this.updateTitle();
     this.onPaste = (e) => this.handlePaste(e);
     window.addEventListener("paste", this.onPaste);
-    this.ro = new ResizeObserver(() => this.requestRender());
+    // effect frames rendered in the background: show them as they come, and
+    // draw the thumbnails that were waiting for them
+    this.offVfxReady = onVfxReady(() => {
+      this.requestRender();
+      clearTimeout(this.vfxWaitTimer);
+      this.vfxWaitTimer = setTimeout(() => {
+        const w = [...(this.thumbWait || [])];
+        this.thumbWait = new Set();
+        this.queueThumbs(w);
+      }, 40);
+    });
+    this.prefetchVfx();
+    // the stage's size as the observer reports it: render reads this rather
+    // than clientWidth, which would force a fresh layout of the whole editor
+    // right after the timeline or a panel was rebuilt
+    this.ro = new ResizeObserver((es) => {
+      const r = es[es.length - 1].contentRect;
+      this.stageSize = { w: Math.round(r.width), h: Math.round(r.height) };
+      this.requestRender();
+    });
     this.ro.observe(this.stage);
   }
 
@@ -217,6 +237,8 @@ class Editor {
     this.playing = false;
     cancelAnimationFrame(this.raf);
     window.removeEventListener("paste", this.onPaste);
+    if (this.offVfxReady) this.offVfxReady();
+    clearTimeout(this.vfxWaitTimer);
     this.ro.disconnect();
     this.root.remove();
     this.app.board.root.focus();
@@ -684,7 +706,15 @@ class Editor {
       this.queueThumbs(this.doc.frames.map((_, fi) => fi).filter((fi) => fi !== this.fi));
     } else this.refreshThumb(this.fi);
     this.syncSide();
+    this.prefetchVfx();
     this.requestRender();
+  }
+
+  // every frame the effect layers show, rendered ahead in the background (from
+  // this frame on), so stepping, playing and the thumbnails find them ready
+  prefetchVfx() {
+    const ids = this.doc.frames.map((f) => f.id), ctx = this.vfxCtx();
+    for (const l of this.doc.layers) if (l.vfx && l.visible !== false) prefetchVfxLayer(l, ids, ctx, this.fi);
   }
 
   undo() {
@@ -836,7 +866,14 @@ class Editor {
     if (l && l.ghost) return ghostOn(ghostSettings(l), this.doc.frames[fi].id);
     if (l && l.vfx) return vfxFrame(vfxSettings(l), this.doc.frames.map((f) => f.id), fi) >= 0;
     const img = this.doc.cel(fi, li);
-    return !!img && !R.isEmpty(img);
+    if (!img) return false;
+    // remembered per picture and its edit count (R.touch): a long timeline
+    // otherwise scans every cel of every frame on every rebuild
+    const v = img.__v || 0, hit = emptyCache.get(img);
+    if (hit && hit.v === v) return !hit.empty;
+    const empty = R.isEmpty(img);
+    emptyCache.set(img, { v, empty });
+    return !empty;
   }
 
   // ---------- frames / layers ----------
@@ -921,7 +958,7 @@ class Editor {
 
   // what an effect layer needs to follow another layer: its outline per frame
   vfxCtx(draft = false) {
-    return { draft, bbox: (id, j) => layerBBox(this.doc.layers, id, j, this.doc.w, this.doc.h, this.drawCelAt, this.celKey) };
+    return { draft, bbox: (id, j) => layerBBox(this.doc.layers, id, j, this.doc.w, this.doc.h, this.drawCelAt, this.celKey, this.celImage) };
   }
 
   // the handle of an effect's box under a canvas point: { x, y } with -1 / 1 for
@@ -1446,11 +1483,11 @@ class Editor {
     this.raf = requestAnimationFrame(() => { this.raf = 0; this.render(); });
   }
 
-  composite(fi) {
+  composite(fi, onlyReady = false) {
     const c = createCanvas(this.doc.w, this.doc.h);
     const g = c.getContext("2d");
     const doc = this.doc;
-    drawFrameStack(g, doc.layers, doc.trails, doc.frames.map((f) => f.id), fi, doc.w, doc.h, this.drawCelAt, this.celKey);
+    drawFrameStack(g, doc.layers, doc.trails, doc.frames.map((f) => f.id), fi, doc.w, doc.h, this.drawCelAt, this.celKey, { celImage: this.celImage, onlyReady });
     return c;
   }
 
@@ -1460,6 +1497,7 @@ class Editor {
     if (img) into.drawImage(celCanvas(img), 0, 0);
   };
   celKey = (l, j) => celToken(this.doc.cel(j, this.doc.layers.indexOf(l)));
+  celImage = (l, j) => this.doc.cel(j, this.doc.layers.indexOf(l));
 
   ghostCanvas(l, fi = this.fi) {
     return renderGhost(l, this.doc.layers, this.doc.frames.map((f) => f.id), fi, this.doc.w, this.doc.h, this.drawCelAt, this.celKey);
@@ -1473,13 +1511,16 @@ class Editor {
       // the least recently used goes; clearing them all made stepping through
       // a long animation recomposite its neighbours on every step
       while (this.onionCache.size >= 64) this.onionCache.delete(this.onionCache.keys().next().value);
-      c = this.composite(fi);
+      // an effect still being rendered in the background is left out for now,
+      // and this picture isn't kept: it is made again once the effect has come
+      const ready = vfxFrameReady(this.doc.layers, this.doc.frames.map((f) => f.id), fi, this.vfxCtx());
+      c = this.composite(fi, !ready);
       const g = c.getContext("2d");
       g.globalCompositeOperation = "source-atop";
       g.fillStyle = tint;
       g.globalAlpha = 0.45;
       g.fillRect(0, 0, c.width, c.height);
-      this.onionCache.set(key, c);
+      if (ready) this.onionCache.set(key, c);
     }
     return c;
   }
@@ -1500,7 +1541,7 @@ class Editor {
     const c = this.canvas, doc = this.doc;
     let g = this.g;
     const dpr = window.devicePixelRatio || 1;
-    const W = this.stage.clientWidth, H = this.stage.clientHeight;
+    const W = this.stageSize ? this.stageSize.w : this.stage.clientWidth, H = this.stageSize ? this.stageSize.h : this.stage.clientHeight;
     if (c.width !== Math.round(W * dpr) || c.height !== Math.round(H * dpr)) {
       c.width = Math.round(W * dpr); c.height = Math.round(H * dpr);
       c.style.width = W + "px"; c.style.height = H + "px";
@@ -1780,13 +1821,21 @@ class Editor {
   // Thumbnails redrawn between frames, a few milliseconds' worth at a time:
   // compositing every frame at once (effects, ghosts and all) stalls the editor
   // for a moment after every change.
+  // One whose effect frames are still being rendered in the background waits
+  // for them (onVfxReady puts it back) rather than rendering them here.
   queueThumbs(list) {
-    const q = this.thumbQ || (this.thumbQ = []);
-    for (const fi of list) if (!q.includes(fi)) q.push(fi);
-    if (this.thumbTimer || !q.length) return;
+    const q0 = this.thumbQ || (this.thumbQ = []);
+    for (const fi of list) if (!q0.includes(fi)) q0.push(fi);
+    if (this.thumbTimer || !q0.length) return;
     const step = () => {
-      const t0 = performance.now();
-      while (q.length && performance.now() - t0 < 6) this.refreshThumb(q.shift());
+      const q = this.thumbQ, t0 = performance.now();
+      const ids = this.doc.frames.map((f) => f.id), ctx = this.vfxCtx();
+      while (q.length && performance.now() - t0 < 6) {
+        const fi = q.shift();
+        if (fi >= ids.length) continue;
+        if (!vfxFrameReady(this.doc.layers, ids, fi, ctx)) { (this.thumbWait || (this.thumbWait = new Set())).add(fi); continue; }
+        this.refreshThumb(fi);
+      }
       this.thumbTimer = q.length ? setTimeout(step, 16) : 0;
     };
     this.thumbTimer = setTimeout(step, 16);

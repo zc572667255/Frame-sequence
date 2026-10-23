@@ -138,7 +138,8 @@ export function drawTrail(g, raw, frameIds, fi, z, w, h) {
 // layers as their "front" parts, ghost layers (trails/ghost.js) as earlier
 // frames of the layers they copy, effect layers (vfx/layer.js) as their effect. Shared by the editor's thumbnails and the
 // card's output. celKey: see renderGhost.
-export function drawFrameStack(g, layers, trails, frameIds, fi, w, h, drawCel, celKey) {
+// opts: { celImage, onlyReady } for effect layers (vfx/layer.js drawVfxLayer)
+export function drawFrameStack(g, layers, trails, frameIds, fi, w, h, drawCel, celKey, opts = {}) {
   const byId = new Map((trails || []).map((t) => [t.id, t]));
   for (const l of layers) {
     if (l.trail && l.visible !== false) {
@@ -151,7 +152,7 @@ export function drawFrameStack(g, layers, trails, frameIds, fi, w, h, drawCel, c
     g.globalAlpha = (l.opacity ?? 100) / 100;
     if (l.trail) drawTrail(g, byId.get(l.trail), frameIds, fi, "front", w, h);
     else if (l.ghost) drawGhostCanvas(g, l, renderGhost(l, layers, frameIds, fi, w, h, drawCel, celKey));
-    else if (l.vfx) drawVfxLayer(g, l, frameIds, fi, 0, 0, 1, { bbox: (id, j) => layerBBox(layers, id, j, w, h, drawCel, celKey) });
+    else if (l.vfx) drawVfxLayer(g, l, frameIds, fi, 0, 0, 1, { onlyReady: !!opts.onlyReady, bbox: (id, j) => layerBBox(layers, id, j, w, h, drawCel, celKey, opts.celImage) });
     else drawCel(l, fi, g);
   }
   g.globalAlpha = 1;

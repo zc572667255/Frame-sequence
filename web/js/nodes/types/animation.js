@@ -7,6 +7,7 @@ import { framesValue } from "../data.js";
 import { normalizeAnim } from "../../editor/doc.js";
 import { createCanvas } from "../../core/util.js";
 import { loadTextures, drawFrameStack } from "../../trails/composite.js";
+import { prefetchVfxLayer, layerBBox } from "../../vfx/layer.js";
 
 defineNode({
   type: "animation",
@@ -26,6 +27,11 @@ defineNode({
     const loaded = new Map(await Promise.all([...ids].map(async (id) => [id, await ctx.asset(id)])));
     await loadTextures(n.trails, ctx.asset);
     const frameIds = n.frames.map((f) => f.id);
+    // effect layers' frames rendered in the background first, all at once, so
+    // putting the frames together below only draws them
+    const drawCel = (l, j, into) => { const aid = n.frames[j].cels[l.id]; if (aid) into.drawImage(loaded.get(aid), 0, 0); };
+    const vfxCtx = { bbox: (id, j) => layerBBox(n.layers, id, j, n.w, n.h, drawCel) };
+    await Promise.all(n.layers.filter((l) => l.vfx && l.visible !== false).map((l) => prefetchVfxLayer(l, frameIds, vfxCtx)));
     const frames = n.frames.map((f, i) => {
       const c = createCanvas(n.w, n.h);
       const g = c.getContext("2d");
