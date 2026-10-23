@@ -119,6 +119,11 @@ signal finished
 
 
 func _ready() -> void:
+	# F6 单独运行这个场景、又没有摄像机时：原点（脚底）在窗口左上角，整段动画会画到窗口外面，
+	# 所以挪到窗口中间偏下。放进别的场景里用时不动它。
+	if get_tree().current_scene == self and get_viewport().get_camera_2d() == null:
+		var size := get_viewport_rect().size
+		position = Vector2(size.x * 0.5, size.y * 0.75)
 	var ap := _player()
 	if ap:
 		ap.animation_finished.connect(func(_n: StringName) -> void: finished.emit())
