@@ -2,6 +2,7 @@ import { createCanvas } from "../../core/util.js";
 import { rng, rgba, smooth, drawBlurred } from "../../trails/glow/util.js";
 import { star, rockShape } from "../../trails/glow/shapes.js";
 import { TAU, easeOut, frac, mixRgb, at, blob, ring, jag, bolt, trail, comet } from "../common.js";
+import { groundAura, isGroundAura } from "./auras.js";
 
 // 魔法阵: rings, a band of runes, ticks and a star, drawn straight onto the
 // ground in perspective (paths laid down first, then stroked, so lines keep
@@ -13,13 +14,24 @@ import { TAU, easeOut, frac, mixRgb, at, blob, ring, jag, bolt, trail, comet } f
 // instead of the star, and in the middle a 太极 turning — a whole turn per
 // loop (the trigrams, all different, stay put in a loop).
 export function circle(g, c) {
+  // the ground auras (光环) are drawn on their own (kinds/auras.js); an edge
+  // only when one is asked for
+  if (isGroundAura(c.pattern)) {
+    groundAura(g, c);
+    if (c.edge !== "auto" && c.edge !== "none") {
+      const side = c.view === "side", kx = side ? c.squash : 1, k = side ? 1 : c.squash, ox = c.cx, oy = side ? c.cy : c.gy;
+      const fade = c.loop ? 1 : (1 - smooth(0.75, 1, c.t)) * easeOut(c.t / 0.3, 2);
+      circleEdge(g, c, c.edge, (th, r) => [ox + Math.cos(th) * r * kx, oy + Math.sin(th) * r * k], fade);
+    }
+    return;
+  }
   const { t, R, pal } = c;
   const reveal = c.loop ? 1 : easeOut(t / 0.35, 2);
   const env = c.loop ? 1 : 1 - smooth(0.78, 1, t);
   const lw = Math.max(0.8, R * 0.022);
-  // 侧面: the circle stands upright, seen edge-on — a portal: narrowed
-  // sideways instead of laid flat (lines keep their width, motes stay round)
-  const side = c.view === "side", kx = side ? 0.32 : 1;
+  // 侧面: the circle stands upright, turned away by 地面倾斜 — a portal:
+  // narrowed sideways instead of laid flat (lines keep their width, motes stay round)
+  const side = c.view === "side", kx = side ? c.squash : 1;
   const k = side ? 1 : c.squash, ox = c.cx, oy = side ? c.cy : c.gy;
   // a loop turns each part by exactly one of its symmetry steps, so the last
   // frame leads back into the first: the runes alternate two glyphs (a step

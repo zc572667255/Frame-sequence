@@ -55,7 +55,7 @@ export const VFX_DEFAULTS = {
   amount: 100,   // particles, %
   glow: 60,      // bloom, %
   tilt: 60,      // 冲击波 / 魔法阵 / 治疗 / 烟尘: how flat the ground is seen, degrees (0 = from above)
-  pattern: "hex", // 魔法阵: "hex" 六芒星 | "penta" 五芒星 | "square" 双方形 | "taiji" 太极八卦
+  pattern: "hex", // 魔法阵: "hex" 六芒星 | "penta" 五芒星 | "square" 双方形 | "taiji" 太极八卦 | 光环（kinds/auras.js GROUND_AURAS）
   edge: "auto",  // 魔法阵: what plays round the rim — "auto" (the palette's element) | "none" | "fire" 火焰 | "earth" 岩石 | "wind" 风刃 | "water" 水波 | "bolt" 闪电
   bolts: false,  // 环绕光: lightning crawling over it
   view: "front", // "front" 正面 | "side" 侧面, for the kinds that have one (hasSide)
@@ -121,6 +121,8 @@ export function renderVfx(p, i) {
     tg.imageSmoothingQuality = "high";
     tg.translate(w / 2, h / 2); tg.rotate(rot);
     tg.drawImage(base, -w / 2, -h / 2);
+    // back to no turn: what draws on it next (the edge fade) draws straight
+    tg.setTransform(1, 0, 0, 1, 0, 0);
     base = turned;
   }
   // pixels keep a tighter glow: a wide faint halo snaps to solid blocks
@@ -149,6 +151,8 @@ export function renderVfx(p, i) {
 function fadeEdges(cv) {
   const w = cv.width, h = cv.height, m = Math.max(2, Math.round(Math.min(w, h) * 0.04));
   const g = cv.getContext("2d");
+  g.save();
+  g.setTransform(1, 0, 0, 1, 0, 0);
   g.globalCompositeOperation = "destination-in";
   for (const [x1, y1, len] of [[w, 0, w], [0, h, h]]) {
     const gr = g.createLinearGradient(0, 0, x1, y1), e = Math.min(0.5, m / len);
@@ -157,7 +161,7 @@ function fadeEdges(cv) {
     g.fillStyle = gr;
     g.fillRect(0, 0, w, h);
   }
-  g.globalCompositeOperation = "source-over";
+  g.restore();
   return cv;
 }
 

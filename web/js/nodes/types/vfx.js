@@ -9,6 +9,7 @@ import { VFX_KINDS, VFX_DEFAULTS, VFX_PALETTES, VFX_EDGES as EDGES, hasSide } fr
 import { renderVfxAsync } from "../../vfx/layer.js";
 import { ACCENTS, ACC_MODES, autoAccents } from "../../vfx/accents.js";
 import { GLOW_PRESETS } from "../../trails/glow.js";
+import { GROUND_AURAS } from "../../vfx/kinds/auras.js";
 
 const GROUND = new Set(["shock", "dust", "circle", "heal"]);
 
@@ -86,7 +87,7 @@ defineNode({
     const view = f.select("视角", "view", [["front", "正面"], ["side", "侧面"]], { wide: true });
     f.slider("旋转", "rotate", { min: -180, max: 180, unit: "°" });
     const ground = f.slider("地面倾斜", "tilt", { min: 0, max: 80, unit: "°" });
-    const pattern = f.select("法阵图案", "pattern", [["hex", "六芒星"], ["penta", "五芒星"], ["square", "双方形（八角）"], ["taiji", "太极八卦"]], { wide: true });
+    const pattern = f.select("法阵图案", "pattern", [["hex", "六芒星"], ["penta", "五芒星"], ["square", "双方形（八角）"], ["taiji", "太极八卦"], ...GROUND_AURAS], { wide: true });
     const edge = f.select("边缘特效", "edge", EDGES, { wide: true });
     const bolts = f.check("带闪电（超级赛亚人 2 那样在斗气上窜动）", "bolts");
     // 光效点缀: the trails' accents; 自定义 starts from the palette's own mix
@@ -109,6 +110,6 @@ defineNode({
       view.style.display = hasSide(k) ? "" : "none";
     });
     f.buttons(["换一个随机样子", () => ctx.set({ seed: (p().seed % 9973) + 1 + Math.floor(Math.random() * 500) })]);
-    f.hint("「地面倾斜」：0° 是从正上方看，越大越扁，像放在地上（冲击波为 0° 时是空中的圆环）。「视角」（翅膀、冲击波、魔法阵）侧面：翅膀向后展开，冲击波和魔法阵竖起来侧对；「旋转」整体绕中心转动。想手修就右键卡片「烘焙为动画卡片」。");
+    f.hint("「地面倾斜」：0° 是从正上方看，越大越扁，像放在地上（冲击波为 0° 时是空中的圆环）；侧面视角时 0° 是正对着，越大越侧过去。「视角」（翅膀、冲击波、魔法阵）侧面：翅膀向后展开，冲击波和魔法阵竖起来侧对；「旋转」整体绕中心转动。想手修就右键卡片「烘焙为动画卡片」。");
   },
 });

@@ -5,9 +5,9 @@ import { TAU, easeOut, easeIn, at, blob, ring, streak, comet } from "../common.j
 // speed lines at the front and bits of dust kicked up along it
 export function shock(g, c) {
   const { t, R, pal } = c;
-  // 侧面: the ring stands upright and is seen edge-on — narrowed sideways
+  // 侧面: the ring stands upright, turned away by 地面倾斜 — narrowed sideways
   // (its glow and the flash stay round)
-  const side = c.view === "side", kx = side ? 0.3 : 1;
+  const side = c.view === "side", kx = side ? c.squash : 1;
   const k = side ? 1 : c.squash, cx = c.cx, cy = k < 0.98 ? c.gy : c.cy;
   g.globalCompositeOperation = "lighter";
   const fl = 1 - smooth(0, 0.3, t);

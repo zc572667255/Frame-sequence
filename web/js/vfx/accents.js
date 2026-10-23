@@ -155,13 +155,18 @@ const DRAW = {
     }
   },
 
-  // long rays fanning out from the centre, turning one gap per loop
+  // long rays fanning out from the centre, turning one gap per loop — in a
+  // loop each one taking on the next one's slant, width and flicker on the
+  // way, so the last frame leads back into the first
   rays(g, c, A, amt, env, P) {
     const { core, rim } = c.pal;
-    const N = 8, rot = TAU / N * c.t * (c.loop ? 1 : 0.5);
+    const N = 8, rot = TAU / N * c.t * (c.loop ? 1 : 0.5), m = c.loop ? c.t : 0;
+    const rs = Array.from({ length: N }, () => ({ j: (P() - 0.5) * 0.3, ph: P(), w: 0.05 + 0.06 * P() }));
+    const mix = (u, v) => u + (v - u) * m;
     for (let k = 0; k < N; k++) {
-      const th = rot + k * TAU / N + (P() - 0.5) * 0.3, ph = P(), wid = A.s * (0.05 + 0.06 * P());
-      const len = A.s * (1.05 + 0.35 * Math.sin(TAU * frac(ph + c.t))), a = 0.55 * Math.min(1, amt * 1.4) * env;
+      const r0 = rs[k], r1 = rs[(k + 1) % N];
+      const th = rot + k * TAU / N + mix(r0.j, r1.j), wid = A.s * mix(r0.w, r1.w);
+      const len = A.s * (1.05 + 0.35 * mix(Math.sin(TAU * frac(r0.ph + c.t)), Math.sin(TAU * frac(r1.ph + c.t)))), a = 0.55 * Math.min(1, amt * 1.4) * env;
       const dx = Math.cos(th), dy = Math.sin(th), ex = A.x + dx * len * A.rx / A.s, ey = A.y + dy * len * A.ry / A.s;
       const gr = g.createLinearGradient(A.x, A.y, ex, ey);
       gr.addColorStop(0, rgba(core, a)); gr.addColorStop(0.4, rgba(rim, 0.5 * a)); gr.addColorStop(1, rgba(rim, 0));

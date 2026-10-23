@@ -6,6 +6,7 @@ import { VFX_KINDS, VFX_DEFAULTS, VFX_PALETTES, VFX_EDGES as EDGES, hasSide } fr
 import { vfxSettings, renderVfxAsync } from "../vfx/layer.js";
 import { ACCENTS, ACC_MODES, autoAccents } from "../vfx/accents.js";
 import { GLOW_PRESETS } from "../trails/glow.js";
+import { GROUND_AURAS } from "../vfx/kinds/auras.js";
 
 const GROUND = new Set(["shock", "dust", "circle", "heal"]);
 
@@ -233,9 +234,9 @@ export class VfxPanel {
     slider("辉光", "glow", 0, 150, "%");
     if (hasSide(s.kind)) choose("视角", "view", [["front", "正面"], ["side", "侧面"]]);
     slider("旋转", "rotate", -180, 180, "°", "整个特效绕中心转动（转出画幅框的部分会被裁掉，可以把画幅框拉大）");
-    if (GROUND.has(s.kind)) slider("地面倾斜", "tilt", 0, 80, "°", "0° 是从正上方看，越大越扁，像放在地上");
+    if (GROUND.has(s.kind)) slider("地面倾斜", "tilt", 0, 80, "°", "0° 是从正上方看，越大越扁，像放在地上；侧面视角时 0° 是正对着，越大越侧过去");
     if (s.kind === "circle") {
-      choose("法阵图案", "pattern", [["hex", "六芒星"], ["penta", "五芒星"], ["square", "双方形（八角）"], ["taiji", "太极八卦"]]);
+      choose("法阵图案", "pattern", [["hex", "六芒星"], ["penta", "五芒星"], ["square", "双方形（八角）"], ["taiji", "太极八卦"], ...GROUND_AURAS]);
       choose("边缘特效", "edge", EDGES);
     }
     if (s.kind === "aura") {
