@@ -239,7 +239,7 @@ export function drawVfxLayer(g, l, frameIds, fi, ox = 0, oy = 0, z = 1, ctx = nu
 const boxes = new Map();
 export function layerBBox(layers, id, j, w, h, drawCel, celKey, celImage) {
   const l = layers.find((x) => x.id === id);
-  if (!l || l.trail || l.ghost || l.vfx) return null;
+  if (!l || l.trail || l.ghost || l.vfx || l.stroke) return null;
   const key = celKey ? id + "|" + celKey(l, j) + "|" + w + "x" + h : null;
   if (key && boxes.has(key)) return boxes.get(key);
   // the cel's pixels as they are (celImage: ImageData of w×h, or null when

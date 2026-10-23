@@ -10,7 +10,8 @@ import { uid, createCanvas } from "../core/util.js";
 const HISTORY_LIMIT = 100;
 
 // a layer with its settings objects copied, so a history snapshot never shares them
-const copyLayer = (l) => ({ ...l, ...(l.ghost ? { ghost: { ...l.ghost } } : {}), ...(l.vfx ? { vfx: { ...l.vfx } } : {}) });
+const copyStroke = (st) => ({ ...st, style: { ...st.style }, color: [...(st.color || [255, 255, 255, 255])], keys: Object.fromEntries(Object.entries(st.keys || {}).map(([k, v]) => [k, { ...v, a: [...v.a], b: [...v.b] }])) });
+const copyLayer = (l) => ({ ...l, ...(l.ghost ? { ghost: { ...l.ghost } } : {}), ...(l.vfx ? { vfx: { ...l.vfx } } : {}), ...(l.stroke ? { stroke: copyStroke(l.stroke) } : {}) });
 
 // Animation card params, any vintage -> { w, h, fps, layers, frames, palette }
 //   layers: [{ id, name, visible, opacity }]  bottom -> top
@@ -159,6 +160,7 @@ export class EditorDoc {
     // an effect that started on it starts on the frame that took its place
     const next = this.frames[Math.min(fi, this.frames.length - 1)].id;
     for (const l of this.layers) if (l.vfx && l.vfx.start === f.id) l.vfx = { ...l.vfx, start: next };
+    for (const l of this.layers) if (l.stroke && l.stroke.keys && l.stroke.keys[f.id]) { const keys = { ...l.stroke.keys }; delete keys[f.id]; l.stroke = { ...l.stroke, keys }; }
     for (const t of this.trails) if (t.keys) delete t.keys[f.id];
     return true;
   }
@@ -183,6 +185,7 @@ export class EditorDoc {
     const l = { ...src, id: uid("L"), name: src.name + " 副本" };
     if (src.ghost) l.ghost = { ...src.ghost };
     if (src.vfx) l.vfx = { ...src.vfx };
+    if (src.stroke) l.stroke = copyStroke(src.stroke);
     if (src.trail) {
       // a trail layer's content is its trail: copy that
       const t = this.trails.find((x) => x.id === src.trail);
@@ -222,6 +225,14 @@ export class EditorDoc {
 
   // an effect (特效) layer, created right above layer `li` (or right below it:
   // an aura goes behind what it surrounds)
+  // a 拖尾笔 stroke layer (trails/stroke.js), created right above layer `li`
+  addStrokeLayer(li, stroke) {
+    const n = this.layers.filter((l) => l.stroke).length + 1;
+    const l = { id: uid("L"), name: "拖尾笔 " + n, visible: true, opacity: 100, stroke };
+    this.layers.splice(li + 1, 0, l);
+    return li + 1;
+  }
+
   addVfxLayer(li, vfx, name, below = false) {
     const l = { id: uid("L"), name: name || "特效", visible: true, opacity: 100, vfx };
     const at = below ? li : li + 1;
@@ -247,7 +258,7 @@ export class EditorDoc {
   }
 
   mergeDown(li) {
-    const special = (l) => l.trail || l.ghost || l.vfx;
+    const special = (l) => l.trail || l.ghost || l.vfx || l.stroke;
     if (li < 1 || special(this.layers[li]) || special(this.layers[li - 1])) return false;
     const top = this.layers[li];
     for (let fi = 0; fi < this.frames.length; fi++) {
@@ -306,7 +317,7 @@ export class EditorDoc {
     }
     return {
       w: this.w, h: this.h, fps: this.fps,
-      layers: this.layers.map((l) => ({ id: l.id, name: l.name, visible: l.visible !== false, opacity: l.opacity ?? 100, locked: !!l.locked, ...(l.trail ? { trail: l.trail } : {}), ...(l.ghost ? { ghost: { ...l.ghost } } : {}), ...(l.vfx ? { vfx: { ...l.vfx } } : {}) })),
+      layers: this.layers.map((l) => ({ id: l.id, name: l.name, visible: l.visible !== false, opacity: l.opacity ?? 100, locked: !!l.locked, ...(l.trail ? { trail: l.trail } : {}), ...(l.ghost ? { ghost: { ...l.ghost } } : {}), ...(l.vfx ? { vfx: { ...l.vfx } } : {}), ...(l.stroke ? { stroke: copyStroke(l.stroke) } : {}) })),
       frames,
       palette: [...this.palette],
       trails: JSON.parse(JSON.stringify(this.trails)),

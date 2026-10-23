@@ -12,13 +12,15 @@ import { PALETTES, colorCounts, unpackRGB } from "../imaging/color.js";
 import { openModal } from "../ui/modal.js";
 import { showMenu } from "../ui/menu.js";
 import { TRAIL_PRESETS, TRAIL_DEFAULTS, BAND_LOOK, rasterizeTrail } from "./trailbrush.js";
-import { GLOW_PRESETS } from "../trails/glow.js";
+import { GLOW_PRESETS, glowStyle } from "../trails/glow.js";
+import { controlKit, headTailControls, glowControls } from "./effectpanel.js";
 import { styleThumb } from "./thumbs.js";
 import { TrailMode } from "./trailmode.js";
 import { drawFrameStack } from "../trails/composite.js";
 import { BUILTIN_BRUSHES, builtinBrush } from "../trails/model.js";
 import { GHOST_DEFAULTS, renderGhost, drawGhostCanvas, ghostSettings, ghostOn, ghostCovers } from "../trails/ghost.js";
 import { GhostPanel } from "./ghostpanel.js";
+import { strokePath, strokeMid, bendAt, strokeLen, strokePlane, strokeCircle, slideOnCircle, strokeEllipsePath, strokeEllipseHandles, scaleKey, replaneKeys, strokeWraps, clipStrokePart, fitStroke, strokeAt, strokeShows, drawStrokeLayer, drawStrokeDraft, strokePreview, warmStrokePreview, onStrokeBrush, onStrokeReady, prefetchStrokeLayer, strokeFrameReady } from "../trails/stroke.js";
 import { VfxPanel } from "./vfxpanel.js";
 import { VFX_KINDS } from "../vfx/effects.js";
 import { VFX_LAYER_DEFAULTS, vfxSettings, vfxFrame, vfxRegion, vfxRect, drawVfxLayer, layerBBox, prefetchVfxLayer, onVfxReady, vfxFrameReady } from "../vfx/layer.js";
@@ -39,6 +41,7 @@ const TOOLS = [
 const KEY_TOOL = { b: "pencil", e: "eraser", g: "fill", i: "picker", l: "line", u: "rect", m: "select", v: "move", t: "trail", f: "vfx" };
 const FX_LAYER = "特效";
 const TRAIL_KEY = "gt.trailBrush";
+const LOCK_BEND_KEY = "gt.strokeLockBend";
 const VFX_KEY = "gt.vfxTool.2"; // .2: 高清 became the default (the first key saved 像素 as the old default)
 const ZOOMS = [0.25, 0.5, 1, 2, 3, 4, 6, 8, 12, 16, 20, 24, 32, 40, 48, 64];
 const BRUSH_TOOLS = new Set(["pencil", "eraser", "line", "rect", "ellipse"]);
@@ -48,7 +51,7 @@ export const EDITOR_SHORTCUTS = [
   ["L / U / Shift+U", "直线 / 矩形 / 椭圆（按住 Shift 约束角度或正方形）"],
   ["M / V", "选区 / 移动（没有选区时移动整层）"],
   ["Alt + 点击", "临时吸管"],
-  ["T", "拖尾笔：按住拖出一道刀光，松手落笔；样式在左侧选"],
+  ["T", "拖尾笔：按住拖出一道刀光，画成可调整的笔触；拖头、尾、弧度的点调整，下一帧接着调；样式在右侧"],
   ["F", "特效：在当前帧新建一个特效图层，参数在右侧；选中特效图层时在画布上拖动移动、拖四角改大小"],
   ["Shift + 点击（铅笔）", "从上一点画直线"],
   ["右键", "用副色画"],
@@ -163,6 +166,8 @@ class Editor {
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(TRAIL_KEY) || "{}"); } catch { /* none */ }
     this.trail = { ...TRAIL_DEFAULTS, ...saved };
+    // 固定弧度: a stroke's bow keeps its shape, only its head and tail move
+    try { this.strokeLockBend = localStorage.getItem(LOCK_BEND_KEY) === "1"; } catch { this.strokeLockBend = false; }
     this.trailPreview = null;
     this.tm = new TrailMode(this); // 攻击拖尾模式
     this.gp = new GhostPanel(this); // 残影图层的设置
@@ -201,7 +206,7 @@ class Editor {
     window.addEventListener("paste", this.onPaste);
     // effect frames rendered in the background: show them as they come, and
     // draw the thumbnails that were waiting for them
-    this.offVfxReady = onVfxReady(() => {
+    const back = () => {
       this.requestRender();
       clearTimeout(this.vfxWaitTimer);
       this.vfxWaitTimer = setTimeout(() => {
@@ -209,8 +214,11 @@ class Editor {
         this.thumbWait = new Set();
         this.queueThumbs(w);
       }, 40);
-    });
+    };
+    this.offVfxReady = onVfxReady(back);
+    this.offStrokeReady = onStrokeReady(back);
     this.prefetchVfx();
+    this.offStrokeBrush = onStrokeBrush(() => { this.requestRender(); this.queueThumbs(this.doc.frames.map((_, fi) => fi)); });
     // the stage's size as the observer reports it: render reads this rather
     // than clientWidth, which would force a fresh layout of the whole editor
     // right after the timeline or a panel was rebuilt
@@ -238,6 +246,8 @@ class Editor {
     cancelAnimationFrame(this.raf);
     window.removeEventListener("paste", this.onPaste);
     if (this.offVfxReady) this.offVfxReady();
+    if (this.offStrokeReady) this.offStrokeReady();
+    if (this.offStrokeBrush) this.offStrokeBrush();
     clearTimeout(this.vfxWaitTimer);
     this.ro.disconnect();
     this.root.remove();
@@ -353,7 +363,10 @@ class Editor {
       el("p", { class: "ed-hint" }, "左键选主色，右键选副色。点主色色块或「取色器…」可以任选颜色。"),
     );
     this.tm.panel.style.display = "none";
-    const side = el("div", { class: "ed-side" }, this.colorPanel, this.tm.panel, this.gp.panel, this.vp.panel);
+    // the trail brush's settings sit on the right, over the colours (its 主色
+    // style paints in the main colour)
+    this.trailPanel = el("div", { class: "ed-opts ed-tool-panel", style: { display: "none" } });
+    const side = el("div", { class: "ed-side" }, this.trailPanel, this.colorPanel, this.tm.panel, this.gp.panel, this.vp.panel);
 
     // timeline
     this.tlBar = el("div", { class: "tl-bar" });
@@ -386,6 +399,7 @@ class Editor {
     // settings on the right (unless an effect layer is already the current one)
     const cur = this.doc.layers[this.li];
     if (t === "vfx" && !(cur && cur.vfx)) this.newVfx();
+    if (t === "trail") warmStrokePreview(); // ready before the first drag
   }
 
   syncToolUI() {
@@ -405,7 +419,11 @@ class Editor {
     if (this.tool === "pencil") check("像素完美", () => this.pixelPerfect, (v) => { this.pixelPerfect = v; });
     if (this.tool === "fill") check("只填相连区域", () => this.contiguous, (v) => { this.contiguous = v; });
     if (this.tool === "rect" || this.tool === "ellipse") check("实心", () => this.filled, (v) => { this.filled = v; });
-    if (this.tool === "trail") this.trailOptions(o);
+    if (this.tool === "trail" && this.trailPanel) {
+      o.append(el("p", { class: "ed-hint" }, "拖尾笔的参数在右侧。"));
+      this.buildTrailPanel();
+    } else if (this.trailPanel) { this.trailPanel.replaceChildren(); this.trailPanelFor = null; }
+    this.syncToolPanel();
     if (this.tool === "vfx") this.vfxOptions(o);
     if (this.tool === "select" || this.tool === "move") {
       const b = (label, fn, title) => o.append(el("button", { class: "btn small block", title: title || "", onclick: fn }, label));
@@ -426,8 +444,7 @@ class Editor {
 
   // the 拖尾笔's tail brush: built-in by id, or the user's imported image (kept
   // in the tool settings as a small data URL, so it follows them across projects)
-  toolBrush() {
-    const t = this.trail;
+  toolBrush(t = this.trail) {
     if (t.brushData) {
       if (this._brushData !== t.brushData) {
         this._brushData = t.brushData;
@@ -455,26 +472,62 @@ class Editor {
     const g = c.getContext("2d");
     g.imageSmoothingEnabled = true;
     g.drawImage(src, 0, 0, c.width, c.height);
-    this.trail.brushData = c.toDataURL("image/png");
-    this.trail.brushName = files[0].name;
-    this.trail.tailMode = "brush";
-    this.saveTrail();
+    const t = this.trailTarget();
+    t.brushData = c.toDataURL("image/png");
+    t.brushName = files[0].name;
+    t.tailMode = "brush";
+    this.trailChanged();
     this.syncToolUI();
   }
 
+  // 效果调整, as the attack trail has it (editor/effectpanel.js): 头部弧度, 尾部,
+  // and for glow styles the controls by place with their layers under ▸. The
+  // brush keeps fade in %, headArc and taper as 0..1, the mixes as they are, and
+  // a layer set under 细节 in look (over the preset's own)
+  trailEffectControls(o, t, glow) {
+    const preset = glow && (GLOW_PRESETS.find((p) => "glow:" + p.id === t.preset) || GLOW_PRESETS[0]);
+    const base = preset ? glowStyle(preset) : {}, own = new Set(["fade", "taper", "headArc", "mixEdge", "mixBody", "mixGlow", "mixFx", "mixBurst"]);
+    const groups = this.trailGroups || (this.trailGroups = new Set());
+    const ui = {
+      P: o,
+      get: (key) => key === "fade" ? (t.fade ?? 45) / 100
+        : own.has(key) ? t[key] ?? TRAIL_DEFAULTS[key]
+        : (t.look && t.look[key] != null ? t.look[key] : base[key]),
+      live: (vals) => {
+        for (const [k, v] of Object.entries(vals)) {
+          if (k === "fade") t.fade = Math.round(v * 100);
+          else if (own.has(k)) t[k] = v;
+          else t.look = { ...(t.look || {}), [k]: v };
+        }
+        this.trailChanged();
+      },
+      end: () => {},
+      refresh: () => this.buildTrailPanel(),
+      isOpen: (id) => groups.has(id),
+      toggle: (id) => { if (groups.has(id)) groups.delete(id); else groups.add(id); this.buildTrailPanel(); },
+    };
+    const kit = controlKit(ui);
+    o.append(el("div", { class: "ed-opt-title" }, "效果调整"), el("p", { class: "ed-hint" }, "每项右边的「细节 ▸」展开这个位置的每一层单独调。"));
+    headTailControls(kit, ui, t.shape || "head");
+    if (glow) glowControls(kit, ui, !!t.pixelGlow);
+  }
+
   trailOptions(o) {
-    const t = this.trail;
+    // the selected stroke layer's look, or the brush's own for the next stroke
+    const t = this.trailTarget(), sl = this.strokeLayer();
+    if (sl) this.strokeSection(o, sl);
     o.append(el("div", { class: "ed-opt-title" }, "样式"));
     const grid = el("div", { class: "trail-presets" });
     for (const p of TRAIL_PRESETS) {
       const b = el("button", { class: "trail-preset" + (t.preset === p.id ? " on" : ""), title: p.name, onclick: () => {
         t.preset = p.id;
+        t.look = null;
         t.bandPick = p.id;
         t.pixelGlow = false;
         if (p.fade != null) t.fade = p.fade;
         if (p.look && p.look.shape) t.shape = p.look.shape;
         t.edgeBreak = Math.round(((p.look && p.look.edgeBreak) ?? BAND_LOOK.edgeBreak) * 100);
-        this.saveTrail();
+        this.trailChanged();
         this.syncToolUI();
       } }, styleThumb("band", p, this.primary), el("span", null, p.name));
       grid.append(b);
@@ -487,45 +540,37 @@ class Editor {
     for (const p of GLOW_PRESETS) {
       glowGrid.append(el("button", { class: "trail-preset" + (t.preset === "glow:" + p.id ? " on" : ""), title: p.name, onclick: () => {
         t.preset = "glow:" + p.id;
+        t.look = null; // its layers as set under 细节 belong to the old preset
         t.glowPick = p.id;
         t.pixelGlow = !hd;
-        this.saveTrail();
+        this.trailChanged();
         this.syncToolUI();
       } }, styleThumb(hd ? "hd" : "pixel", p), el("span", null, p.name)));
     }
     const kind = el("div", { class: "trail-kind" },
-      el("button", { class: hd ? "on" : "", title: "平滑发光的高清特效", onclick: () => { if (!hd) { if (!glow) t.preset = "glow:" + (t.glowPick || GLOW_PRESETS[0].id); t.pixelGlow = false; this.saveTrail(); this.syncToolUI(); } } }, "高清"),
-      el("button", { class: hd ? "" : "on", title: "像素画：同样的光效画成像素，或经典分层色带", onclick: () => { if (hd) { t.pixelGlow = true; this.saveTrail(); this.syncToolUI(); } } }, "像素"));
+      el("button", { class: hd ? "on" : "", title: "平滑发光的高清特效", onclick: () => { if (!hd) { if (!glow) t.preset = "glow:" + (t.glowPick || GLOW_PRESETS[0].id); t.pixelGlow = false; this.trailChanged(); this.syncToolUI(); } } }, "高清"),
+      el("button", { class: hd ? "" : "on", title: "像素画：同样的光效画成像素，或经典分层色带", onclick: () => { if (hd) { t.pixelGlow = true; this.trailChanged(); this.syncToolUI(); } } }, "像素"));
     o.append(kind);
     if (hd) o.append(glowGrid);
     else o.append(el("div", { class: "ed-opt-sub" }, "像素光效"), glowGrid, el("div", { class: "ed-opt-sub" }, "经典色带"), grid);
     const slider = (label, key, min, max, unit) => {
       const val = el("span", { class: "mono" }, t[key] + unit);
-      const r = el("input", { type: "range", min, max, value: t[key], oninput: () => { t[key] = +r.value; val.textContent = r.value + unit; this.saveTrail(); } });
+      const r = el("input", { type: "range", min, max, value: t[key], oninput: () => { t[key] = +r.value; val.textContent = r.value + unit; this.trailChanged(); } });
       o.append(el("div", { class: "ed-opt-title" }, label, val), r);
     };
     slider("宽度", "width", 1, glow ? 240 : 64, "px");
-    slider("尾部渐隐", "fade", 0, 100, "%");
-    if (glow) {
-      // the shared glow controls (see the attack trail panel)
-      slider("刀锋", "mixEdge", 0, 200, "%");
-      slider("刀身", "mixBody", 0, 200, "%");
-      slider("光晕", "mixGlow", 0, 200, "%");
-      slider("粒子", "mixFx", 0, 200, "%");
-      slider("爆发", "mixBurst", 0, 200, "%");
-    }
     if (glow && t.pixelGlow) {
       slider("像素大小", "pxSize", 1, 8, "px");
       const pa = el("select", { class: "ed-select" },
         ...[["steps", "4 级透明"], ["dither", "抖动（全实心）"], ["hard", "硬边"]].map(([v, n]) => el("option", { value: v, selected: (t.pxAlpha || "steps") === v }, n)));
-      pa.onchange = () => { t.pxAlpha = pa.value; this.saveTrail(); };
+      pa.onchange = () => { t.pxAlpha = pa.value; this.trailChanged(); };
       o.append(el("div", { class: "ed-opt-title" }, "透明方式"), pa);
     }
     if (!glow) {
       // how neighbouring colour bands meet (no partial alpha either way)
       const bb = el("select", { class: "ed-select" },
         ...[["steps", "色阶（插入中间色）"], ["dither", "抖动（网点过渡）"], ["smooth", "平滑渐变"], ["hard", "硬边"]].map(([v, n]) => el("option", { value: v, selected: (t.bandBlend || "steps") === v }, n)));
-      bb.onchange = () => { t.bandBlend = bb.value; this.saveTrail(); this.syncToolUI(); };
+      bb.onchange = () => { t.bandBlend = bb.value; this.trailChanged(); this.syncToolUI(); };
       o.append(el("div", { class: "ed-opt-title" }, "色带过渡"), bb);
       if ((t.bandBlend || "steps") !== "hard") slider("过渡宽度", "bandSoft", 0, 100, "%");
       slider("尾部变暗", "bandShade", 0, 100, "%");
@@ -533,10 +578,28 @@ class Editor {
     }
     const shape = el("select", { class: "ed-select" },
       ...[["head", "尾细头粗"], ["crescent", "两头尖（月牙）"], ["even", "均匀"]].map(([v, n]) => el("option", { value: v, selected: t.shape === v }, n)));
-    shape.onchange = () => { t.shape = shape.value; this.saveTrail(); };
+    shape.onchange = () => { t.shape = shape.value; this.trailChanged(); this.syncToolUI(); };
     o.append(el("div", { class: "ed-opt-title" }, "形状"), shape);
+    if (!t.toPixels || sl) {
+      // 拖尾平面: the bow as a circle on a level or upright plane, seen at a slant
+      const plane = el("select", { class: "ed-select" },
+        ...[["flat", "画面（不压扁）"], ["h", "横向（横斩，上下压扁）"], ["v", "纵向（竖劈，左右压扁）"]].map(([v, n]) => el("option", { value: v, selected: (t.plane || "flat") === v }, n)));
+      plane.onchange = () => { t.plane = plane.value; this.trailChanged(); this.syncToolUI(); };
+      o.append(el("div", { class: "ed-opt-title", title: "笔触是挥刀平面上的一段圆弧，按透视压扁；补间时头绕着这个平面转" }, "拖尾平面"), plane);
+      if (t.plane === "h" || t.plane === "v") {
+        slider("透视压扁", "planeSquash", 0, 90, "%"); slider("倾斜角", "planeTilt", -180, 180, "°");
+        // 环绕: the far half of the ellipse goes behind every layer
+        const wrapBox = (label, key, title) => {
+          const b = el("input", { type: "checkbox", checked: !!t[key], onchange: () => { t[key] = b.checked; this.trailChanged(); this.syncToolUI(); } });
+          o.append(el("label", { class: "ed-check", title }, b, label));
+        };
+        wrapBox("环绕（远的半圈被挡住）", "wrap", "椭圆沿长轴分成两半：离镜头远的半圈垫到所有图层下面，被角色挡住；近的半圈在本图层的位置，挡在角色前面");
+        if (t.wrap) wrapBox(t.plane === "h" ? "反过来（下半圈在后）" : "反过来（右半圈在后）", "wrapFlip", "默认横向上半圈、纵向左半圈离镜头远；勾上则对调");
+      }
+    }
+    this.trailEffectControls(o, t, glow);
     const check = (label, key) => {
-      const box = el("input", { type: "checkbox", checked: !!t[key], onchange: () => { t[key] = box.checked; this.saveTrail(); } });
+      const box = el("input", { type: "checkbox", checked: !!t[key], onchange: () => { t[key] = box.checked; this.trailChanged(); } });
       o.append(el("label", { class: "ed-check" }, box, label));
     };
     // tail: brush streaks along the stroke (same brushes as the attack trail) or
@@ -544,34 +607,368 @@ class Editor {
     if (!glow) {
       const tm = el("select", { class: "ed-select" },
         ...[["brush", "笔刷刷痕"], ["dither", "颗粒抖动"]].map(([v, n]) => el("option", { value: v, selected: (t.tailMode || "brush") === v }, n)));
-      tm.onchange = () => { t.tailMode = tm.value; this.saveTrail(); this.syncToolUI(); };
+      tm.onchange = () => { t.tailMode = tm.value; this.trailChanged(); this.syncToolUI(); };
       o.append(el("div", { class: "ed-opt-title" }, "尾部质感"), tm);
       if ((t.tailMode || "brush") === "brush") {
         const bs = el("select", { class: "ed-select" },
           ...BUILTIN_BRUSHES.map((b) => el("option", { value: b.id, selected: !t.brushData && (t.brushId || "bristle") === b.id }, b.name.replace(/（.*）/, ""))),
           ...(t.brushData ? [el("option", { value: "__custom", selected: true }, "自定义：" + (t.brushName || "笔刷图"))] : []));
-        bs.onchange = () => { if (bs.value !== "__custom") { t.brushId = bs.value; t.brushData = null; t.brushName = null; this.saveTrail(); this.syncToolUI(); } };
+        bs.onchange = () => { if (bs.value !== "__custom") { t.brushId = bs.value; t.brushData = null; t.brushName = null; this.trailChanged(); this.syncToolUI(); } };
         const pv = el("canvas", { class: "tm-brush-pv", width: 70, height: 20, title: "左边是拖尾末端，越亮的刷痕伸得越远" });
         pv.style.width = "100%";
-        pv.getContext("2d").drawImage(this.toolBrush(), 0, 0, 70, 20);
+        pv.getContext("2d").drawImage(this.toolBrush(t), 0, 0, 70, 20);
         o.append(bs, pv, el("button", { class: "btn small block", title: "导入灰度图作为笔刷：横向 = 拖尾方向，纵向 = 宽度方向", onclick: () => this.importToolBrush() }, "导入笔刷…"));
       }
       check("火花点", "sparks");
     }
-    check("画到「特效」图层", "toFxLayer");
-    o.append(el("p", { class: "ed-hint" }, "顺着挥砍方向拖：起点是尾、终点是头。打开洋葱皮逐帧画。"));
+    if (!sl) {
+      // the old way: straight into pixels, not to be adjusted afterwards
+      check("直接画成像素（不能再调）", "toPixels");
+      if (t.toPixels) check("画到「特效」图层", "toFxLayer");
+    }
+    o.append(el("p", { class: "ed-hint" }, t.toPixels || sl
+      ? "顺着挥砍方向拖：起点是尾、终点是头。打开洋葱皮逐帧画。"
+      : "顺着挥砍方向拖：起点是尾、终点是头。画好的笔触可以再拖它的点改长度、方向和弧度，下一帧接着调。"));
   }
 
   updateTrailPreview() {
     const d = this.drag;
-    const img = rasterizeTrail(d.pts, this.trail, this.doc.w, this.doc.h, this.primary, this.toolBrush());
-    this.trailPreview = img ? canvasFromImageData(img) : null;
-    d.img = img;
+    if (this.trail.toPixels) {
+      const img = rasterizeTrail(d.pts, this.trail, this.doc.w, this.doc.h, this.primary, this.toolBrush());
+      this.trailPreview = img ? canvasFromImageData(img) : null;
+      d.img = img;
+      return;
+    }
+    // the stroke as it will be kept — a bow from where it started to here —
+    // drawn as its stand-in while the pointer moves (render draws it)
+    this.trailPreview = null;
+    d.key = fitStroke(d.pts, strokePlane(this.strokeDrawTarget().style));
   }
 
+  // A drawn stroke becomes an editable stroke layer (trails/stroke.js): this
+  // frame of the selected one when it has none here yet, else a new layer. As
+  // 直接画成像素 it is painted onto the 特效 layer, as before.
   commitTrail(d) {
     this.trailPreview = null;
-    if (d.img) this.stampOnFxLayer(d.img, !this.trail.toFxLayer);
+    if (this.trail.toPixels) { if (d.img) this.stampOnFxLayer(d.img, !this.trail.toFxLayer); return; }
+    if (!d.key) return;
+    const tgt = this.strokeDrawTarget();
+    if (tgt.layer) { this.change(() => this.setStrokeKey(tgt.layer, d.key)); return; }
+    if (this.tm.active) this.tm.toggle(false);
+    const fid = this.doc.frames[this.fi].id;
+    this.change(() => { this.li = this.doc.addStrokeLayer(this.li, { style: { ...this.trail }, color: [...this.primary], dissolve: 3, keys: { [fid]: d.key } }); });
+    this.newStrokeNext = false;
+    this.goLayer(this.li);
+    this.app.toast("已画成可调整的笔触「" + this.doc.layers[this.li].name + "」：拖它的点改长度、方向和弧度；到下一帧可以接着调。");
+  }
+
+  // What the 拖尾笔 panel edits: the selected stroke layer's look (a copy made
+  // when the panel is built, put back by trailChanged), or the brush's own.
+  trailTarget() {
+    const l = this.strokeLayer();
+    if (!l) { this.strokeWork = null; return this.trail; }
+    this.strokeWork = { id: l.id, style: { ...TRAIL_DEFAULTS, ...l.stroke.style } };
+    return this.strokeWork.style;
+  }
+
+  // A change made in the panel: on a stroke layer it goes into the layer (one
+  // undo step for a run of changes, like dragging a slider) and becomes the
+  // brush's look for the next stroke too; otherwise only the brush's.
+  trailChanged() {
+    const l = this.strokeLayer(), w = this.strokeWork;
+    if (!l || !w || w.id !== l.id) { this.saveTrail(); return; }
+    const now = performance.now();
+    if (!(this.strokeEditId === l.id && now - (this.strokeEditAt || 0) < 700)) { this.commitFloat(); this.doc.checkpoint(); }
+    this.strokeEditAt = now; this.strokeEditId = l.id;
+    this.strokeDraftUntil = now + 350;
+    clearTimeout(this.strokeSettleTimer);
+    this.strokeSettleTimer = setTimeout(() => { this.prefetchVfx(); this.requestRender(); }, 400);
+    // squashed or tilted differently, each key's ellipse goes with it
+    const p0 = strokePlane(l.stroke.style), p1 = strokePlane(w.style);
+    const keys = p0 && p1 && p0.h === p1.h && (p0.s !== p1.s || p0.sin !== p1.sin || p0.cos !== p1.cos) ? replaneKeys(l.stroke.keys || {}, p0, p1) : l.stroke.keys;
+    l.stroke = { ...l.stroke, style: { ...w.style }, keys };
+    Object.assign(this.trail, w.style);
+    this.trail.toPixels = false;
+    this.saveTrail();
+    this.markDirty();
+    this.requestRender();
+    clearTimeout(this.strokeThumbTimer);
+    this.strokeThumbTimer = setTimeout(() => this.queueThumbs(this.doc.frames.map((_, fi) => fi)), 250);
+  }
+
+  // the panel's top on a stroke layer: this frame's state, its bend, length
+  // and direction, and what can be done with it
+  strokeSection(o, l) {
+    const sh = this.strokeShown(l), own = !!(sh && sh.own), lock = this.strokeLockBend;
+    o.append(el("div", { class: "ed-opt-title" }, "笔触 · " + l.name));
+    const what = !sh ? "这条笔触还没有画过：在画布上画一笔。"
+      : own && lock ? "本帧是关键帧：弧度固定在虚线圆上，拖黄点（头）、蓝点（尾）只能沿着这个圆走；拖笔触本身整体移动。"
+      : own ? "本帧是关键帧：拖黄点（头）、蓝点（尾）改长度和方向，拖粉点改弧度，拖笔触本身整体移动。"
+      : sh.kind === "orbit" ? "本帧由第 " + (sh.from + 1) + " 帧的笔触沿圆转过来（每 " + l.stroke.orbit + " 帧转一圈）。拖它的点就把本帧变成关键帧，之后的帧从这里接着转。"
+      : sh.kind === "tween" ? "本帧在第 " + (sh.from + 1) + " 帧和第 " + (sh.to + 1) + " 帧之间，自动过渡。拖它的点就把本帧变成关键帧。"
+      : sh.kind === "fade" ? "第 " + (sh.from + 1) + " 帧之后正在消失（" + sh.step + " / " + sh.of + "）。拖虚线的点，本帧就成为关键帧，挥动接着往下。"
+      : sh.kind === "gone" ? "已经消失。拖虚线（第 " + (sh.from + 1) + " 帧的样子）的点，本帧就成为关键帧；也可以直接重画。"
+      : "还没开始（第 " + (sh.from + 1) + " 帧才出现）。拖虚线的点，本帧就成为关键帧，从这里开始。";
+    o.append(el("p", { class: "ed-hint" }, what));
+    if (sh) {
+      const box = el("input", { type: "checkbox", checked: lock, onchange: () => {
+        this.strokeLockBend = box.checked;
+        try { localStorage.setItem(LOCK_BEND_KEY, box.checked ? "1" : "0"); } catch { /* private mode */ }
+        this.buildTrailPanel(); this.requestRender();
+      } });
+      o.append(el("label", { class: "ed-check", title: "用当前的弧画一个圆，头尾只能沿着这个圆移动；粉点和弧度、长度、方向滑块不可用" }, box, "固定弧度（头尾沿圆弧移动）"));
+    }
+    if (sh && (lock || (l.stroke.orbit | 0) >= 2)) this.strokeOrbitSection(o, l, sh);
+    if (sh) {
+      const r1 = (v) => Math.round(v * 10) / 10, len = (k) => Math.hypot(k.b[0] - k.a[0], k.b[1] - k.a[1]) || 1;
+      // the bow as a share of the length it is measured along (the plane's, 拖尾平面)
+      const pl = strokePlane(l.stroke.style), blen = (k) => strokeLen(k, pl);
+      const k0 = sh.key, L0 = len(k0), A0 = Math.atan2(k0.b[1] - k0.a[1], k0.b[0] - k0.a[0]) * 180 / Math.PI;
+      // a slider drag is one undo step; the key starts from the shown one
+      const live = (fn) => {
+        if (!this.strokeLive) { this.commitFloat(); this.doc.checkpoint(); this.strokeLive = true; }
+        this.setStrokeKey(l, fn(this.strokeShown(l).key));
+        this.markDirty(); this.requestRender();
+      };
+      const end = () => { if (this.strokeLive) { this.strokeLive = false; this.afterChange(true); } };
+      const slider = (label, min, max, value, unit, apply, off = false) => {
+        const val = el("span", { class: "mono" }, Math.round(value) + unit);
+        const r = el("input", { type: "range", min, max, value: Math.round(value), disabled: off });
+        r.oninput = () => { val.textContent = r.value + unit; live((k) => apply(k, +r.value)); };
+        r.onchange = end;
+        o.append(el("div", { class: "ed-opt-title" }, label, val), r);
+      };
+      // past a half circle (100%) in a plane, the bow wraps further round
+      slider("弧度", pl ? -200 : -100, pl ? 200 : 100, (k0.bend || 0) / blen(k0) * 100, "%", (k, v) => ({ ...k, bend: r1(v / 100 * blen(k)) }), lock);
+      // the tail stays; the head moves out or in (the bow grows with it)
+      slider("长度", 2, Math.round(Math.max(this.doc.w, this.doc.h) * 1.5), L0, "px", (k, v) => {
+        const sc = v / len(k);
+        return { ...k, b: [r1(k.a[0] + (k.b[0] - k.a[0]) * sc), r1(k.a[1] + (k.b[1] - k.a[1]) * sc)], bend: r1((k.bend || 0) * sc) };
+      }, lock);
+      // the head turns round the tail
+      slider("方向", -180, 180, A0, "°", (k, v) => {
+        const t = v * Math.PI / 180, L = len(k);
+        const nk = { ...k, b: [r1(k.a[0] + Math.cos(t) * L), r1(k.a[1] + Math.sin(t) * L)] };
+        // in a plane, turned it is longer or shorter there: the bow keeps its share
+        if (pl) nk.bend = r1((k.bend || 0) / blen(k) * blen(nk));
+        return nk;
+      }, lock);
+    }
+    // after its last key: the head stops and the tail catches up, fading
+    {
+      const d0 = Math.max(0, l.stroke.dissolve | 0);
+      const val = el("span", { class: "mono" }, d0 ? d0 + " 帧" : "立即");
+      const r = el("input", { type: "range", min: 0, max: 12, value: d0 });
+      r.oninput = () => {
+        val.textContent = +r.value ? r.value + " 帧" : "立即";
+        if (!this.strokeLive) { this.commitFloat(); this.doc.checkpoint(); this.strokeLive = true; }
+        l.stroke = { ...l.stroke, dissolve: +r.value };
+        this.markDirty(); this.requestRender();
+      };
+      r.onchange = () => { if (this.strokeLive) { this.strokeLive = false; this.afterChange(true); } };
+      o.append(el("div", { class: "ed-opt-title", title: "最后一个关键帧之后，笔触再用几帧消失：头停住、尾巴追上去，同时变淡" }, "消失帧数", val), r);
+    }
+    const ids = this.doc.frames.map((f) => f.id), fid = ids[this.fi];
+    const btn = (label, title, fn) => el("button", { class: "btn small", title, onclick: fn }, label);
+    o.append(el("div", { class: "f-buttons" },
+      sh && !own ? btn("设为关键帧", sh.kind === "tween" || sh.kind === "orbit" ? "把本帧自动算出的样子定下来，作为关键帧" : "把第 " + (sh.from + 1) + " 帧的样子照搬到本帧，作为关键帧", () => this.change(() => this.setStrokeKey(l, sh.key))) : null,
+      own ? btn("删除关键帧", "本帧改回自动：在两个关键帧之间就自动过渡，在最后之后就消失", () => this.change(() => { const keys = { ...l.stroke.keys }; delete keys[fid]; l.stroke = { ...l.stroke, keys }; })) : null,
+      btn("用当前主色", "「主色」样式用右下角的主色来画", () => this.change(() => { l.stroke = { ...l.stroke, color: [...this.primary] }; })),
+      btn("＋ 新笔触", "下一笔画成一条新的笔触（新图层），而不是改这一条", () => { this.newStrokeNext = true; this.app.toast("下一笔会画成新的笔触。"); }),
+      btn("转为像素图层", "把每一帧的笔触画进普通图层，之后可以用画笔手修（不能再调）", () => this.rasterizeStroke())));
+    o.append(el("div", { class: "ed-opt-sep" }));
+  }
+
+  // 循环旋转: the stroke goes round its circle (an ellipse in a 拖尾平面), a
+  // whole turn every so many frames, on every frame without a key of its own
+  strokeOrbitSection(o, l, sh) {
+    const N = l.stroke.orbit | 0, on = N >= 2, frames = this.doc.frames.length;
+    const box = el("input", { type: "checkbox", checked: on, onchange: () => {
+      this.change(() => { l.stroke = { ...l.stroke, orbit: box.checked ? Math.max(2, frames) : 0 }; });
+      this.buildTrailPanel();
+    } });
+    o.append(el("label", { class: "ed-check", title: "笔触保持现在的弧，沿着它的圆一直转：每隔「转一圈」帧转完一整圈，没有关键帧的帧都按这个转" }, box, "循环旋转（沿圆一直转）"));
+    if (!on) return;
+    const val = el("span", { class: "mono" }, N + " 帧");
+    const r = el("input", { type: "range", min: 2, max: Math.max(60, frames * 2), value: N });
+    r.oninput = () => {
+      val.textContent = r.value + " 帧";
+      if (!this.strokeLive) { this.commitFloat(); this.doc.checkpoint(); this.strokeLive = true; }
+      l.stroke = { ...l.stroke, orbit: +r.value };
+      this.markDirty(); this.requestRender();
+    };
+    r.onchange = () => { if (this.strokeLive) { this.strokeLive = false; this.afterChange(true); this.buildTrailPanel(); } };
+    o.append(el("div", { class: "ed-opt-title", title: "转完一整圈用几帧" }, "转一圈", val), r);
+    const rev = el("input", { type: "checkbox", checked: !!l.stroke.orbitReverse, onchange: () => this.change(() => { l.stroke = { ...l.stroke, orbitReverse: rev.checked }; }) });
+    o.append(el("label", { class: "ed-check", title: "默认顺着尾 → 头的方向转" }, rev, "反向旋转"));
+    const straight = !strokeCircle(sh.key, strokePlane(l.stroke.style));
+    o.append(el("p", { class: "ed-hint" + (straight ? " warn" : "") }, straight ? "这一帧的笔触是直的，没有圆可转：先让它弯一点。"
+      : frames % N === 0 ? "动画 " + frames + " 帧正好转 " + (frames / N) + " 圈，循环播放首尾接得上。"
+      : "动画 " + frames + " 帧不是 " + N + " 的整数倍，循环播放时首尾会跳一下；转一圈设成 " + frames + " 帧（或它的约数）就接得上。"));
+  }
+
+  // ---------- 拖尾笔 strokes (trails/stroke.js) ----------
+  strokeLayer() { const l = this.doc.layers[this.li]; return l && l.stroke ? l : null; }
+
+  // the stroke its handles show on this frame (trails/stroke.js strokeAt): its
+  // own key, or the one worked out here — an edit makes that this frame's key
+  strokeShown(l) {
+    return strokeAt(l.stroke, this.doc.frames.map((f) => f.id), this.fi);
+  }
+
+  // this frame's key (inside a checkpoint), rounded to tenths of a pixel; the
+  // stroke is replaced, never edited in place (history snapshots share it)
+  setStrokeKey(l, k) {
+    const r = (v) => Math.round(v * 10) / 10;
+    const key = { a: [r(k.a[0]), r(k.a[1])], b: [r(k.b[0]), r(k.b[1])], bend: r(k.bend || 0) };
+    l.stroke = { ...l.stroke, keys: { ...(l.stroke.keys || {}), [this.doc.frames[this.fi].id]: key } };
+  }
+
+  // where a stroke drawn now goes: the selected stroke layer when this frame of
+  // it is empty (with its own look), else a new layer with the brush's settings
+  strokeDrawTarget() {
+    const l = this.strokeLayer(), fid = this.doc.frames[this.fi].id;
+    if (l && !this.newStrokeNext && !(l.stroke.keys || {})[fid]) return { layer: l, style: { ...TRAIL_DEFAULTS, ...l.stroke.style }, color: l.stroke.color };
+    return { layer: null, style: this.trail, color: [...this.primary] };
+  }
+
+  // what of the shown stroke is under q: "a" (tail), "b" (head), "mid" (bend),
+  // "all" (the stroke itself) or null
+  strokeHit(l, q) {
+    const sh = this.strokeShown(l);
+    if (!sh) return null;
+    const k = sh.key, z = this.zoom, near = (x, y, r) => Math.hypot(q.x - x, q.y - y) * z < r;
+    if (near(k.b[0], k.b[1], 10)) return "b";
+    if (near(k.a[0], k.a[1], 9)) return "a";
+    const pl = strokePlane(l.stroke.style), m = strokeMid(k, pl);
+    if (!this.strokeLockBend && near(m.x, m.y, 9)) return "mid";
+    const E = this.strokeLockBend && this.strokeEllipseGrips(k, pl);
+    if (E) {
+      if (near(E.long.x, E.long.y, 8)) return "e-long";
+      if (E.short && near(E.short.x, E.short.y, 8)) return "e-short";
+      if (near(E.centre.x, E.centre.y, 8)) return "all";
+    }
+    const w = Math.max(6 / z, (+(l.stroke.style || {}).width || 10) / 2);
+    for (const pt of strokePath(k, 24, pl)) if (Math.hypot(q.x - pt.x, q.y - pt.y) < w) return "all";
+    return null;
+  }
+
+  // the 固定弧度 ellipse's handles as shown: a little way out past its edge,
+  // clear of the head and tail (which often sit at the long axis's ends)
+  strokeEllipseGrips(k, pl) {
+    const E = strokeEllipseHandles(k, pl);
+    if (!E) return null;
+    const out = (h) => {
+      if (!h) return null;
+      const dx = h.x - E.centre.x, dy = h.y - E.centre.y, d = Math.hypot(dx, dy) || 1, o = 16 / this.zoom;
+      return { x: h.x + dx / d * o, y: h.y + dy / d * o, edge: h };
+    };
+    return { centre: E.centre, long: out(E.long), short: out(E.short), off: 16 / this.zoom };
+  }
+
+  // Dragging the 固定弧度 ellipse's handles (d.base: the key shown when the drag
+  // began, d.stroke: the stroke then). The long axis's end: the ellipse that
+  // much bigger, and in a plane turned to point at q; the short axis's end: the
+  // plane squashed to reach q.
+  dragStrokeEllipse(l, d, q) {
+    const s0 = d.stroke || (d.stroke = l.stroke), p0 = strokePlane(s0.style), k = d.base;
+    const E = this.strokeEllipseGrips(k, p0), C = strokeCircle(k, p0);
+    if (!E || !C) return;
+    const dx = q.x - E.centre.x, dy = q.y - E.centre.y;
+    let style = s0.style;
+    if (d.hit === "e-long" && p0) {
+      // the long axis is the plane's x (横向) or its y (纵向, pointing up)
+      let tilt = Math.atan2(dy, dx) * 180 / Math.PI + (p0.h ? 0 : 90);
+      while (tilt > 180) tilt -= 360;
+      while (tilt <= -180) tilt += 360;
+      style = { ...style, planeTilt: Math.round(tilt) };
+    } else if (d.hit === "e-short") {
+      // how far along the short axis q is, of the circle's size
+      const ax = E.short.x - E.centre.x, ay = E.short.y - E.centre.y, al = Math.hypot(ax, ay) || 1;
+      const s = Math.min(1, Math.max(0.05, (Math.abs((dx * ax + dy * ay) / al) - E.off) / C.R));
+      style = { ...style, planeSquash: Math.round((1 - s) * 100) };
+    }
+    const p1 = strokePlane(style);
+    const keys = p0 && p1 ? replaneKeys(s0.keys || {}, p0, p1) : { ...(s0.keys || {}) };
+    let nk = p0 && p1 ? replaneKeys({ k }, p0, p1).k : k;
+    if (d.hit === "e-long") nk = scaleKey(nk, Math.max(2, Math.hypot(dx, dy) - E.off) / C.R, p1);
+    l.stroke = { ...s0, style, keys };
+    this.setStrokeKey(l, nk);
+    Object.assign(this.trail, style);
+    this.saveTrail();
+  }
+
+  // its path and handles: the head yellow, the tail blue, the bend pink; faint
+  // and dashed when they are the last frame's (this one has none yet)
+  drawStrokeHandles(g, sh, ox, oy, z, pl = null) {
+    const k = sh.key, P = (x, y) => [ox + x * z, oy + y * z];
+    g.save();
+    g.globalAlpha = sh.own ? 1 : 0.6;
+    const path = strokePath(k, pl ? 48 : 32, pl).map((q) => P(q.x, q.y));
+    // 固定弧度: the circle the ends move round, faint (squashed in a plane)
+    // and its handles: the long axis's end (size, tilt), the short one's
+    // (squash), the centre (moves it)
+    const ring = this.strokeLockBend && strokeEllipsePath(k, pl);
+    if (ring) {
+      const E = this.strokeEllipseGrips(k, pl), [ex, ey] = P(E.centre.x, E.centre.y);
+      g.save();
+      g.globalAlpha = 1;
+      g.beginPath(); ring.forEach((q, i) => { const [x, y] = P(q.x, q.y); if (i) g.lineTo(x, y); else g.moveTo(x, y); });
+      g.strokeStyle = "rgba(0,0,0,0.45)"; g.lineWidth = 3; g.stroke();
+      g.strokeStyle = "rgba(255,255,255,0.75)"; g.lineWidth = 1; g.setLineDash([5, 4]); g.stroke();
+      g.setLineDash([2, 3]); g.strokeStyle = "rgba(255,255,255,0.3)";
+      for (const h of [E.long, E.short]) if (h) { const [x, y] = P(h.x, h.y); g.beginPath(); g.moveTo(ex, ey); g.lineTo(x, y); g.stroke(); }
+      g.setLineDash([]); g.lineWidth = 1.5;
+      for (const h of [E.long, E.short]) if (h) { const [x, y] = P(h.x, h.y); g.fillStyle = "#fff"; g.strokeStyle = "#000"; g.fillRect(x - 4, y - 4, 8, 8); g.strokeRect(x - 4, y - 4, 8, 8); }
+      g.strokeStyle = "#fff"; g.beginPath(); g.moveTo(ex - 6, ey); g.lineTo(ex + 6, ey); g.moveTo(ex, ey - 6); g.lineTo(ex, ey + 6); g.stroke();
+      g.restore();
+    }
+    for (const [col, lw] of [["rgba(0,0,0,0.7)", 3], ["#fff", 1]]) {
+      g.strokeStyle = col; g.lineWidth = lw; g.setLineDash(sh.own ? [] : [5, 4]);
+      g.beginPath(); path.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.stroke();
+    }
+    const dot = ([x, y], r, fill) => { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fillStyle = fill; g.fill(); g.lineWidth = 1.5; g.strokeStyle = "#000"; g.stroke(); };
+    dot(P(k.a[0], k.a[1]), 5, "#7fe9ff");
+    dot(P(k.b[0], k.b[1]), 7, "#ffd25c");
+    // the bend handle, unless 固定弧度
+    if (!this.strokeLockBend) {
+      g.setLineDash([3, 3]);
+      const m = strokeMid(k, pl), [mx, my] = P(m.x, m.y), [cx, cy] = P((k.a[0] + k.b[0]) / 2, (k.a[1] + k.b[1]) / 2);
+      g.strokeStyle = "rgba(255,106,213,0.8)"; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(cx, cy); g.lineTo(mx, my); g.stroke();
+      g.setLineDash([]);
+      g.beginPath(); g.moveTo(mx, my - 6); g.lineTo(mx + 6, my); g.lineTo(mx, my + 6); g.lineTo(mx - 6, my); g.closePath();
+      g.fillStyle = "#ff6ad5"; g.fill(); g.strokeStyle = "#000"; g.stroke();
+    }
+    g.restore();
+  }
+
+  // 转为像素图层: the stroke drawn into an ordinary layer in its place, every frame
+  rasterizeStroke() {
+    const l = this.strokeLayer();
+    if (!l) return;
+    const ids = this.doc.frames.map((f) => f.id), wraps = strokeWraps(l.stroke);
+    // every frame of a part of it into the layer at index at
+    const paint = (at, part) => {
+      for (let fi = 0; fi < ids.length; fi++) {
+        const c = createCanvas(this.doc.w, this.doc.h), g = c.getContext("2d");
+        drawStrokeLayer(g, l, ids, fi, this.doc.w, this.doc.h, 0, 0, 1, "sync", part);
+        const img = g.getImageData(0, 0, this.doc.w, this.doc.h);
+        if (!R.isEmpty(img)) this.doc.setCel(fi, at, img);
+      }
+      this.doc.layers[at].opacity = l.opacity ?? 100;
+    };
+    this.change(() => {
+      let li = this.li;
+      this.doc.addLayer(li, l.name);
+      paint(li, wraps ? "front" : "all");
+      this.doc.deleteLayer(li + 1);
+      // 环绕: its far half as a layer of its own at the bottom, as it was drawn
+      if (wraps) { this.doc.addLayer(0, l.name + "（后半圈）"); paint(0, "back"); li += 1; }
+      this.li = li;
+    });
+    this.goLayer(this.li);
+    this.app.toast("已把笔触画进普通图层「" + l.name + "」" + (wraps ? "（后半圈在最底下的「" + l.name + "（后半圈）」）" : "") + "，现在可以用画笔修改。");
   }
 
   // paint `img` (document-sized) onto the 特效 layer (or the current layer)
@@ -700,7 +1097,7 @@ class Editor {
     this.li = clamp(this.li, 0, this.doc.layers.length - 1);
     this.updateTitle();
     if (structural) this.rebuildTimeline();
-    else if (this.doc.layers.some((l) => l.ghost || l.vfx)) {
+    else if (this.doc.layers.some((l) => l.ghost || l.vfx || l.stroke)) {
       // later frames show this one as their ghost; an effect spans several frames
       this.refreshThumb(this.fi);
       this.queueThumbs(this.doc.frames.map((_, fi) => fi).filter((fi) => fi !== this.fi));
@@ -715,6 +1112,38 @@ class Editor {
   prefetchVfx() {
     const ids = this.doc.frames.map((f) => f.id), ctx = this.vfxCtx();
     for (const l of this.doc.layers) if (l.vfx && l.visible !== false) prefetchVfxLayer(l, ids, ctx, this.fi);
+    for (const l of this.doc.layers) if (l.stroke && l.visible !== false) prefetchStrokeLayer(l, ids, this.doc.w, this.doc.h, this.fi);
+    if (this.doc.layers.some((l) => l.stroke) || this.tool === "trail") warmStrokePreview();
+  }
+
+  // is everything the background renders for frame fi (effects, strokes) there?
+  frameReady(fi, ids = this.doc.frames.map((f) => f.id), ctx = this.vfxCtx()) {
+    return vfxFrameReady(this.doc.layers, ids, fi, ctx) && strokeFrameReady(this.doc.layers, ids, fi, this.doc.w, this.doc.h);
+  }
+
+  // a stroke layer's part ("back" / "front", trails/stroke.js 环绕) on this
+  // frame: being dragged, its styled preview a moment behind (the plain
+  // stand-in before the first); otherwise its frame, or the stand-in for it
+  drawStrokeIn(g, l, li, part, frameIds, ox, oy, z, iw, ih) {
+    const doc = this.doc;
+    if (!this.strokeDrafting(l, li)) { drawStrokeLayer(g, l, frameIds, this.fi, doc.w, doc.h, ox, oy, z, "draft", part); return; }
+    const st = strokeAt(l.stroke, frameIds, this.fi);
+    if (!strokeShows(st)) return;
+    g.save();
+    if (!clipStrokePart(g, l.stroke, st.key, part, ox, oy, z, doc.w, doc.h)) { g.restore(); return; }
+    if (st.kind === "fade") g.globalAlpha *= Math.pow(1 - st.fade, 0.8);
+    const gone = st.kind === "fade" ? st.fade * 0.85 : 0;
+    const pv = strokePreview(l.id, l.stroke, st.key, doc.w, doc.h, gone);
+    if (pv) g.drawImage(pv, ox, oy, iw, ih); else drawStrokeDraft(g, l.stroke, st.key, ox, oy, z, gone);
+    g.restore();
+  }
+
+  // a stroke being dragged, or its look changed a moment ago: a stand-in
+  // stands for it (the full render follows when it settles)
+  strokeDrafting(l, li) {
+    if (li !== this.li) return false;
+    const d = this.drag;
+    return !!((d && d.type === "stroke") || this.strokeLive || performance.now() < (this.strokeDraftUntil || 0));
   }
 
   undo() {
@@ -852,6 +1281,7 @@ class Editor {
     if (l.visible === false) { this.app.toast("图层「" + l.name + "」是隐藏的，先显示它再画。", "warn"); return false; }
     if (l.trail) { this.app.toast("「" + l.name + "」是拖尾图层：在攻击拖尾模式里调棍子；想手修像素，先「栅格化本帧到特效图层」。", "warn"); return false; }
     if (l.ghost) { this.app.toast("「" + l.name + "」是残影图层：内容自动来自前几帧，在右侧调设置；要画画请选别的图层。", "warn"); return false; }
+    if (l.stroke) { this.app.toast("「" + l.name + "」是拖尾笔笔触：用拖尾笔拖它的点改长度、方向和弧度，设置在右侧；想手修先点右侧「转为像素图层」。", "warn"); return false; }
     if (l.vfx) { this.app.toast("「" + l.name + "」是特效图层：拖动移动、拖四角改大小，设置在右侧；想手修先点右侧「转为像素图层」。", "warn"); return false; }
     return true;
   }
@@ -865,6 +1295,7 @@ class Editor {
     }
     if (l && l.ghost) return ghostOn(ghostSettings(l), this.doc.frames[fi].id);
     if (l && l.vfx) return vfxFrame(vfxSettings(l), this.doc.frames.map((f) => f.id), fi) >= 0;
+    if (l && l.stroke) return strokeShows(strokeAt(l.stroke, this.doc.frames.map((f) => f.id), fi));
     const img = this.doc.cel(fi, li);
     if (!img) return false;
     // remembered per picture and its edit count (R.touch): a long timeline
@@ -903,6 +1334,7 @@ class Editor {
       this.tm.selId = l.trail;
       if (!this.tm.active) this.tm.toggle(true); else this.tm.refresh();
     } else if (this.tm.active) this.tm.toggle(false);
+    if (l && l.stroke && this.tool !== "trail") this.setTool("trail");
     this.syncSide(); // a ghost layer shows its settings on the right
     this.requestRender();
   }
@@ -914,6 +1346,25 @@ class Editor {
     this.vp.sync();
     const l = this.doc.layers[this.li];
     this.colorPanel.style.display = this.tm.active || (l && (l.ghost || l.vfx)) ? "none" : "";
+    this.syncToolPanel();
+  }
+
+  buildTrailPanel() {
+    const l = this.strokeLayer();
+    this.trailPanelFor = l ? l.id : "brush";
+    this.trailPanel.replaceChildren(el("div", { class: "ed-panel-title" }, l ? "拖尾笔 · 修改「" + l.name + "」" : "拖尾笔"));
+    this.trailOptions(this.trailPanel);
+  }
+
+  // the trail brush's block shows with the colours: not over the trail mode's
+  // panel or a ghost or effect layer's settings
+  syncToolPanel() {
+    if (!this.trailPanel) return;
+    const l = this.doc.layers[this.li];
+    const on = this.tool === "trail" && !this.tm.active && !(l && (l.ghost || l.vfx));
+    this.trailPanel.style.display = on ? "" : "none";
+    const target = l && l.stroke ? l.id : "brush";
+    if (on && !this.strokeLive && (target !== "brush" || this.trailPanelFor !== target)) this.buildTrailPanel();
   }
 
   // ---------- 特效 tool ----------
@@ -941,7 +1392,7 @@ class Editor {
     const v = this.vfxTool;
     const k = VFX_KINDS.find((q) => q.id === v.kind) || VFX_KINDS[0];
     const cur = this.doc.layers[this.li];
-    const follow = k.around && cur && !cur.trail && !cur.ghost && !cur.vfx && this.hasContent(this.fi, this.li) ? cur.id : null;
+    const follow = k.around && cur && !cur.trail && !cur.ghost && !cur.vfx && !cur.stroke && this.hasContent(this.fi, this.li) ? cur.id : null;
     const vfx = {
       ...VFX_LAYER_DEFAULTS, ...k.defaults, kind: k.id, palette: v.palette || k.defaults.palette, style: v.style,
       w: Math.round(w), h: Math.round(h), x: Math.round(x), y: Math.round(y), start: this.doc.frames[this.fi].id,
@@ -1035,8 +1486,8 @@ class Editor {
   // every pixel layer.
   addGhost() {
     const cur = this.doc.layers[this.li];
-    const pixel = this.doc.layers.filter((l) => !l.trail && !l.ghost);
-    const source = cur && !cur.trail && !cur.ghost && pixel.length > 1 ? cur.id : "all";
+    const pixel = this.doc.layers.filter((l) => !l.trail && !l.ghost && !l.vfx && !l.stroke);
+    const source = cur && !cur.trail && !cur.ghost && !cur.vfx && !cur.stroke && pixel.length > 1 ? cur.id : "all";
     if (this.tm.active) this.tm.toggle(false);
     // only the current frame to begin with: ghosts belong to the fast moments
     this.change(() => { this.li = this.doc.addGhostLayer(this.li, { ...GHOST_DEFAULTS, source, frames: [this.doc.frames[this.fi].id] }); });
@@ -1217,6 +1668,14 @@ class Editor {
       return;
     }
 
+    // on a 拖尾笔 stroke layer: its handles — tail, head, bend — or its body move
+    // it on this frame (from the last frame's when this one has none yet);
+    // pressing anywhere else draws a stroke
+    const sl = tool === "trail" && !this.trail.toPixels ? this.strokeLayer() : null;
+    if (sl && e.button === 0) {
+      const q = this.toFloat(e), hit = this.strokeHit(sl, q);
+      if (hit) { this.commitFloat(); this.drag = { type: "stroke", hit, base: this.strokeShown(sl).key, sx: q.x, sy: q.y, moved: false }; return; }
+    }
     if (tool === "trail") {
       this.commitFloat();
       const r = this.canvas.getBoundingClientRect();
@@ -1252,6 +1711,9 @@ class Editor {
       if (l && l.vfx && !this.tm.active) {
         const hd = this.vfxHandle(l, this.toFloat(e));
         cur = hd ? HANDLE_CURSOR[hd.x + "," + hd.y] : "move";
+      } else if (l && l.stroke && this.tool === "trail" && !this.trail.toPixels && !this.tm.active) {
+        const hit = this.strokeHit(l, this.toFloat(e));
+        cur = hit === "all" ? "move" : hit ? "grab" : "";
       }
       if (this.canvas.style.cursor !== cur) this.canvas.style.cursor = cur;
     }
@@ -1294,6 +1756,24 @@ class Editor {
         if (d.type === "vfx-move") this.setVfxRegion(l, { ...r0, x: r0.x + q.x - d.sx, y: r0.y + q.y - d.sy });
         else this.setVfxRegion(l, resizeBox(r0, d.hd, q, e.shiftKey, e.altKey));
         this.markDirty();
+      } else if (d.type === "stroke") {
+        const q = this.toFloat(e), l = this.strokeLayer();
+        if (l) {
+          if (!d.moved) { this.doc.checkpoint(); d.moved = true; }
+          const k = d.base, dx = q.x - d.sx, dy = q.y - d.sy, pl = strokePlane(l.stroke.style);
+          let nk;
+          // the ellipse: its size (and tilt) or its squash — the plane's tilt and
+          // squash are the stroke's, so every key goes along with them
+          if (d.hit === "e-long" || d.hit === "e-short") { this.dragStrokeEllipse(l, d, q); this.markDirty(); this.requestRender(); this.updateStatus(); return; }
+          // 固定弧度: the head or tail slides round the circle of the bow
+          if ((d.hit === "a" || d.hit === "b") && this.strokeLockBend) nk = slideOnCircle(k, d.hit, q, pl);
+          else if (d.hit === "a") nk = { ...k, a: [q.x, q.y] };
+          else if (d.hit === "b") nk = { ...k, b: [q.x, q.y] };
+          else if (d.hit === "mid") nk = { ...k, bend: bendAt(k, q, pl) };
+          else nk = { ...k, a: [k.a[0] + dx, k.a[1] + dy], b: [k.b[0] + dx, k.b[1] + dy] };
+          this.setStrokeKey(l, nk);
+          this.markDirty();
+        }
       } else if (d.type === "move" && this.float) {
         this.float.x = d.fx + p.x - d.sx;
         this.float.y = d.fy + p.y - d.sy;
@@ -1309,6 +1789,12 @@ class Editor {
     const d = this.drag;
     this.drag = null;
     if (!d) return;
+    // (a new key changes the frames round it too: the timeline is redrawn)
+    if (d.type === "stroke") {
+      if (d.moved) { this.afterChange(true); if (d.hit === "e-long" || d.hit === "e-short") this.buildTrailPanel(); }
+      this.requestRender();
+      return;
+    }
     if (d.type === "vfx-new") {
       // a click: the tool's size; a drag: from the centre out to a corner
       const box = d.r * this.zoom > 6 ? d.r * 2 : this.vfxTool.box || Math.min(this.doc.w, this.doc.h) * 0.75;
@@ -1513,7 +1999,7 @@ class Editor {
       while (this.onionCache.size >= 64) this.onionCache.delete(this.onionCache.keys().next().value);
       // an effect still being rendered in the background is left out for now,
       // and this picture isn't kept: it is made again once the effect has come
-      const ready = vfxFrameReady(this.doc.layers, this.doc.frames.map((f) => f.id), fi, this.vfxCtx());
+      const ready = this.frameReady(fi);
       c = this.composite(fi, !ready);
       const g = c.getContext("2d");
       g.globalCompositeOperation = "source-atop";
@@ -1591,12 +2077,24 @@ class Editor {
     // rest is drawn at the trail layer's place in the stack
     this.tm.drawBack(g, ox, oy, iw, ih);
     const frameIds = doc.frames.map((f) => f.id);
+    // 拖尾笔 strokes going round (环绕): their far half under every layer too
+    doc.layers.forEach((l, li) => {
+      if (l.visible === false || !l.stroke || !strokeWraps(l.stroke)) return;
+      g.globalAlpha = (l.opacity ?? 100) / 100;
+      this.drawStrokeIn(g, l, li, "back", frameIds, ox, oy, z, iw, ih);
+    });
+    g.globalAlpha = 1;
     doc.layers.forEach((l, li) => {
       if (l.visible === false) return;
       g.globalAlpha = (l.opacity ?? 100) / 100;
       if (l.trail) { this.tm.drawLayer(g, l, ox, oy, iw, ih); g.globalAlpha = 1; return; }
       if (l.ghost) { drawGhostCanvas(g, l, this.ghostCanvas(l), ox, oy, iw, ih); g.globalAlpha = 1; return; }
       if (l.vfx) { drawVfxLayer(g, l, frameIds, this.fi, ox, oy, z, this.vfxCtx(this.vfxDrafting(l, li))); g.globalAlpha = 1; return; }
+      if (l.stroke) {
+        this.drawStrokeIn(g, l, li, "front", frameIds, ox, oy, z, iw, ih);
+        g.globalAlpha = 1;
+        return;
+      }
       const img = doc.cel(this.fi, li);
       if (img) g.drawImage(celCanvas(img), ox, oy, iw, ih);
       if (li !== this.li) return;
@@ -1621,6 +2119,11 @@ class Editor {
     }
     // the trail being drawn shows on top until it is committed to its layer
     if (this.trailPreview) g.drawImage(this.trailPreview, ox, oy, iw, ih);
+    if (this.drag && this.drag.type === "trail" && this.drag.key && !this.trail.toPixels) {
+      const tgt = this.strokeDrawTarget(), stroke = { style: tgt.style, color: tgt.color };
+      const pv = strokePreview("new", stroke, this.drag.key, doc.w, doc.h);
+      if (pv) g.drawImage(pv, ox, oy, iw, ih); else drawStrokeDraft(g, stroke, this.drag.key, ox, oy, z);
+    }
     g.restore();
     this.tm.drawOverlay(g, ox, oy, z);
 
@@ -1672,6 +2175,10 @@ class Editor {
       const d = this.drag;
       box(d.x - d.r, d.y - d.r, d.r * 2, d.r * 2, true);
     }
+
+    // the selected 拖尾笔 stroke's path and handles
+    const stl = this.tool === "trail" && !this.playing && !this.trail.toPixels ? this.strokeLayer() : null;
+    if (stl) { const sh = this.strokeShown(stl); if (sh) this.drawStrokeHandles(g, sh, ox, oy, z, strokePlane(stl.stroke.style)); }
 
     // selection: two-tone dashes read on any colour
     if (this.sel) {
@@ -1795,8 +2302,8 @@ class Editor {
       eye.onclick = (e) => { e.stopPropagation(); l.visible = l.visible === false; this.markDirty(); this.rebuildTimeline(); this.requestRender(); };
       const lock = el("button", { class: "tl-ico lock" + (l.locked ? " on" : ""), title: l.locked ? "已锁定 · 点击解锁" : "点击锁定（锁定后不能画）" }, "锁");
       lock.onclick = (e) => { e.stopPropagation(); l.locked = !l.locked; this.markDirty(); this.rebuildTimeline(); };
-      const kind = l.trail ? "trail" : l.ghost ? "ghost" : l.vfx ? "vfx" : "";
-      const name = el("span", { class: "tl-name" + (kind ? " " + kind : "") }, (l.trail ? "☄ " : l.ghost ? "◌ " : l.vfx ? "✦ " : "") + l.name);
+      const kind = l.trail ? "trail" : l.ghost ? "ghost" : l.vfx ? "vfx" : l.stroke ? "stroke" : "";
+      const name = el("span", { class: "tl-name" + (kind ? " " + kind : "") }, (l.trail ? "☄ " : l.ghost ? "◌ " : l.vfx ? "✦ " : l.stroke ? "〜 " : "") + l.name);
       const head = el("div", { class: "tl-lhead", dataset: { li } }, eye, lock, name);
       head.addEventListener("click", () => this.goLayer(li));
       head.addEventListener("dblclick", () => {
@@ -1805,7 +2312,7 @@ class Editor {
       });
       g.append(head);
       doc.frames.forEach((f, fi) => {
-        const keyed = l.vfx && l.vfx.perFrame && l.vfx.keys && l.vfx.keys[f.id];
+        const keyed = (l.vfx && l.vfx.perFrame && l.vfx.keys && l.vfx.keys[f.id]) || (l.stroke && l.stroke.keys && l.stroke.keys[f.id]);
         const cell = el("div", { class: "tl-cel" + (this.hasContent(fi, li) ? " has" : "") + (kind ? " " + kind : "") + (keyed ? " key" : ""), dataset: { fi, li } }, el("i"));
         cell.addEventListener("click", () => { this.goLayer(li); this.goFrame(fi); });
         g.append(cell);
@@ -1833,7 +2340,7 @@ class Editor {
       while (q.length && performance.now() - t0 < 6) {
         const fi = q.shift();
         if (fi >= ids.length) continue;
-        if (!vfxFrameReady(this.doc.layers, ids, fi, ctx)) { (this.thumbWait || (this.thumbWait = new Set())).add(fi); continue; }
+        if (!this.frameReady(fi, ids, ctx)) { (this.thumbWait || (this.thumbWait = new Set())).add(fi); continue; }
         this.refreshThumb(fi);
       }
       this.thumbTimer = q.length ? setTimeout(step, 16) : 0;
@@ -1844,6 +2351,7 @@ class Editor {
   refreshThumb(fi, noCelUpdate) {
     const th = this.thumbs && this.thumbs[fi];
     if (!th) return;
+    if (!this.frameReady(fi)) { (this.thumbWait || (this.thumbWait = new Set())).add(fi); this.prefetchVfx(); return; }
     const g = th.getContext("2d");
     g.clearRect(0, 0, 32, 32);
     g.imageSmoothingEnabled = false;

@@ -8,6 +8,7 @@ import { normalizeAnim } from "../../editor/doc.js";
 import { createCanvas } from "../../core/util.js";
 import { loadTextures, drawFrameStack } from "../../trails/composite.js";
 import { prefetchVfxLayer, layerBBox } from "../../vfx/layer.js";
+import { prefetchStrokeLayer } from "../../trails/stroke.js";
 
 defineNode({
   type: "animation",
@@ -31,7 +32,10 @@ defineNode({
     // putting the frames together below only draws them
     const drawCel = (l, j, into) => { const aid = n.frames[j].cels[l.id]; if (aid) into.drawImage(loaded.get(aid), 0, 0); };
     const vfxCtx = { bbox: (id, j) => layerBBox(n.layers, id, j, n.w, n.h, drawCel) };
-    await Promise.all(n.layers.filter((l) => l.vfx && l.visible !== false).map((l) => prefetchVfxLayer(l, frameIds, vfxCtx)));
+    await Promise.all([
+      ...n.layers.filter((l) => l.vfx && l.visible !== false).map((l) => prefetchVfxLayer(l, frameIds, vfxCtx)),
+      ...n.layers.filter((l) => l.stroke && l.visible !== false).map((l) => prefetchStrokeLayer(l, frameIds, n.w, n.h)),
+    ]);
     const frames = n.frames.map((f, i) => {
       const c = createCanvas(n.w, n.h);
       const g = c.getContext("2d");
@@ -44,7 +48,7 @@ defineNode({
     });
     return {
       outputs: { out: framesValue(frames, n.w, n.h, { fps: n.fps }) },
-      info: { text: frames.length + " 帧 · " + n.layers.length + " 图层" + (n.trails.length ? "（含 " + n.trails.length + " 拖尾）" : "") + (n.layers.some((l) => l.ghost) ? "（含残影）" : "") + (n.layers.some((l) => l.vfx) ? "（含特效）" : "") + " · " + n.w + "×" + n.h },
+      info: { text: frames.length + " 帧 · " + n.layers.length + " 图层" + (n.trails.length ? "（含 " + n.trails.length + " 拖尾）" : "") + (n.layers.some((l) => l.ghost) ? "（含残影）" : "") + (n.layers.some((l) => l.vfx) ? "（含特效）" : "") + (n.layers.some((l) => l.stroke) ? "（含拖尾笔）" : "") + " · " + n.w + "×" + n.h },
     };
   },
 

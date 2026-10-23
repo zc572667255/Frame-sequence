@@ -176,7 +176,7 @@ export class VfxPanel {
       const sides = Object.entries(over).filter(([, v]) => v > 2).map(([k, v]) => k + " " + Math.round(v) + "px");
       if (sides.length) P.append(el("p", { class: "ed-hint warn" }, "画幅框超出画布（" + sides.join("，") + "），超出的部分不会显示也不会导出。可以用顶部「画布尺寸…」把画布加大" + (s.follow ? "，或减小「外扩」。" : "，或把画幅框缩小、挪回画布里。")));
     }
-    const pixelLayers = this.doc.layers.filter((o) => !o.trail && !o.ghost && !o.vfx);
+    const pixelLayers = this.doc.layers.filter((o) => !o.trail && !o.ghost && !o.vfx && !o.stroke);
     choose("跟随图层", "follow", [["", "不跟随"], ...pixelLayers.map((o) => [o.id, o.name])], (v) => ({ follow: v || null }));
     const here = this.ed.fi;
     if (s.follow) {

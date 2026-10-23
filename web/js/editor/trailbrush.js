@@ -8,7 +8,7 @@
 // alpha, so the result is clean pixel art that can be touched up with the pencil.
 // The bands and tail are rendered by trails/model.js, shared with attack trails.
 import { hexToRgb } from "../core/util.js";
-import { renderStroke } from "../trails/model.js";
+import { renderStroke, mirrorTails } from "../trails/model.js";
 import { GLOW_PRESETS, glowStyle, mixStyle, hashSeed, renderGlow, pixelateGlow, celShade } from "../trails/glow.js";
 
 // bands: outer -> inner, [colour, width factor]. look: the rest of the band
@@ -43,7 +43,7 @@ export const TRAIL_PRESETS = [
 // what a band preset without its own look gets: bright middle, clean-ish edges
 export const BAND_LOOK = { bandLayout: "center", edgeFade: 0, streaks: 0, edgeBreak: 0.3, fadeSteps: false, splits: 0, pxDust: 0, pxShards: 0, pxSplatter: 0, pxImpact: 0 };
 
-export const TRAIL_DEFAULTS = { preset: "glow:dream", width: 10, shape: "head", fade: 45, sparks: false, toFxLayer: true, tailMode: "brush", brushId: "bristle", brushData: null, bandBlend: "steps", bandSoft: 60, bandShade: 40, edgeBreak: 40, pixelGlow: false, pxSize: 1, pxAlpha: "steps", mixEdge: 100, mixBody: 100, mixGlow: 100, mixFx: 100, mixBurst: 100 };
+export const TRAIL_DEFAULTS = { preset: "glow:dream", width: 10, shape: "head", fade: 45, sparks: false, toFxLayer: true, tailMode: "brush", brushId: "bristle", brushData: null, bandBlend: "steps", bandSoft: 60, bandShade: 40, edgeBreak: 40, pixelGlow: false, pxSize: 1, pxAlpha: "steps", mixEdge: 100, mixBody: 100, mixGlow: 100, mixFx: 100, mixBurst: 100, plane: "flat", planeSquash: 60, planeTilt: 0, headArc: 0.5, taper: 0.12, look: null, wrap: false, wrapFlip: false };
 
 // ---------- stroke geometry ----------
 // resample the raw pointer path at ~1px spacing, then smooth it so a shaky hand
@@ -80,10 +80,27 @@ function prepare(raw) {
   });
 }
 
-function profile(shape, t) {
+function profile(shape, t, taper = 0.12) {
   if (shape === "even") return 1;
   if (shape === "crescent") return Math.max(0.08, Math.pow(Math.sin(Math.PI * t), 0.7));
-  return 0.12 + 0.88 * t; // head: thin tail (stroke start) -> full width at the head (stroke end)
+  return taper + (1 - taper) * t; // head: thin tail (stroke start) -> full width at the head (stroke end)
+}
+
+// 头部弧度: the head end rounded, bulging on along the stroke (as the attack
+// trail's, trails/model.js) — cross-sections added past the last one
+function headCap(sections, arc) {
+  const H = sections[sections.length - 1], P = sections[sections.length - 2];
+  if (!(arc > 0) || !P) return sections;
+  const m = [(H.a[0] + H.b[0]) / 2, (H.a[1] + H.b[1]) / 2], pm = [(P.a[0] + P.b[0]) / 2, (P.a[1] + P.b[1]) / 2];
+  let dx = m[0] - pm[0], dy = m[1] - pm[1];
+  const dl = Math.hypot(dx, dy) || 1; dx /= dl; dy /= dl;
+  const hv = [(H.b[0] - H.a[0]) / 2, (H.b[1] - H.a[1]) / 2], bulge = arc * Math.hypot(hv[0], hv[1]);
+  const out = sections.slice();
+  for (let i = 1; i <= 6; i++) {
+    const th = (i / 6) * Math.PI / 2, c = Math.cos(th), sn = Math.sin(th);
+    out.push({ a: [m[0] - hv[0] * c + dx * bulge * sn, m[1] - hv[1] * c + dy * bulge * sn], b: [m[0] + hv[0] * c + dx * bulge * sn, m[1] + hv[1] * c + dy * bulge * sn], u: 1 });
+  }
+  return out;
 }
 
 // raw: pointer path in pixel coordinates (floats). Returns ImageData w×h with the
@@ -102,14 +119,15 @@ export function rasterizeTrail(raw, opts, w, h, primary, brushCanvas) {
 
   // cross-sections along the stroke; the bands and the tail (brush streaks or
   // dither) are drawn exactly like the attack trail's (trails/model.js)
-  const n = curve.length - 1;
-  const sections = curve.map((p, k) => {
+  const n = curve.length - 1, taper = Math.max(0, Math.min(1, opts.taper ?? 0.12));
+  let sections = curve.map((p, k) => {
     const a = curve[Math.max(0, k - 1)], b = curve[Math.min(n, k + 1)];
     const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
-    const u = k / n, half = Math.max(0.5, (W * profile(shape, u)) / 2);
+    const u = k / n, half = Math.max(0.5, (W * profile(shape, u, taper)) / 2);
     const nx = -dy / len * half, ny = dx / len * half;
     return { a: [p.x - nx, p.y - ny], b: [p.x + nx, p.y + ny], u };
   });
+  if (shape !== "crescent") sections = headCap(sections, Math.max(0, Math.min(1, opts.headArc ?? 0.5)));
   if (glow) return glowStroke(curve, sections, glow, opts, w, h, fade);
   // edge-lit styles light the outside of the curve (where a blade tip would be):
   // if the stroke bends toward the b side, swap the sides
@@ -158,12 +176,22 @@ export function rasterizeTrail(raw, opts, w, h, primary, brushCanvas) {
 function glowStroke(curve, sections, p, opts, w, h, fade) {
   const n = sections.length - 1, run = [];
   for (let k = 0; k <= 6; k++) run.push(sections[Math.round(n * (0.3 + 0.7 * k / 6))]);
-  const st0 = mixStyle({ ...glowStyle(p), mixEdge: opts.mixEdge ?? 100, mixBody: opts.mixBody ?? 100, mixGlow: opts.mixGlow ?? 100, mixFx: opts.mixFx ?? 100, mixBurst: opts.mixBurst ?? 100 });
+  // the preset, its layers as set under 细节 (opts.look), then the shared mixes
+  const st0 = mixStyle({ ...glowStyle(p), ...(opts.look || {}), mixEdge: opts.mixEdge ?? 100, mixBody: opts.mixBody ?? 100, mixGlow: opts.mixGlow ?? 100, mixFx: opts.mixFx ?? 100, mixBurst: opts.mixBurst ?? 100 });
   const st = opts.pixelGlow || st0.cel > 0 ? { ...st0, glow: st0.glow * 0.5, haze: st0.haze * 0.6 } : st0;   // see model.js: tight glows
-  let c = renderGlow([sections], st, w, h, {
+  // 两头尖: the head end is drawn as a tail too, as the attack trail does it
+  // (trails/model.js mirrorTails) — drawn reversed as well and the two halves
+  // joined, the tails sharing the fade length half each
+  const two = (opts.shape || "head") === "crescent";
+  const ctx = {
     seed: hashSeed(curve.length + ":" + Math.round(curve[0].x) + ":" + Math.round(curve[0].y)),
-    frame: 0, alpha: 1, fade, fx: true, run, age: run.length + 3, ended: true, after: 0,
-  });
+    frame: 0, alpha: 1, fade: fade * (two ? 0.5 : 1), fx: true, run, age: run.length + 3, ended: true, after: 0,
+  };
+  let c = renderGlow([sections], st, w, h, ctx);
+  if (two) {
+    const back = sections.slice().reverse().map((q) => ({ ...q, u: 1 - q.u }));
+    c = mirrorTails(c, renderGlow([back], st, w, h, { ...ctx, fx: false, ended: false }), sections);
+  }
   if (c && opts.pixelGlow) c = pixelateGlow(c, st, { size: opts.pxSize, alpha: opts.pxAlpha });
   else if (c && st.cel > 0) c = celShade(c, st, st.cel / 100, (st.celOutline || 0) / 100);
   return c && c.getContext("2d").getImageData(0, 0, w, h);

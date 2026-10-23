@@ -17,6 +17,7 @@ import { trailCanvas, drawTrailCanvas, textureFor, brushFor, loadTextures, setTe
 import { TRAIL_PRESETS, BAND_LOOK } from "./trailbrush.js";
 import { GLOW_PRESETS, GLOW_DEFAULTS, glowStyle } from "../trails/glow.js";
 import { styleThumb } from "./thumbs.js";
+import { controlKit, headTailControls, glowControls } from "./effectpanel.js";
 
 // a new trail starts as the 梦幻 glow; the pixel bands are one click away
 const NEW_TRAIL_STYLE = { ...STYLE_DEFAULTS, colorMode: "glow", pixel: false, fade: 0.7, ...glowStyle(GLOW_PRESETS[0]) };
@@ -728,62 +729,21 @@ export class TrailMode {
         el("button", { class: "btn small" + (st.invert ? " primary" : ""), onclick: () => this.edit(() => { t.style.invert = !t.style.invert; }) }, "反色"),
         el("button", { class: "btn small" + (t.flip ? " primary" : ""), title: "纹理内外侧对调", onclick: () => this.edit(() => { t.flip = !t.flip; }) }, "翻面")));
 
-    const slider = (label, key, min, max, scale, unit, into = P) => {
-      const v = st[key] ?? STYLE_DEFAULTS[key] ?? GLOW_DEFAULTS[key] ?? 0;
-      const val = el("span", { class: "mono tm-num" }, Math.round(v * scale) + unit);
-      const r = el("input", { type: "range", min, max, value: Math.round(v * scale) });
-      r.oninput = () => this.liveEdit(() => { t.style[key] = +r.value / scale; val.textContent = r.value + unit; });
-      r.onchange = () => this.endLive();
-      const row = el("div", { class: "tm-row" }, el("span", { class: "tm-label" }, label), r, val);
-      into.append(row);
-      return row;
+    // the row builders and the shared effect controls (editor/effectpanel.js)
+    const ui = {
+      P,
+      get: (key) => st[key] ?? STYLE_DEFAULTS[key] ?? GLOW_DEFAULTS[key],
+      live: (vals) => this.liveEdit(() => Object.assign(t.style, vals)),
+      end: () => this.endLive(),
+      refresh: () => this.refresh(),
+      isOpen: (id) => this.openGroups.has(id),
+      toggle: (id) => { if (this.openGroups.has(id)) this.openGroups.delete(id); else this.openGroups.add(id); this.refresh(); },
     };
-    const choose = (label, key, options, def, into = P, title) => {
-      const cur = String(st[key] ?? def);
-      const sel = el("select", { class: "ed-select", title }, ...options.map(([v, n]) => el("option", { value: String(v), selected: cur === String(v) }, n)));
-      sel.onchange = () => this.edit(() => { const v = sel.value; t.style[key] = v === "true" ? true : v === "false" ? false : v; });
-      into.append(el("div", { class: "tm-row" }, el("span", { class: "tm-label" }, label), sel));
-    };
-    // a control with its fine-grained parts folded under it: ▸ opens them, and
-    // they stay open while you work
-    const group = (id, row, details) => {
-      const open = this.openGroups.has(id);
-      row.classList.add("has-more");
-      row.append(el("button", {
-        class: "tm-more" + (open ? " on" : ""), title: open ? "收起细节" : "展开细节调整",
-        onclick: () => { if (open) this.openGroups.delete(id); else this.openGroups.add(id); this.refresh(); },
-      }, open ? "细节 ▾" : "细节 ▸"));
-      if (open) { const box = el("div", { class: "tm-details" }); P.append(box); details(box); }
-    };
-    const heading = (label) => {
-      const row = el("div", { class: "tm-row tm-group-head" }, el("span", { class: "tm-label" }, label), el("span"), el("span"));
-      P.append(row);
-      return row;
-    };
+    const kit = controlKit(ui), { slider, choose, group, heading } = kit;
 
     // the effect controls get their own section, so they are easy to find
     P.append(title("效果调整"), el("p", { class: "ed-hint" }, "每项右边的「细节 ▸」展开这个位置的每一层单独调。"));
-    if ((st.shape || "head") !== "crescent") slider("头部弧度", "headArc", 0, 100, 100, "%");
-    // 尾部: one slider for the tail — a longer, softer tail is also a thinner one;
-    // its two parts can be set apart under ▸
-    {
-      const tv = Math.round((st.fade ?? STYLE_DEFAULTS.fade) * 100);
-      const tr = el("input", { type: "range", min: 0, max: 100, value: tv, title: "尾巴拖多长、多细：越大尾巴越长、渐隐越慢、尾端越细" });
-      const tvv = el("span", { class: "mono tm-num" }, tv + "%");
-      tr.oninput = () => this.liveEdit(() => {
-        const v = +tr.value / 100;
-        t.style.fade = v;
-        t.style.taper = Math.max(0.05, 0.6 - 0.55 * v);
-        tvv.textContent = tr.value + "%";
-      });
-      tr.onchange = () => this.endLive();
-      const row = el("div", { class: "tm-row" }, el("span", { class: "tm-label" }, "尾部"), tr, tvv);
-      P.append(row);
-      group("tail", row, (box) => {
-        slider("渐隐长度", "fade", 0, 100, 100, "%", box);
-        if ((st.shape || "head") === "head") slider("尾端收窄", "taper", 0, 100, 100, "%", box);
-      });
-    }
+    headTailControls(kit, ui, st.shape || "head");
     // colour bands: a few controls, each with its parts under ▸
     if (st.colorMode === "bands") {
       // 破碎 covers the edges: their raggedness and how far the inner side fades
@@ -822,54 +782,7 @@ export class TrailMode {
     }
     const glow = st.colorMode === "glow";
     if (glow) {
-      // the same controls for every glow style, by where on the effect they act;
-      // each scales its layers (100 % = the preset as designed), and ▸ opens the
-      // layers themselves for fine tuning
-      group("g-edge", slider("刀锋", "mixEdge", 0, 200, 1, "%"), (box) => {
-        slider("刀芯", "core", 0, 100, 1, "%", box);
-        slider("结晶", "crystal", 0, 100, 1, "%", box);
-        slider("光芒", "rays", 0, 100, 1, "%", box);
-        slider("阴影", "shadow", 0, 100, 1, "%", box);
-      });
-      group("g-body", slider("刀身", "mixBody", 0, 200, 1, "%"), (box) => {
-        slider("光丝", "strands", 0, 160, 1, " 条", box);
-        slider("流体", "flow", 0, 100, 1, "%", box);
-        slider("火舌", "flames", 0, 100, 1, "%", box);
-        slider("闪电", "bolts", 0, 100, 1, "%", box);
-        slider("速度线", "speedLines", 0, 100, 1, "%", box);
-        slider("风刃", "curls", 0, 100, 1, "%", box);
-        slider("锯齿", "serrate", 0, 100, 1, "%", box);
-        slider("水纹", "caustic", 0, 100, 1, "%", box);
-      });
-      group("g-glow", slider("光晕", "mixGlow", 0, 200, 1, "%"), (box) => {
-        slider("辉光", "glow", 0, 100, 1, "%", box);
-        slider("残影", "haze", 0, 100, 1, "%", box);
-      });
-      group("g-fx", slider("粒子", "mixFx", 0, 200, 1, "%"), (box) => {
-        slider("星光", "sparkles", 0, 60, 1, " 颗", box);
-        slider("星光大小", "sparkleSize", 1, 20, 1, "", box);
-        slider("粉尘", "dust", 0, 100, 1, "%", box);
-        slider("雪花", "snow", 0, 100, 1, "%", box);
-        slider("余烬", "embers", 0, 100, 1, "%", box);
-        slider("碎片", "shards", 0, 100, 1, "%", box);
-        slider("飞溅", "splatter", 0, 100, 1, "%", box);
-        slider("气泡", "bubbles", 0, 100, 1, "%", box);
-        slider("岩石", "rocks", 0, 100, 1, "%", box);
-        slider("叶片", "leaves", 0, 100, 1, "%", box);
-        slider("水滴", "drops", 0, 100, 1, "%", box);
-      });
-      group("g-burst", slider("爆发", "mixBurst", 0, 200, 1, "%"), (box) => {
-        slider("起手闪光", "flash", 0, 100, 1, "%", box);
-        slider("命中爆点", "impact", 0, 100, 1, "%", box);
-      });
-      if (!st.pixelGlow) slider("平涂", "cel", 0, 100, 1, "%");
-      group("g-more", heading("其他细节"), (box) => {
-        slider("侵蚀", "erode", 0, 100, 1, "%", box);
-        slider("撕裂", "tear", 0, 100, 1, "%", box);
-        slider("尾部变色", "tailTint", 0, 100, 1, "%", box);
-        if (!st.pixelGlow) slider("平涂描边", "celOutline", 0, 100, 1, "%", box);
-      });
-      P.append(el("p", { class: "ed-hint" }, "这些总控所有光效通用，按作用的位置分，100% 是预设原样，换预设时保留。"));
+      glowControls(kit, ui, !!st.pixelGlow);
     }
     // how the tail ends: brush streaks (default), dither dots, or a soft fade.
     // Glow trails are smooth light: no tail texture, no pixel mode

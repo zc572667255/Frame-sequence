@@ -43,6 +43,8 @@
 .ed-opts input[type="range"] { width: 100%; accent-color: var(--accent); }
 .ed-opt-title { font-size: 11px; color: var(--text-dim); display: flex; justify-content: space-between; }
 .ed-opt-sep { height: 1px; background: var(--line); margin: 4px 0; }
+/* a tool's settings at the top of the right side, the colours below */
+.ed-tool-panel { margin: 0 0 12px; padding: 0 0 12px; border-top: 0; border-bottom: 1px solid var(--line); }
 .ed-check { display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--text-dim); cursor: pointer; }
 .ed-check input { accent-color: var(--accent); }
 .btn.block { width: 100%; padding: 0 4px; }
@@ -281,6 +283,9 @@
 .tl-cel.trail.has i { background: var(--k-frames); border-color: var(--k-frames); }
 .tl-name.ghost { color: var(--k-same); }
 .tl-name.vfx { color: var(--k-image); }
+.tl-name.stroke { color: #ffd25c; }
+.tl-cel.stroke.has i { background: transparent; border-color: #ffd25c; }
+.tl-cel.stroke.key i { background: #ffd25c; border-color: #ffd25c; }
 .tl-cel.vfx.has i { background: var(--k-image); border-color: var(--k-image); }
 .tl-cel.vfx.key i { border-radius: 1px; transform: rotate(45deg); background: #ffd25c; border-color: #ffd25c; }
 .trail-thumb.vfx-thumb { aspect-ratio: 1; }

@@ -30,7 +30,7 @@ export const ghostSettings = (l) => ({ ...GHOST_DEFAULTS, ...((l && l.ghost) || 
 // the layers a ghost layer copies: visible pixel layers (never trails, effects or other ghosts)
 export function ghostSources(layers, gl) {
   const s = ghostSettings(gl);
-  return layers.filter((l) => !l.trail && !l.ghost && !l.vfx && l.visible !== false && (s.source === "all" || l.id === s.source));
+  return layers.filter((l) => !l.trail && !l.ghost && !l.vfx && !l.stroke && l.visible !== false && (s.source === "all" || l.id === s.source));
 }
 
 const hexRgb = (h) => { const n = parseInt(String(h).slice(1), 16) || 0; return [n >> 16 & 255, n >> 8 & 255, n & 255]; };

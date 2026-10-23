@@ -822,7 +822,7 @@ function renderGlowTrail(t, state, w, h, z) {
 // a soft hand-over. Each pixel's place along the trail is that of the nearest
 // point on its middle line — continuous round a bend, and for light off to
 // the side the part of the trail it comes from.
-function mirrorTails(fwd, rev, all) {
+export function mirrorTails(fwd, rev, all) {
   if (!fwd || !rev || all.length < 2) return fwd || rev;
   const w = fwd.width, h = fwd.height;
   const box = (c) => c.bbox || { x0: 0, y0: 0, w, h };
@@ -835,8 +835,7 @@ function mirrorTails(fwd, rev, all) {
   const pick = all.filter((_, i) => i % step === 0 || i === all.length - 1);
   const mid = pick.map((q) => lerp(q.a, q.b, 0.5)), us = pick.map((q) => q.u);
   const bw = x1 - x0, bh = y1 - y0, img = new ImageData(bw, bh), d8 = img.data;
-  for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
-    const px = x0 + x + 0.5, py = y0 + y + 0.5;
+  const uAt = (px, py) => {
     let best = Infinity, u = 0;
     for (let i = 1; i < mid.length; i++) {
       const [ax, ay] = mid[i - 1], dx = mid[i][0] - ax, dy = mid[i][1] - ay, l2 = dx * dx + dy * dy;
@@ -844,8 +843,21 @@ function mirrorTails(fwd, rev, all) {
       const ex = ax + dx * s - px, ey = ay + dy * s - py, d2 = ex * ex + ey * ey;
       if (d2 < best) { best = d2; u = us[i - 1] + (us[i] - us[i - 1]) * s; }
     }
-    // how much of this pixel comes from the forward drawing
-    d8[(y * bw + x) * 4 + 3] = Math.round(255 * (1 - smooth01((u - 0.42) / 0.16)));
+    return u;
+  };
+  // u varies smoothly: worked out every few pixels and blended in between —
+  // the search per pixel was most of the cost of a 两头尖 trail
+  const S = 3, gw = Math.ceil(bw / S) + 1, gh = Math.ceil(bh / S) + 1, grid = new Float32Array(gw * gh);
+  for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) grid[j * gw + i] = uAt(x0 + i * S + 0.5, y0 + j * S + 0.5);
+  for (let y = 0; y < bh; y++) {
+    const gy = y / S, j = Math.min(gh - 2, Math.floor(gy)), ty = gy - j;
+    for (let x = 0; x < bw; x++) {
+      const gx = x / S, i = Math.min(gw - 2, Math.floor(gx)), tx = gx - i, k = j * gw + i;
+      const top = grid[k] + (grid[k + 1] - grid[k]) * tx, bot = grid[k + gw] + (grid[k + gw + 1] - grid[k + gw]) * tx;
+      const u = top + (bot - top) * ty;
+      // how much of this pixel comes from the forward drawing
+      d8[(y * bw + x) * 4 + 3] = Math.round(255 * (1 - smooth01((u - 0.42) / 0.16)));
+    }
   }
   const W = createCanvas(w, h);
   W.getContext("2d").putImageData(img, x0, y0);

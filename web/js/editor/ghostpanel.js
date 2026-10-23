@@ -106,7 +106,7 @@ export class GhostPanel {
     row("预设", looks);
 
     // what it copies
-    const pixelLayers = this.doc.layers.filter((o) => !o.trail && !o.ghost && !o.vfx);
+    const pixelLayers = this.doc.layers.filter((o) => !o.trail && !o.ghost && !o.vfx && !o.stroke);
     choose("来源", "source", [["all", "所有像素图层"], ...pixelLayers.map((o) => [o.id, o.name])], "残影复制哪些图层的前几帧（拖尾图层和其他残影不算）");
     slider("数量", "count", 1, 8, " 个", "身后留几个残影");
     slider("间隔", "spacing", 1, 4, " 帧", "两个残影之间隔几帧：越大拉得越开");

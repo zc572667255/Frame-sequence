@@ -62,9 +62,23 @@ export function el(tag, attrs, ...children) {
   return node;
 }
 
+// a worker whose drawing is mostly read back (trails/strokeworker.js) keeps its
+// canvases in memory: on the GPU each read there waits on everything drawn so
+// far, half a second and more for a glow trail. Effects, read back seldom, are
+// faster left on the GPU.
+let cpuCanvases = false;
+export function workerCanvasesInMemory() { cpuCanvases = true; }
+
 export function createCanvas(w, h) {
   // in a worker (vfx/worker.js) there is no document: an OffscreenCanvas draws the same
-  if (typeof document === "undefined") return new OffscreenCanvas(Math.max(1, w | 0), Math.max(1, h | 0));
+  if (typeof document === "undefined") {
+    const c = new OffscreenCanvas(Math.max(1, w | 0), Math.max(1, h | 0));
+    if (cpuCanvases) {
+      const get = c.getContext;
+      c.getContext = (type, opts) => get.call(c, type, type === "2d" ? { ...opts, willReadFrequently: true } : opts);
+    }
+    return c;
+  }
   const c = document.createElement("canvas");
   c.width = Math.max(1, w | 0);
   c.height = Math.max(1, h | 0);

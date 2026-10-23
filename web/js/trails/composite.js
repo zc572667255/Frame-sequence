@@ -8,6 +8,7 @@ import { createCanvas } from "../core/util.js";
 import { renderTrail, builtinTexture, builtinBrush, normalizeTrail, trailState } from "./model.js";
 import { renderGhost, drawGhostCanvas } from "./ghost.js";
 import { drawVfxLayer, layerBBox } from "../vfx/layer.js";
+import { drawStrokeLayer, strokeWraps } from "./stroke.js";
 
 const textures = new Map(); // asset id -> canvas (once loaded)
 
@@ -133,7 +134,8 @@ export function drawTrail(g, raw, frameIds, fi, z, w, h) {
   drawTrailCanvas(g, trailCanvas(t, trailState(t, frameIds, fi), w, h, z));
 }
 
-// A whole frame in stack order: "back" parts of visible trail layers, then each
+// A whole frame in stack order: "back" parts of visible trail layers (and of
+// 拖尾笔 strokes that go round, 环绕), then each
 // layer bottom to top — pixel layers through drawCel(layer, frame, g), trail
 // layers as their "front" parts, ghost layers (trails/ghost.js) as earlier
 // frames of the layers they copy, effect layers (vfx/layer.js) as their effect. Shared by the editor's thumbnails and the
@@ -145,6 +147,9 @@ export function drawFrameStack(g, layers, trails, frameIds, fi, w, h, drawCel, c
     if (l.trail && l.visible !== false) {
       g.globalAlpha = (l.opacity ?? 100) / 100;
       drawTrail(g, byId.get(l.trail), frameIds, fi, "back", w, h);
+    } else if (l.stroke && l.visible !== false && strokeWraps(l.stroke)) {
+      g.globalAlpha = (l.opacity ?? 100) / 100;
+      drawStrokeLayer(g, l, frameIds, fi, w, h, 0, 0, 1, opts.onlyReady ? "ready" : "sync", "back");
     }
   }
   for (const l of layers) {
@@ -152,6 +157,7 @@ export function drawFrameStack(g, layers, trails, frameIds, fi, w, h, drawCel, c
     g.globalAlpha = (l.opacity ?? 100) / 100;
     if (l.trail) drawTrail(g, byId.get(l.trail), frameIds, fi, "front", w, h);
     else if (l.ghost) drawGhostCanvas(g, l, renderGhost(l, layers, frameIds, fi, w, h, drawCel, celKey));
+    else if (l.stroke) drawStrokeLayer(g, l, frameIds, fi, w, h, 0, 0, 1, opts.onlyReady ? "ready" : "sync", "front");
     else if (l.vfx) drawVfxLayer(g, l, frameIds, fi, 0, 0, 1, { onlyReady: !!opts.onlyReady, bbox: (id, j) => layerBBox(layers, id, j, w, h, drawCel, celKey, opts.celImage) });
     else drawCel(l, fi, g);
   }
