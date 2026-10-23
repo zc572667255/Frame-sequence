@@ -20,6 +20,7 @@ import { drawFrameStack } from "../trails/composite.js";
 import { BUILTIN_BRUSHES, builtinBrush } from "../trails/model.js";
 import { GHOST_DEFAULTS, renderGhost, drawGhostCanvas, ghostSettings, ghostOn, ghostCovers } from "../trails/ghost.js";
 import { GhostPanel } from "./ghostpanel.js";
+import { dockSplit } from "../ui/dock.js";
 import { strokePath, strokeMid, bendAt, strokeLen, strokePlane, strokeCircle, slideOnCircle, strokeEllipsePath, strokeEllipseHandles, scaleKey, replaneKeys, keyWidth, strokeWraps, clipStrokePart, fitStroke, strokeAt, strokeShows, drawStrokeLayer, drawStrokeDraft, strokePreview, warmStrokePreview, onStrokeBrush, onStrokeReady, prefetchStrokeLayer, strokeFrameReady } from "../trails/stroke.js";
 import { VfxPanel } from "./vfxpanel.js";
 import { VFX_KINDS } from "../vfx/effects.js";
@@ -374,8 +375,12 @@ class Editor {
     this.buildTimelineBar();
     const timeline = el("div", { class: "ed-timeline" }, this.tlBar, el("div", { class: "tl-scroll" }, this.tlGrid));
 
+    // the panels round the canvas: drag their inner edge to resize, fold them away
+    const toolsBar = dockSplit(tools, { key: "gt.edLayout", id: "tools", axis: "x", after: false, def: 84, min: 52, max: () => 220, label: "工具栏" });
+    const sideBar = dockSplit(side, { key: "gt.edLayout", id: "side", axis: "x", after: true, def: 236, min: 180, max: () => Math.max(240, window.innerWidth * 0.45), label: "右侧参数栏" });
+    const tlBar = dockSplit(timeline, { key: "gt.edLayout", id: "timeline", axis: "y", after: true, def: 210, min: 80, max: () => Math.max(120, window.innerHeight * 0.6), label: "时间轴" });
     this.root = el("div", { class: "editor-root open", tabindex: "-1" },
-      top, el("div", { class: "ed-main" }, tools, this.stage, side), timeline);
+      top, el("div", { class: "ed-main" }, tools, toolsBar, this.stage, sideBar, side), tlBar, timeline);
     this.root.addEventListener("keydown", (e) => this.onKey(e, true));
     this.root.addEventListener("keyup", (e) => this.onKey(e, false));
     this.root.addEventListener("contextmenu", (e) => { if (e.target === this.canvas) e.preventDefault(); });

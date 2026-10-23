@@ -27,9 +27,17 @@
 /* tools */
 .ed-tools {
   width: 84px; flex: none; overflow-y: auto; scrollbar-width: none;
-  padding: 8px 6px; display: flex; flex-direction: column; gap: 2px;
-  background: var(--panel); border-right: 1px solid var(--line);
+  padding: 8px 6px; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(64px, 100%), 1fr));
+  align-content: start; gap: 2px;
+  background: var(--panel);
 }
+.ed-tools > .ed-opts { grid-column: 1 / -1; }
+.ed-tools.dock-narrow { padding: 8px 4px; }
+.ed-tools.dock-narrow .ed-tool-label { display: none; }
+.ed-tools.dock-narrow .ed-tool-ico { font-size: 19px; }
+.ed-tools.dock-narrow .ed-check, .ed-tools.dock-narrow .ed-opt-title, .ed-tools.dock-narrow .ed-hint { white-space: nowrap; overflow: hidden; text-overflow: clip; }
+
+
 .ed-tool {
   display: flex; flex-direction: column; align-items: center; gap: 1px;
   padding: 6px 2px 5px; border: 0; border-radius: 8px;
@@ -64,8 +72,8 @@
 
 /* colours + palette */
 .ed-side {
-  width: 236px; flex: none; overflow-y: auto;
-  padding: 12px; background: var(--panel); border-left: 1px solid var(--line);
+  width: 236px; max-width: 45vw; flex: none; overflow-y: auto;
+  padding: 12px; background: var(--panel);
 }
 .ed-panel-title {
   display: flex; align-items: center; gap: 4px;
@@ -102,8 +110,8 @@
 
 /* timeline */
 .ed-timeline {
-  flex: none; height: 210px; display: flex; flex-direction: column;
-  background: var(--panel); border-top: 1px solid var(--line);
+  flex: none; height: 210px; max-height: 60vh; display: flex; flex-direction: column;
+  background: var(--panel);
 }
 .tl-bar {
   flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px;
@@ -171,6 +179,7 @@
 }
 .ed-panel-title.used-title { margin-top: 16px; }
 .ed-palette.used .ed-pal-cell { border-radius: 50%; }
+.ed-palette .chips-empty { grid-column: 1 / -1; font-size: 11.5px; color: var(--text-faint); }
 
 /* 调帧台 */
 .tuner .tn-left { border-left: 0; border-right: 1px solid var(--line); width: 230px; }

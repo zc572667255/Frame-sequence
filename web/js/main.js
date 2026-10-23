@@ -11,6 +11,7 @@ import { Board, HEAD_H } from "./board/board.js";
 import { Inspector, SHORTCUTS } from "./ui/inspector.js";
 import { showMenu, showAddMenu, closeMenu } from "./ui/menu.js";
 import { openModal } from "./ui/modal.js";
+import { dockSplit } from "./ui/dock.js";
 import { TRIM, trimBlank } from "./nodes/types/reframe.js";
 import { newAnim, normalizeCharacter, calibrate } from "./tuner/model.js";
 import { resolveSources } from "./tuner/tuner.js";
@@ -39,6 +40,7 @@ class App {
     this.settings = {};
     this.buildTopbar();
     this.buildPalette();
+    this.buildDock();
     this.bindGlobalKeys();
     // localStorage only paints the right theme before the server answers;
     // data/registry.json is where the setting really lives
@@ -60,7 +62,8 @@ class App {
     try {
       this.settings = await api.getSettings();
       if (this.settings.theme) this.applyTheme(this.settings.theme, false);
-      if (this.settings.inspectorHidden) document.getElementById("app").classList.add("no-inspector");
+      // the 属性 panel folded or not follows the setting (shared by every browser)
+      if (this.settings.inspectorHidden != null && !!this.settings.inspectorHidden !== this.inspBar.folded()) this.inspBar.toggle(!!this.settings.inspectorHidden);
       const { projects, last } = await api.listProjects();
       const pick = projects.find((p) => p.id === last && !p.missing) || projects.find((p) => !p.missing);
       if (pick) await this.openProject(pick.id);
@@ -808,8 +811,8 @@ class App {
     const toggleInsp = el("button", { class: "icon-btn", title: "显示 / 隐藏属性面板", onclick: () => {
       // on narrow windows the panel is an overlay that starts hidden
       const narrow = window.matchMedia("(max-width: 900px)").matches;
-      const hidden = document.getElementById("app").classList.toggle(narrow ? "show-inspector" : "no-inspector");
-      if (!narrow) this.saveSetting({ inspectorHidden: hidden });
+      if (narrow) document.getElementById("app").classList.toggle("show-inspector");
+      else this.inspBar.toggle();
     } }, "▤");
 
     bar.append(
@@ -820,6 +823,19 @@ class App {
       el("span", { class: "divider" }),
       theme, help, toggleInsp,
     );
+  }
+
+  // the node bar and the 属性 panel: drag their inner edge to resize, fold them
+  // away (ui/dock.js)
+  buildDock() {
+    const pal = document.getElementById("palette"), insp = document.getElementById("inspector");
+    this.palBar = dockSplit(pal, { id: "palette", axis: "x", after: false, def: 80, min: 52, max: () => 240, label: "节点栏" });
+    this.inspBar = dockSplit(insp, {
+      id: "inspector", axis: "x", after: true, def: 320, min: 240, max: () => Math.max(260, window.innerWidth * 0.5), label: "属性面板", cls: "insp-split",
+      onToggle: (folded) => this.saveSetting({ inspectorHidden: folded }),
+    });
+    pal.after(this.palBar);
+    insp.before(this.inspBar);
   }
 
   buildPalette() {
