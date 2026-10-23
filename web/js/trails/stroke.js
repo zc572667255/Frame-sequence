@@ -2,7 +2,8 @@
 // a layer with a `stroke`: the brush settings it is drawn with, its colour (for
 // the 主色 style), and per frame where it runs — keys[frameId] = { a, b, bend }:
 // the tail a and the head b ([x, y], document pixels) and how far its middle
-// bows out of the straight line between them (px; + to the left of a → b).
+// bows out of the straight line between them (px; + to the left of a → b),
+// and ws: that frame's width, % of the style's (100 when left out).
 // Draw it on one frame, then on the next lengthen it, shorten it, turn it or
 // bend it more. Drawn with the 拖尾笔's own rasteriser (editor/trailbrush.js);
 // shared by the editor and the animation card (trails/composite.js).
@@ -41,6 +42,12 @@ function chord(k, pl) {
   const dx = bx - ax, dy = by - ay, L = Math.hypot(dx, dy) || 1;
   return { ax, ay, bx, by, mx: (ax + bx) / 2, my: (ay + by) / 2, L, nx: -dy / L, ny: dx / L };
 }
+
+// a key's own width (ws, %) carried over to a key made from it
+const keepWs = (out, k) => (k && k.ws != null && k.ws !== 100 ? { ...out, ws: k.ws } : out);
+
+// the stroke's width on a key: the style's, times the key's own %
+export const keyWidth = (style, key) => Math.max(1, (+(style || {}).width || 10) * ((key && key.ws) ?? 100) / 100);
 
 // how long the stroke is where its bow is measured (the plane's, in a plane)
 export function strokeLen(k, pl = null) { return chord(k, pl).L; }
@@ -131,7 +138,7 @@ export function scaleKey(k, f, pl = null) {
   const E = strokeEllipse(k, pl);
   if (!E) return k;
   const r1 = (v) => Math.round(v * 10) / 10, at = (p) => [r1(E.cx + (p[0] - E.cx) * f), r1(E.cy + (p[1] - E.cy) * f)];
-  return { a: at(k.a), b: at(k.b), bend: r1((k.bend || 0) * f) };
+  return keepWs({ a: at(k.a), b: at(k.b), bend: r1((k.bend || 0) * f) }, k);
 }
 
 // the keys of a stroke whose plane is squashed or tilted differently now
@@ -145,7 +152,7 @@ export function replaneKeys(keys, from, to) {
     const [ax, ay] = unsquash(from, k.a[0], k.a[1]), [bx, by] = unsquash(from, k.b[0], k.b[1]);
     const s = squash(from, C.ox, C.oy), [ox, oy] = unsquash(to, s.x, s.y);
     const put = (x, y) => { const p = squash(to, ox + x - C.ox, oy + y - C.oy); return [r1(p.x), r1(p.y)]; };
-    out[id] = { a: put(ax, ay), b: put(bx, by), bend: k.bend };
+    out[id] = keepWs({ a: put(ax, ay), b: put(bx, by), bend: k.bend }, k);
   }
   return out;
 }
@@ -184,7 +191,7 @@ export function slideOnCircle(k, end, q, pl = null) {
   const a = end === "a" ? put(C.ox + Math.cos(t0) * C.R, C.oy + Math.sin(t0) * C.R) : k.a;
   const b = end === "b" ? put(C.ox + Math.cos(t1) * C.R, C.oy + Math.sin(t1) * C.R) : k.b;
   // the bow of that arc, on the side it always had
-  return { a, b, bend: r1(Math.sign(k.bend) * C.R * (1 - Math.cos(sw / 2))) };
+  return keepWs({ a, b, bend: r1(Math.sign(k.bend) * C.R * (1 - Math.cos(sw / 2))) }, k);
 }
 
 // Between two keys on the same circle: the tail turns round it the short way,
@@ -222,7 +229,7 @@ export function orbitKey(k, ang, pl = null) {
   while (half > Math.PI) half -= 2 * Math.PI;
   while (half < -Math.PI) half += 2 * Math.PI;
   const t0 = ta + Math.sign(half || 1) * ang, P = (t) => { const p = squash(pl, C.ox + Math.cos(t) * C.R, C.oy + Math.sin(t) * C.R); return [p.x, p.y]; };
-  return { a: P(t0), b: P(t0 + 2 * half), bend: k.bend };
+  return keepWs({ a: P(t0), b: P(t0 + 2 * half), bend: k.bend }, k);
 }
 
 // the bow that puts the bend handle at q (picture coordinates)
@@ -255,13 +262,18 @@ export const strokeKey = (s, frameIds, fi) => (s && s.keys && s.keys[frameIds[fi
 // turns round it (angle the short way, and length, in between) and the bow
 // keeps its share of the length — a turning stroke doesn't shrink midway. In a
 // 拖尾平面 it turns in the plane (its head going round an ellipse on the picture).
+// Its width (ws) goes evenly from one to the other.
 export function lerpKey(p, q, t, pl = null) {
+  const k = lerpShape(p, q, t, pl), wp = p.ws ?? 100, wq = q.ws ?? 100;
+  return wp !== 100 || wq !== 100 ? { ...k, ws: wp + (wq - wp) * t } : k;
+}
+function lerpShape(p, q, t, pl) {
   // both on one circle (固定弧度): the ends go round it
   const round = lerpOnCircle(p, q, t, pl);
   if (round) return round;
   if (pl) {
     const to = (k) => ({ a: unsquash(pl, k.a[0], k.a[1]), b: unsquash(pl, k.b[0], k.b[1]), bend: k.bend });
-    const m = lerpKey(to(p), to(q), t), a = squash(pl, m.a[0], m.a[1]), b = squash(pl, m.b[0], m.b[1]);
+    const m = lerpShape(to(p), to(q), t, null), a = squash(pl, m.a[0], m.a[1]), b = squash(pl, m.b[0], m.b[1]);
     return { a: [a.x, a.y], b: [b.x, b.y], bend: m.bend };
   }
   const L = (u, v) => u + (v - u) * t;
@@ -347,7 +359,8 @@ export function strokeImage(stroke, key, w, h, gone, brush) {
   const pl = strokePlane(style);
   let pts = strokePath(key, pl ? 90 : 60, pl);
   if (gone > 0) pts = pts.slice(Math.min(pts.length - 3, Math.round(gone * (pts.length - 1))));
-  return rasterizeTrail(pts, style, w, h, color, brush || builtinBrush(style.brushId || "bristle"));
+  const st = key.ws != null && key.ws !== 100 ? { ...style, width: keyWidth(style, key) } : style;
+  return rasterizeTrail(pts, st, w, h, color, brush || builtinBrush(style.brushId || "bristle"));
 }
 
 // rendered strokes, by everything that changes them: canvases rendered here,
@@ -520,7 +533,7 @@ export function drawStrokeDraft(g, stroke, key, ox = 0, oy = 0, z = 1, gone = 0)
   const style = stroke.style || {}, shape = style.shape || "head";
   let pts = strokePath(key, 40, strokePlane(style));
   if (gone > 0) pts = pts.slice(Math.min(pts.length - 3, Math.round(gone * (pts.length - 1))));
-  const n = pts.length - 1, W = Math.max(1, +style.width || 10);
+  const n = pts.length - 1, W = keyWidth(style, key);
   const prof = (u) => (shape === "even" ? 1 : shape === "crescent" ? Math.max(0.08, Math.pow(Math.sin(Math.PI * u), 0.7)) : 0.12 + 0.88 * u);
   const left = [], right = [];
   pts.forEach((p, i) => {

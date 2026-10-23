@@ -20,7 +20,7 @@ import { drawFrameStack } from "../trails/composite.js";
 import { BUILTIN_BRUSHES, builtinBrush } from "../trails/model.js";
 import { GHOST_DEFAULTS, renderGhost, drawGhostCanvas, ghostSettings, ghostOn, ghostCovers } from "../trails/ghost.js";
 import { GhostPanel } from "./ghostpanel.js";
-import { strokePath, strokeMid, bendAt, strokeLen, strokePlane, strokeCircle, slideOnCircle, strokeEllipsePath, strokeEllipseHandles, scaleKey, replaneKeys, strokeWraps, clipStrokePart, fitStroke, strokeAt, strokeShows, drawStrokeLayer, drawStrokeDraft, strokePreview, warmStrokePreview, onStrokeBrush, onStrokeReady, prefetchStrokeLayer, strokeFrameReady } from "../trails/stroke.js";
+import { strokePath, strokeMid, bendAt, strokeLen, strokePlane, strokeCircle, slideOnCircle, strokeEllipsePath, strokeEllipseHandles, scaleKey, replaneKeys, keyWidth, strokeWraps, clipStrokePart, fitStroke, strokeAt, strokeShows, drawStrokeLayer, drawStrokeDraft, strokePreview, warmStrokePreview, onStrokeBrush, onStrokeReady, prefetchStrokeLayer, strokeFrameReady } from "../trails/stroke.js";
 import { VfxPanel } from "./vfxpanel.js";
 import { VFX_KINDS } from "../vfx/effects.js";
 import { VFX_LAYER_DEFAULTS, vfxSettings, vfxFrame, vfxRegion, vfxRect, drawVfxLayer, layerBBox, prefetchVfxLayer, onVfxReady, vfxFrameReady } from "../vfx/layer.js";
@@ -753,6 +753,8 @@ class Editor {
         if (pl) nk.bend = r1((k.bend || 0) / blen(k) * blen(nk));
         return nk;
       }, lock);
+      // this frame's width, % of the style's 宽度 (in between frames it goes evenly)
+      slider("本帧宽度", 10, 300, k0.ws ?? 100, "%", (k, v) => ({ ...k, ws: v }));
     }
     // after its last key: the head stops and the tail catches up, fading
     {
@@ -821,6 +823,7 @@ class Editor {
   setStrokeKey(l, k) {
     const r = (v) => Math.round(v * 10) / 10;
     const key = { a: [r(k.a[0]), r(k.a[1])], b: [r(k.b[0]), r(k.b[1])], bend: r(k.bend || 0) };
+    if (k.ws != null && Math.round(k.ws) !== 100) key.ws = Math.round(k.ws);
     l.stroke = { ...l.stroke, keys: { ...(l.stroke.keys || {}), [this.doc.frames[this.fi].id]: key } };
   }
 
@@ -848,7 +851,7 @@ class Editor {
       if (E.short && near(E.short.x, E.short.y, 8)) return "e-short";
       if (near(E.centre.x, E.centre.y, 8)) return "all";
     }
-    const w = Math.max(6 / z, (+(l.stroke.style || {}).width || 10) / 2);
+    const w = Math.max(6 / z, keyWidth(l.stroke.style, k) / 2);
     for (const pt of strokePath(k, 24, pl)) if (Math.hypot(q.x - pt.x, q.y - pt.y) < w) return "all";
     return null;
   }
