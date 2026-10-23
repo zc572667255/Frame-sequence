@@ -55,7 +55,7 @@ export const VFX_DEFAULTS = {
   amount: 100,   // particles, %
   glow: 60,      // bloom, %
   tilt: 60,      // 冲击波 / 魔法阵 / 治疗 / 烟尘: how flat the ground is seen, degrees (0 = from above)
-  pattern: "hex", // 魔法阵: "hex" 六芒星 | "penta" 五芒星 | "square" 双方形
+  pattern: "hex", // 魔法阵: "hex" 六芒星 | "penta" 五芒星 | "square" 双方形 | "taiji" 太极八卦
   edge: "auto",  // 魔法阵: what plays round the rim — "auto" (the palette's element) | "none" | "fire" 火焰 | "earth" 岩石 | "wind" 风刃 | "water" 水波 | "bolt" 闪电
   bolts: false,  // 环绕光: lightning crawling over it
   view: "front", // "front" 正面 | "side" 侧面, for the kinds that have one (hasSide)

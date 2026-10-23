@@ -8,7 +8,10 @@ import { TAU, easeOut, frac, mixRgb, at, blob, ring, jag, bolt, trail, comet } f
 // their width and stay smooth however flat it lies), every line a bright
 // thread over a soft glow; highlights race round the rings. The outer parts
 // turn one way, the star the other. A loop turns exactly one symmetry step,
-// so it closes; a one-shot draws itself on and fades away.
+// so it closes; a one-shot draws itself on and fades away. 太极八卦 (pattern
+// "taiji"): the eight trigrams round the band instead of runes, an octagon
+// instead of the star, and in the middle a 太极 turning — a whole turn per
+// loop (the trigrams, all different, stay put in a loop).
 export function circle(g, c) {
   const { t, R, pal } = c;
   const reveal = c.loop ? 1 : easeOut(t / 0.35, 2);
@@ -21,8 +24,9 @@ export function circle(g, c) {
   // a loop turns each part by exactly one of its symmetry steps, so the last
   // frame leads back into the first: the runes alternate two glyphs (a step
   // of two runes), the star by its own symmetry
+  const taiji = c.pattern === "taiji";
   const sym = c.pattern === "penta" ? 5 : c.pattern === "square" ? 8 : 6;
-  const rotOut = TAU / 6 * t * (c.loop ? 1 : 0.75), rotIn = -TAU / sym * t * (c.loop ? 1 : 1.5);
+  const rotOut = taiji && c.loop ? 0 : TAU / 6 * t * (c.loop ? 1 : 0.75), rotIn = -TAU / sym * t * (c.loop ? 1 : 1.5);
   const lay = createCanvas(c.w, c.h), L = lay.getContext("2d");
   L.lineCap = "round"; L.lineJoin = "round";
   // a point drawn flat at (x, y), turned by rot, laid on the ground
@@ -43,8 +47,11 @@ export function circle(g, c) {
   };
   // the main rings in the bright core colour, the finer work in the rim colour
   ink(() => { circ(R * 0.98); circ(R * 0.9); }, pal.core, lw);
-  // runes: 12 glyphs between the outer rings, each a few seeded strokes
   const P = rng(c.seed * 37 + 9);
+  if (taiji) {
+    bagua(L, ink, poly, c, R, lw, rotOut, reveal, t);
+  } else {
+  // runes: 12 glyphs between the outer rings, each a few seeded strokes
   const glyphs = Array.from({ length: 12 }, () => Array.from({ length: 2 + Math.floor(P() * 3) }, () => [P(), P(), P(), P()]));
   const band = R * 0.075 * 1.6, shown = Math.floor(12 * reveal + 1e-6);
   ink(() => {
@@ -66,6 +73,7 @@ export function circle(g, c) {
     else { figure(3, 1, 0); figure(3, 1, Math.PI / 3); }
   }, pal.rim, lw, smooth(0.2, 0.9, reveal));
   ink(() => circ(R * 0.12), pal.core, lw);
+  }
   // lay it on the ground, glow it
   g.globalCompositeOperation = "lighter";
   // a faint light pooled on the ground under it, and in the band of runes
@@ -83,7 +91,7 @@ export function circle(g, c) {
   g.globalAlpha = 1;
   // highlights racing round the rings (whole turns per loop)
   const lit = env * smooth(0.6, 1, reveal);
-  for (const [rad, dir, turns] of [[R * 0.94, 1, 1], [R * 0.72, -1, 1], [R * 0.34, 1, 2]]) {
+  for (const [rad, dir, turns] of [[R * 0.94, 1, 1], [R * 0.72, -1, 1], [R * (taiji ? 0.5 : 0.34), 1, 2]]) {
     for (let j = 0; j < 2; j++) {
       const head = -Math.PI / 2 + dir * (TAU * turns * t + j * Math.PI), pts = [];
       for (let i = 0; i <= 24; i++) { const a = head - dir * 1.3 * (1 - i / 24); pts.push(to(Math.cos(a) * rad, Math.sin(a) * rad)); }
@@ -102,6 +110,56 @@ export function circle(g, c) {
   // the element of the palette (or the one asked for) round the rim
   const el = c.edge === "auto" ? pal.element : c.edge;
   if (el && el !== "none") circleEdge(g, c, el, (th, r) => to(Math.cos(th) * r, Math.sin(th) * r), env * reveal);
+}
+
+// The 太极八卦 inside the outer rings (drawn into the circle's own lines with
+// ink and poly, flat coordinates turned and laid on the ground): the eight
+// trigrams of 先天八卦 round the band — 乾 at the top, then clockwise 巽 坎 艮
+// 坤 震 离 兑, each three bars (solid 阳, broken 阴), the bottom line innermost
+// — an octagon and a ring inside them, and the 太极 in the middle, one half lit,
+// the dot in each half the other way round.
+const TRIGRAMS = [[1, 1, 1], [0, 1, 1], [0, 1, 0], [0, 0, 1], [0, 0, 0], [1, 0, 0], [1, 0, 1], [1, 1, 0]];
+function bagua(L, ink, poly, c, R, lw, rotOut, reveal, t) {
+  const { pal } = c, TAU2 = Math.PI * 2;
+  const arc = (cx, cy, r, a0, a1, n = 40) => Array.from({ length: n + 1 }, (_, i) => { const a = a0 + (a1 - a0) * i / n; return [cx + Math.cos(a) * r, cy + Math.sin(a) * r]; });
+  const ring = (r) => poly(arc(0, 0, r, -Math.PI / 2, -Math.PI / 2 + TAU2 * reveal, Math.max(8, Math.ceil(120 * reveal))), 0);
+  // the trigrams: bars across the band, the first line (the bottom one) innermost
+  const hl = R * 0.105, gap = hl * 0.32, shown = Math.floor(8 * reveal + 1e-6);
+  ink(() => {
+    for (let n = 0; n < shown; n++) {
+      TRIGRAMS[n].forEach((yang, k) => {
+        const y = -R * (0.762 + 0.048 * k);
+        if (yang) poly([[-hl, y], [hl, y]], rotOut + n * TAU2 / 8);
+        else { poly([[-hl, y], [-gap, y]], rotOut + n * TAU2 / 8); poly([[gap, y], [hl, y]], rotOut + n * TAU2 / 8); }
+      });
+    }
+  }, pal.core, lw * 1.05);
+  // the ring under them, an octagon, the 太极's own ring
+  ink(() => {
+    ring(R * 0.72);
+    poly(Array.from({ length: 9 }, (_, i) => { const a = -Math.PI / 2 + Math.PI / 8 + i * TAU2 / 8; return [Math.cos(a) * R * 0.66, Math.sin(a) * R * 0.66]; }), rotOut);
+    ring(R * 0.5);
+  }, pal.rim, lw);
+  // the 太极: turning (a whole turn per loop), the lit half filled, its outline
+  const rt = R * 0.46, rotT = -TAU2 * t * (c.loop ? 1 : 0.6), a = Math.min(1, reveal * 1.5);
+  if (a <= 0.01) return;
+  const lit = [...arc(0, 0, rt, -Math.PI / 2, Math.PI / 2), ...arc(0, rt / 2, rt / 2, Math.PI / 2, -Math.PI / 2), ...arc(0, -rt / 2, rt / 2, Math.PI / 2, Math.PI * 1.5)];
+  L.save();
+  L.beginPath(); poly(lit, rotT); L.closePath();
+  L.fillStyle = rgba(pal.core, 0.55 * a); L.fill();
+  // the dark dot in the lit half, the lit dot in the dark half
+  L.globalCompositeOperation = "destination-out";
+  L.beginPath(); poly(arc(0, -rt / 2, rt * 0.13, 0, TAU2, 24), rotT); L.closePath(); L.fill();
+  L.globalCompositeOperation = "source-over";
+  L.beginPath(); poly(arc(0, rt / 2, rt * 0.13, 0, TAU2, 24), rotT); L.closePath(); L.fillStyle = rgba(pal.core, 0.55 * a); L.fill();
+  L.restore();
+  ink(() => {
+    poly(arc(0, 0, rt, 0, TAU2, 96), rotT);
+    // the S between the halves: round the upper small circle's left, the lower one's right
+    poly([...arc(0, -rt / 2, rt / 2, -Math.PI / 2, -Math.PI * 1.5, 30), ...arc(0, rt / 2, rt / 2, -Math.PI / 2, Math.PI / 2, 30)], rotT);
+    poly(arc(0, -rt / 2, rt * 0.13, 0, TAU2, 24), rotT);
+    poly(arc(0, rt / 2, rt * 0.13, 0, TAU2, 24), rotT);
+  }, pal.core, lw, a);
 }
 
 // a tongue of flame standing at (x, y): a curved point up to height h leaning

@@ -235,7 +235,7 @@ export class VfxPanel {
     slider("旋转", "rotate", -180, 180, "°", "整个特效绕中心转动（转出画幅框的部分会被裁掉，可以把画幅框拉大）");
     if (GROUND.has(s.kind)) slider("地面倾斜", "tilt", 0, 80, "°", "0° 是从正上方看，越大越扁，像放在地上");
     if (s.kind === "circle") {
-      choose("法阵图案", "pattern", [["hex", "六芒星"], ["penta", "五芒星"], ["square", "双方形（八角）"]]);
+      choose("法阵图案", "pattern", [["hex", "六芒星"], ["penta", "五芒星"], ["square", "双方形（八角）"], ["taiji", "太极八卦"]]);
       choose("边缘特效", "edge", EDGES);
     }
     if (s.kind === "aura") {

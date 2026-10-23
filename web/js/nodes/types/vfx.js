@@ -86,7 +86,7 @@ defineNode({
     const view = f.select("视角", "view", [["front", "正面"], ["side", "侧面"]], { wide: true });
     f.slider("旋转", "rotate", { min: -180, max: 180, unit: "°" });
     const ground = f.slider("地面倾斜", "tilt", { min: 0, max: 80, unit: "°" });
-    const pattern = f.select("法阵图案", "pattern", [["hex", "六芒星"], ["penta", "五芒星"], ["square", "双方形（八角）"]], { wide: true });
+    const pattern = f.select("法阵图案", "pattern", [["hex", "六芒星"], ["penta", "五芒星"], ["square", "双方形（八角）"], ["taiji", "太极八卦"]], { wide: true });
     const edge = f.select("边缘特效", "edge", EDGES, { wide: true });
     const bolts = f.check("带闪电（超级赛亚人 2 那样在斗气上窜动）", "bolts");
     // 光效点缀: the trails' accents; 自定义 starts from the palette's own mix
