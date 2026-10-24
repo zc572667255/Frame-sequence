@@ -7,6 +7,8 @@
 // Paths are relative to the scene file — Godot resolves them on load, so the
 // exported folder can go anywhere in the project.
 
+import { codeProps } from "./code.js";
+
 const str = (s) => JSON.stringify(String(s));          // a tscn / GDScript string literal
 const num = (v) => { const r = +(+v).toFixed(4); return Number.isInteger(r) ? r.toFixed(1) : String(r); };
 const vec = (x, y) => "Vector2(" + x + ", " + y + ")";
@@ -25,7 +27,7 @@ export function nodeNames(names) {
 
 // pack: { name, fps, durations (ms per frame), origin {x, y}, layers: [
 //   { node, kind: "sprite", file, blend, box {x, y, w, h}, cols, rows }
-//   | { node, kind: "trail" | "vfx", data } ] }
+//   | { node, kind: "trail" | "trailcode" | "vfx", data } | { node, kind: "code", params } ] }
 // opts: { mode: "animated" | "sprite", nearest, trailScript, rootScript }
 export function godotScene(pack, opts) {
   const ext = [], subs = [], nodes = [];
@@ -33,7 +35,9 @@ export function godotScene(pack, opts) {
   const extId = (type, path) => { const id = ext.length + 1 + "_" + type.toLowerCase(); ext.push(`[ext_resource type="${type}" path=${str(path)} id="${id}"]`); return id; };
   const rootScript = extId("Script", opts.rootScript);
   const trailScript = pack.layers.some((l) => l.kind === "trail") ? extId("Script", opts.trailScript) : null;
+  const trailCodeScript = pack.layers.some((l) => l.kind === "trailcode") ? extId("Script", opts.trailCodeScript) : null;
   const vfxScript = pack.layers.some((l) => l.kind === "vfx") ? extId("Script", opts.vfxScript) : null;
+  const codeScript = pack.layers.some((l) => l.kind === "code") ? extId("Script", opts.codeScript) : null;
   let addMat = null;
   const material = () => {
     if (!addMat) { addMat = "CanvasItemMaterial_add"; subs.push(`[sub_resource type="CanvasItemMaterial" id="${addMat}"]\nblend_mode = 1`); }
@@ -45,6 +49,31 @@ export function godotScene(pack, opts) {
   nodes.push(`[node name=${str(pack.rootName)} type="Node2D"]` + (opts.nearest ? "\ntexture_filter = 1" : "") + `\nscript = ExtResource("${rootScript}")`);
 
   pack.layers.forEach((l, li) => {
+    if (l.kind === "code") {
+      // drawn by its script alone, following the first sprite layer's frame
+      nodes.push([
+        `[node name=${str(l.node)} type="Node2D" parent="."]`,
+        `position = ${vec(-ox, -oy)}`,
+        `script = ExtResource("${codeScript}")`,
+        "mode = 0",
+        sprites.length ? `target = NodePath(${str("../" + sprites[0].node)})` : null,
+        "use_target_layout = false",
+        ...codeProps(l.params),
+      ].filter(Boolean).join("\n"));
+      return;
+    }
+    if (l.kind === "trailcode") {
+      // drawn by its script alone, following the first sprite layer's frame
+      nodes.push([
+        `[node name=${str(l.node)} type="Node2D" parent="."]`,
+        `position = ${vec(-ox, -oy)}`,
+        `script = ExtResource("${trailCodeScript}")`,
+        sprites.length ? `target = NodePath(${str("../" + sprites[0].node)})` : null,
+        "use_target_layout = false",
+        `data_json = ${str(JSON.stringify(l.data))}`,
+      ].filter(Boolean).join("\n"));
+      return;
+    }
     if (l.kind === "trail" || l.kind === "vfx") {
       // drawn / played at run time; frames come from the first sprite layer. Its
       // local origin is the canvas' top-left corner, like the sprites' offsets.
@@ -108,7 +137,7 @@ export function layeredScript(name) {
 # Godot 4.x。每个图层是一个子节点，共用同一个原点，叠起来就是编辑器里看到的样子。
 #   play() / stop() 同时控制所有图层，播完（不循环时）发出 finished。
 #   set_layer_visible("图层名", false) 单独关掉某一层，比如只要角色不要特效。
-#   挂着 attack_trail.gd 的节点是运行时画的攻击拖尾，跟着第一个图层的帧走。
+#   挂着 attack_trail.gd / attack_trail_code.gd 的节点是运行时画的攻击拖尾，跟着第一个图层的帧走。
 #   水平翻转整段动画：把本节点的 scale.x 设为 -1。
 extends Node2D
 

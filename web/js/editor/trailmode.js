@@ -19,6 +19,7 @@ import { GLOW_PRESETS, GLOW_DEFAULTS, glowStyle } from "../trails/glow.js";
 import { styleThumb } from "./thumbs.js";
 import { controlKit, headTailControls, glowControls } from "./effectpanel.js";
 import { trailData, trailGodot, trailJSON, attachStrips } from "../godot/trail.js";
+import { trailCodeData, trailCodeGodot } from "../godot/trailcode.js";
 
 // a new trail starts as the 梦幻 glow; the pixel bands are one click away
 const NEW_TRAIL_STYLE = { ...STYLE_DEFAULTS, colorMode: "glow", pixel: false, fade: 0.7, ...glowStyle(GLOW_PRESETS[0]) };
@@ -823,8 +824,9 @@ export class TrailMode {
     P.append(title("导出给程序"));
     P.append(el("div", { class: "tm-row" }, el("span", { class: "tm-label" }, "全部分段"), el("div", { class: "tm-colors" },
       el("button", { class: "btn small", title: "Godot 4 脚本：挂到角色精灵下的 Node2D 上，运行时按每帧的棍子画出这个动作的所有拖尾，数据已填好", onclick: () => this.exportFor("godot") }, "Godot 脚本"),
+      el("button", { class: "btn small", title: "Godot 4 脚本，不带图片：拖尾的光丝、火舌、闪电、点缀、消散都由脚本在 Godot 里实时画出来，和编辑器的画法一样", onclick: () => this.exportCode() }, "Godot 纯代码"),
       el("button", { class: "btn small", title: "通用 JSON：每帧的棍子、形状参数、配色 + 计算公式，Unity / Cocos / 自研引擎照着实现", onclick: () => this.exportFor("json") }, "JSON 参数"))));
-    P.append(el("p", { class: "ed-hint" }, "运行时按每帧的棍子画拖尾：带子上的火焰、光丝、流光、刷痕是烘焙好的贴图，飞出去的火星、闪光、命中爆点是烘焙好的逐帧图，都内嵌在脚本里。"));
+    P.append(el("p", { class: "ed-hint" }, "Godot 脚本：带子上的火焰、光丝、流光、刷痕是烘焙好的贴图，飞出去的火星、闪光、命中爆点是烘焙好的逐帧图，都内嵌在脚本里。Godot 纯代码：不带图片，全部由脚本在 Godot 里按编辑器的画法实时画。"));
   }
 
   // every segment of this animation's trails, for the game to draw at run time
@@ -841,6 +843,16 @@ export class TrailMode {
     this.ed.app.toast(kind === "godot"
       ? "已导出 attack_trail.gd（" + data.trails.length + " 段）：在 Godot 里新建 Node2D 放到角色精灵下面，挂上这个脚本即可。"
       : "已导出 attack_trail.json：每帧的棍子、参数和计算公式都在里面（notes 字段）。");
+  }
+
+  // the same trails drawn entirely by Godot (godot/trailcode.js): no baked pictures
+  async exportCode() {
+    const doc = this.doc;
+    const card = this.ed.app.store.cards[this.ed.cardId];
+    const data = await trailCodeData(doc.trails, this.frameIds(), doc.w, doc.h, doc.fps, card && card.title);
+    if (!data.trails.length) { this.ed.app.toast("还没有画好的拖尾（每段至少要有棍子）。", "warn"); return; }
+    downloadBlob(new Blob([trailCodeGodot(data)], { type: "text/plain" }), "attack_trail_code.gd");
+    this.ed.app.toast("已导出 attack_trail_code.gd（" + data.trails.length + " 段）：用法和 attack_trail.gd 一样，拖尾全部由脚本在 Godot 里实时画。", "ok");
   }
 
   // bake the current frame's trails into the 特效 layer

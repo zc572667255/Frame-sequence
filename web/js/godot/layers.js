@@ -20,7 +20,9 @@ import { drawVfxLayer, prefetchVfxLayer, layerBBox } from "../vfx/layer.js";
 import { sheetGrid } from "../nodes/exporters.js";
 import { makeZip } from "../imaging/zip.js";
 import { trailData, trailGodot, attachStrips } from "./trail.js";
+import { trailCodeData, strokeCodeData, trailCodeGodot } from "./trailcode.js";
 import { vfxData, vfxGodot, attachVfxSheet } from "./vfx.js";
+import { codeSupported, codeParams, codeGodot } from "./code.js";
 import { godotScene, layeredScript, nodeNames } from "./scene.js";
 
 const safe = (s) => String(s || "layer").replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").trim() || "layer";
@@ -61,16 +63,17 @@ export async function renderLayers(app, cardId, opts = {}) {
     ...shown.filter((l) => l.stroke).map((l) => prefetchStrokeLayer(l, frameIds, w, h)),
   ]);
   const byId = new Map(n.trails.map((t) => [t.id, t]));
-  const runtime = opts.trails === "runtime", vfxRuntime = opts.vfx === "runtime";
+  const runtime = opts.trails === "runtime" || opts.trails === "code", vfxRuntime = opts.vfx === "runtime" || opts.vfx === "code";
 
   const entries = [];
   for (const l of shown) {
     if (l.trail && !runtime) entries.push({ layer: l, part: "back", name: l.name + "（后方）", kind: "trail" });
-    else if (l.stroke && strokeWraps(l.stroke)) entries.push({ layer: l, part: "back", name: l.name + "（后半圈）", kind: "stroke" });
+    else if (l.stroke && strokeWraps(l.stroke) && opts.trails !== "code") entries.push({ layer: l, part: "back", name: l.name + "（后半圈）", kind: "stroke" });
   }
   for (const l of shown) {
     if (l.trail && runtime) { entries.push({ layer: l, name: l.name, kind: "trail", runtime: true, trail: byId.get(l.trail) }); continue; }
     if (l.vfx && vfxRuntime) { entries.push({ layer: l, name: l.name, kind: "vfx", runtime: true }); continue; }
+    if (l.stroke && opts.trails === "code") { entries.push({ layer: l, name: l.name, kind: "stroke", runtime: true }); continue; }
     const kind = l.trail ? "trail" : l.ghost ? "ghost" : l.stroke ? "stroke" : l.vfx ? "vfx" : "pixel";
     entries.push({ layer: l, part: "front", name: l.name, kind, blend: l.ghost && ghostSettings(l).blend === "add" ? "add" : "normal" });
   }
@@ -125,6 +128,13 @@ export async function exportLayeredZip(app, cardId, name, opts) {
   const origin = originOf(opts.origin, r.w, r.h);
   const layers = [];
   for (const e of r.entries) {
+    if (e.runtime && e.kind === "vfx" && opts.vfx === "code" && codeSupported(e.layer)) {
+      // an effect drawn by the game itself: no pictures
+      const p = codeParams(e.layer, r.frameIds, r.w, r.h, r.fps, { bbox: r.bbox }, e.name);
+      if (!p.follow.timeline.some(Boolean)) continue;
+      layers.push({ name: e.name, kind: "code", params: p });
+      continue;
+    }
     if (e.runtime && e.kind === "vfx") {
       // the effect's frames as a sheet next to the script; when and where, as data
       const data = vfxData(e.layer, r.frameIds, r.w, r.h, r.fps, { bbox: r.bbox }, e.name);
@@ -134,6 +144,20 @@ export async function exportLayeredZip(app, cardId, name, opts) {
         files.push({ name: root + "/" + x.file, data: new Uint8Array(await x.blob.arrayBuffer()) });
       }
       layers.push({ name: e.name, kind: "vfx", data });
+      continue;
+    }
+    if (e.runtime && e.kind === "stroke") {
+      // a 拖尾笔 stroke drawn by the game, with the same script
+      const data = await strokeCodeData(e.layer, r.frameIds, r.w, r.h, r.fps, e.name);
+      if (!data.trails[0].skeys.some(Boolean)) continue;
+      layers.push({ name: e.name, kind: "trailcode", data });
+      continue;
+    }
+    if (e.runtime && opts.trails === "code") {
+      // a trail drawn by the game itself: no pictures (an imported texture or brush goes in the data)
+      const data = e.trail && await trailCodeData([e.trail], r.frameIds, r.w, r.h, r.fps, e.name);
+      if (!data || !data.trails.length) continue;
+      layers.push({ name: e.name, kind: "trailcode", data });
       continue;
     }
     if (e.runtime) {
@@ -169,10 +193,12 @@ export async function exportLayeredZip(app, cardId, name, opts) {
   nodeNames(layers.map((l) => l.name)).forEach((nn, i) => { layers[i].node = nn; });
 
   const pack = { rootName: nodeNames([name])[0], fps: r.fps, durations: r.durations, origin, layers };
-  files.push({ name: root + "/" + root + ".tscn", data: enc.encode(godotScene(pack, { mode: opts.mode, nearest: opts.nearest, rootScript: "layered_animation.gd", trailScript: "attack_trail.gd", vfxScript: "vfx_effect.gd" })) });
+  files.push({ name: root + "/" + root + ".tscn", data: enc.encode(godotScene(pack, { mode: opts.mode, nearest: opts.nearest, rootScript: "layered_animation.gd", trailScript: "attack_trail.gd", trailCodeScript: "attack_trail_code.gd", vfxScript: "vfx_effect.gd", codeScript: "vfx_code.gd" })) });
   files.push({ name: root + "/layered_animation.gd", data: enc.encode(layeredScript(name)) });
   if (layers.some((l) => l.kind === "trail")) files.push({ name: root + "/attack_trail.gd", data: enc.encode(trailGodot(null)) });
+  if (layers.some((l) => l.kind === "trailcode")) files.push({ name: root + "/attack_trail_code.gd", data: enc.encode(trailCodeGodot(null)) });
   if (layers.some((l) => l.kind === "vfx")) files.push({ name: root + "/vfx_effect.gd", data: enc.encode(vfxGodot(null)) });
+  if (layers.some((l) => l.kind === "code")) files.push({ name: root + "/vfx_code.gd", data: enc.encode(codeGodot(null)) });
 
   // the same, engine-neutral
   const json = {
@@ -180,7 +206,11 @@ export async function exportLayeredZip(app, cardId, name, opts) {
     name, canvas: { w: r.w, h: r.h }, origin, fps: r.fps,
     frames: r.durations.map((d) => ({ duration: Math.round(d) })),
     // bottom to top; draw them in this order, every one at (box.x − origin.x, box.y − origin.y)
-    layers: layers.map((l) => (l.kind === "trail" || l.kind === "vfx"
+    layers: layers.map((l) => (l.kind === "code"
+      ? { name: l.name, node: l.node, kind: "vfx-code", params: { ...l.params, follow: undefined }, timeline: l.params.follow.timeline }
+      : l.kind === "trailcode"
+      ? { name: l.name, node: l.node, kind: "attack-trail-code", data: l.data }
+      : l.kind === "trail" || l.kind === "vfx"
       ? { name: l.name, node: l.node, kind: l.kind === "trail" ? "attack-trail-runtime" : "vfx-runtime", data: l.data }
       : { name: l.name, node: l.node, kind: l.layerKind, sheet: l.file, blend: l.blend, box: l.box, columns: l.cols, rows: l.rows,
         frames: r.durations.map((_, i) => ({ x: (i % l.cols) * l.box.w, y: Math.floor(i / l.cols) * l.box.h, w: l.box.w, h: l.box.h })) })),
@@ -236,8 +266,8 @@ export function openLayeredExport(app, cardId) {
     el("p", { class: "f-hint", style: { marginTop: 0 } }, "每个可见图层单独导出成一张序列图（裁到它出现过的范围），再生成一个叠好的 Godot 4 场景。共 " + n.frames.length + " 帧，可见图层：" + (summary || "无") + "。"),
     row("场景节点", select("mode", [["animated", "AnimatedSprite2D（SpriteFrames）"], ["sprite", "Sprite2D + AnimationPlayer"]])),
     row("原点", select("origin", ORIGINS)),
-    row("攻击拖尾", select("trails", [["baked", "烘焙成图片（和编辑器里完全一样）"], ["runtime", "运行时脚本 attack_trail.gd（可改色、清晰）"]])),
-    row("特效", select("vfx", [["baked", "烘焙成图片"], ["runtime", "运行时脚本 vfx_effect.gd（可单独播放、改色、缩放）"]])),
+    row("攻击拖尾", select("trails", [["baked", "烘焙成图片（和编辑器里完全一样）"], ["runtime", "运行时脚本 attack_trail.gd（可改色、清晰）"], ["code", "纯代码 attack_trail_code.gd（攻击拖尾和拖尾笔都不带图片，Godot 里实时画）"]])),
+    row("特效", select("vfx", [["baked", "烘焙成图片"], ["runtime", "运行时脚本 vfx_effect.gd（可单独播放、改色、缩放）"], ["code", "纯代码 vfx_code.gd（不带图片，Godot 里实时画）"]])),
     el("label", { class: "ed-check", style: { display: "flex", gap: "6px", alignItems: "center" } }, near, "像素画：最近邻采样（不模糊）"),
     el("p", { class: "f-hint" }, "运行时拖尾：形状按棍子实时计算，带子上的火焰、光丝、流光是烘焙的贴图，飞出去的火星、闪光是烘焙的逐帧图；想要逐像素和编辑器一样，选「烘焙成图片」。拖尾笔、特效、残影都按图片导出，发光残影自动用叠加混合。"),
   );

@@ -62,7 +62,7 @@ function colorRamp(st, pixel) {
 }
 
 // one trail: its sticks per frame (null = no stick) and everything its shape needs
-function trailEntry(raw, frameIds) {
+export function trailEntry(raw, frameIds) {
   const t = normalizeTrail(raw), st = t.style;
   return {
     name: clean(t.name),
@@ -524,60 +524,7 @@ func _process(_delta: float) -> void:
 		_fx[i].queue_redraw()
 
 
-func _current_frame() -> int:
-	if not active or _sprite == null:
-		return -1
-	if _sprite is AnimatedSprite2D:
-		var a := _sprite as AnimatedSprite2D
-		if animation_name != &"" and a.animation != animation_name:
-			return -1
-		return a.frame
-	if _sprite is Sprite2D:
-		return (_sprite as Sprite2D).frame - frame_offset
-	return -1
-
-
-func _layout_key() -> String:
-	if not use_target_layout or _sprite == null:
-		return ""
-	if _sprite is AnimatedSprite2D:
-		var a := _sprite as AnimatedSprite2D
-		return "%s%s%s%s" % [a.centered, a.offset, a.flip_h, a.flip_v]
-	if _sprite is Sprite2D:
-		var s := _sprite as Sprite2D
-		return "%s%s%s%s" % [s.centered, s.offset, s.flip_h, s.flip_v]
-	return ""
-
-
-# 动画画布像素 → 本节点的坐标
-func _to_local(p: Vector2) -> Vector2:
-	if not use_target_layout or _sprite == null:
-		return p
-	var centered := true
-	var off := Vector2.ZERO
-	var fh := false
-	var fv := false
-	if _sprite is AnimatedSprite2D or _sprite is Sprite2D:
-		var sp = _sprite  # 两种精灵都有这几个属性
-		centered = sp.centered
-		off = sp.offset
-		fh = sp.flip_h
-		fv = sp.flip_v
-	var q := p
-	if fh:
-		q.x = _w - q.x
-	if fv:
-		q.y = _h - q.y
-	if centered:
-		q -= Vector2(_w, _h) * 0.5
-	return q + off
-
-
-func _flips() -> Vector2:
-	if not use_target_layout or _sprite == null or not (_sprite is AnimatedSprite2D or _sprite is Sprite2D):
-		return Vector2.ONE
-	var sp = _sprite
-	return Vector2(-1.0 if sp.flip_h else 1.0, -1.0 if sp.flip_v else 1.0)
+${TRAIL_FOLLOW_GD}
 
 
 # 这一帧烘焙好的点缀（在拖尾带子外面的部分）
@@ -638,10 +585,72 @@ func _draw_part(d: Drawer) -> void:
 		RenderingServer.canvas_item_add_triangle_array(d.get_canvas_item(), idx, pts, cols, uvs)
 
 
-# ---------- 拖尾形状（与编辑器 trails/model.js 相同） ----------
+${TRAIL_SHAPE_GD}
+`;
+}
 
-# 这一帧拖尾用到的棍子：{sticks, trim, alpha}，没有拖尾时为空
-func _state(t: Dictionary, fi: int) -> Dictionary:
+// GDScript shared with the pure-code trail script (godot/trailcode.js): which frame
+// the sprite shows, and canvas pixels → the node's coordinates
+export const TRAIL_FOLLOW_GD = `func _current_frame() -> int:
+	if not active or _sprite == null:
+		return -1
+	if _sprite is AnimatedSprite2D:
+		var a := _sprite as AnimatedSprite2D
+		if animation_name != &"" and a.animation != animation_name:
+			return -1
+		return a.frame
+	if _sprite is Sprite2D:
+		return (_sprite as Sprite2D).frame - frame_offset
+	return -1
+
+
+func _layout_key() -> String:
+	if not use_target_layout or _sprite == null:
+		return ""
+	if _sprite is AnimatedSprite2D:
+		var a := _sprite as AnimatedSprite2D
+		return "%s%s%s%s" % [a.centered, a.offset, a.flip_h, a.flip_v]
+	if _sprite is Sprite2D:
+		var s := _sprite as Sprite2D
+		return "%s%s%s%s" % [s.centered, s.offset, s.flip_h, s.flip_v]
+	return ""
+
+
+# 动画画布像素 → 本节点的坐标
+func _to_local(p: Vector2) -> Vector2:
+	if not use_target_layout or _sprite == null:
+		return p
+	var centered := true
+	var off := Vector2.ZERO
+	var fh := false
+	var fv := false
+	if _sprite is AnimatedSprite2D or _sprite is Sprite2D:
+		var sp = _sprite  # 两种精灵都有这几个属性
+		centered = sp.centered
+		off = sp.offset
+		fh = sp.flip_h
+		fv = sp.flip_v
+	var q := p
+	if fh:
+		q.x = _w - q.x
+	if fv:
+		q.y = _h - q.y
+	if centered:
+		q -= Vector2(_w, _h) * 0.5
+	return q + off
+
+
+func _flips() -> Vector2:
+	if not use_target_layout or _sprite == null or not (_sprite is AnimatedSprite2D or _sprite is Sprite2D):
+		return Vector2.ONE
+	var sp = _sprite
+	return Vector2(-1.0 if sp.flip_h else 1.0, -1.0 if sp.flip_v else 1.0)`;
+
+// GDScript shared with godot/trailcode.js: the ribbon's shape, as trails/model.js builds it
+export const TRAIL_SHAPE_GD = `# ---------- 拖尾形状（与编辑器 trails/model.js 相同） ----------
+
+# 这一帧拖尾用到的棍子：{sticks, trim, alpha, after, run（这一下到现在的所有棍子）, age, frame, ended}，没有拖尾时为空
+func _state(t: Dictionary, fi: int, single_ok := false) -> Dictionary:
 	var keys: Array = t["keys"]
 	if fi < 0 or fi >= keys.size():
 		return {}
@@ -661,10 +670,12 @@ func _state(t: Dictionary, fi: int) -> Dictionary:
 		start -= 1
 	var swing := _orient(keys.slice(start, end + 1))
 	var sticks := swing.slice(maxi(0, swing.size() - (int(t["length"]) + 1)))
-	if sticks.size() < 2:
+	if sticks.size() < 2 and not single_ok:
 		return {}
 	var p := float(k) / float(dis + 1) if k > 0 else 0.0
-	return {"sticks": sticks, "trim": p, "alpha": 1.0 - p, "after": k}
+	# ended：这一帧是这一下的最后一根棍子，或者已经挥完了（命中爆点在这时炸开）
+	var ended := k > 0 or fi + 1 >= keys.size() or keys[fi + 1] == null
+	return {"sticks": sticks, "trim": p, "alpha": 1.0 - p, "after": k, "run": swing, "age": fi - start, "frame": fi, "ended": ended}
 
 
 # 画反的棍子（刀尖在握柄一侧）对调两端
@@ -864,6 +875,4 @@ func _ribbon(t: Dictionary, sticks: Array, trim: float) -> Array:
 			var th := float(i) / 6.0 * PI * 0.5
 			var fwd: Vector2 = dir * bulge * sin(th)
 			out.append({"a": m - hv * cos(th) + fwd, "b": m + hv * cos(th) + fwd, "back": hd["back"], "u": 1.0})
-	return out
-`;
-}
+	return out`;

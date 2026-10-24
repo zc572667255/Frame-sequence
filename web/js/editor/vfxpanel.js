@@ -8,6 +8,7 @@ import { ACCENTS, ACC_MODES, autoAccents } from "../vfx/accents.js";
 import { GLOW_PRESETS } from "../trails/glow.js";
 import { GROUND_AURAS } from "../vfx/kinds/auras.js";
 import { vfxData, vfxGodot, vfxJSON, attachVfxSheet } from "../godot/vfx.js";
+import { codeSupported, codeParams, codeGodot } from "../godot/code.js";
 
 const GROUND = new Set(["shock", "dust", "circle", "heal"]);
 
@@ -267,6 +268,20 @@ export class VfxPanel {
     row("脚本", el("div", { class: "tm-colors" },
       btn("Godot 脚本", "Godot 4 脚本：可以跟着角色动画播（和这里一样），也可以在游戏里单独 play() / play_at() 播放、循环、改色、缩放；特效画面已内嵌", () => this.exportFor("godot")),
       btn("JSON 参数", "通用 JSON：特效序列图（内嵌）、每帧显示哪一帧、放在哪 + 说明，Unity / Cocos / 自研引擎照着实现", () => this.exportFor("json"))), el("span"));
+    // the effect as pure code: no pictures, drawn by the game (godot/code.js)
+    if (codeSupported(l)) {
+      row("纯代码", el("div", { class: "tm-colors" },
+        btn("Godot 纯代码", "不带任何图片：Godot 脚本每一帧自己把这个特效画出来（形状、随机细节、光效点缀都和这里一样），任意放大都清晰，类型、颜色、大小、速度都能在 Godot 里改；编辑器里也会动", () => this.exportCode())), el("span"));
+      P.append(el("p", { class: "ed-hint" }, "纯代码版画风是平滑的（不做像素化）；魔法阵的边缘特效目前只有火焰，光环类图案还不支持。"));
+    }
+  }
+
+  exportCode() {
+    const l = this.layer();
+    if (!l) return;
+    const p = codeParams(l, this.doc.frames.map((f) => f.id), this.doc.w, this.doc.h, this.doc.fps, this.ed.vfxCtx(), l.name);
+    downloadBlob(new Blob([codeGodot(p)], { type: "text/plain" }), "vfx_code.gd");
+    this.ed.app.toast("已导出 vfx_code.gd：新建 Node2D 挂上它，节点位置就是特效画幅的中心；默认单独播放，mode 改成「跟着动画」并放到角色精灵下面就跟着动画显示。");
   }
 
   async exportFor(kind) {
