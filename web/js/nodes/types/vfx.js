@@ -73,11 +73,11 @@ defineNode({
       (s) => s.select("透明", "pxAlpha", [["steps", "4 级透明"], ["dither", "抖动（全实心）"], ["hard", "硬边"]]),
     );
     f.pair(
-      (s) => s.number("宽", "w", { min: 16, max: 512 }),
-      (s) => s.number("高", "h", { min: 16, max: 512 }),
+      (s) => s.number("宽", "w", { min: 16, max: 2048 }),
+      (s) => s.number("高", "h", { min: 16, max: 1024 }),
     );
     f.pair(
-      (s) => s.number("帧数", "frames", { min: 2, max: 48 }),
+      (s) => s.number("帧数", "frames", { min: 2, max: 64 }),
       (s) => s.number("帧率", "fps", { min: 1, max: 60 }),
     );
     f.check("循环（最后一帧接回第一帧）", "loop");
@@ -90,6 +90,8 @@ defineNode({
     const pattern = f.select("法阵图案", "pattern", [["hex", "六芒星"], ["penta", "五芒星"], ["square", "双方形（八角）"], ["taiji", "太极八卦"], ...GROUND_AURAS], { wide: true });
     const edge = f.select("边缘特效", "edge", EDGES, { wide: true });
     const bolts = f.check("带闪电（超级赛亚人 2 那样在斗气上窜动）", "bolts");
+    const root = f.slider("根部宽度", "root", { min: 10, max: 100, unit: "%" });
+    const drift = f.check("横向飘动（循环时每朵云正好飘过一圈）", "drift");
     // 光效点缀: the trails' accents; 自定义 starts from the palette's own mix
     const presetOf = () => GLOW_PRESETS.find((x) => x.id === p().palette) || GLOW_PRESETS[0];
     f.select("光效点缀", "acc", ACC_MODES, { wide: true, onChange: (v) => { if (v === "custom") ctx.set(autoAccents(presetOf())); } });
@@ -103,6 +105,8 @@ defineNode({
       accHint.style.display = mode === "auto" ? "" : "none";
       for (const sl of accSliders) sl.style.display = mode === "custom" ? "" : "none";
       bolts.style.display = k === "aura" ? "" : "none";
+      root.style.display = k === "burn" ? "" : "none";
+      drift.style.display = k === "cloud" ? "" : "none";
       px.style.display = p().style === "pixel" ? "" : "none";
       ground.style.display = GROUND.has(k) ? "" : "none";
       pattern.style.display = k === "circle" ? "" : "none";

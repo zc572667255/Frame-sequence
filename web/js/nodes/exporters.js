@@ -32,13 +32,18 @@ export function sheetGrid(n, p) {
   return { layout, cols, rows: Math.ceil(n / cols) };
 }
 
-export function renderSheet(v, p) {
+// max: a preview no bigger than that on its longer side (the same layout, all
+// of it scaled down) — a whole scene's frames side by side would be a picture
+// too big for the browser to draw quickly, or at all
+export function renderSheet(v, p, max = 0) {
   const s = outputSize(p, v);
   const n = v.frames.length;
   const { cols: perRow, rows } = sheetGrid(n, p);
-  const sheet = createCanvas(s.w * perRow, s.h * rows);
+  const k = max ? Math.min(1, max / Math.max(s.w * perRow, s.h * rows)) : 1;
+  const sheet = createCanvas(Math.max(1, Math.round(s.w * perRow * k)), Math.max(1, Math.round(s.h * rows * k)));
   const ctx = sheet.getContext("2d");
-  ctx.imageSmoothingEnabled = p.smooth === true;
+  ctx.imageSmoothingEnabled = p.smooth === true || k < 1;
+  if (k < 1) ctx.scale(k, k);
   v.frames.forEach((f, i) => {
     drawFrameInto(ctx, f.canvas, (i % perRow) * s.w, Math.floor(i / perRow) * s.h, s.w, s.h, p.mode, p.anchor);
   });
@@ -73,10 +78,15 @@ export function softAlphaShare(v) {
 // p.gifMatte: a colour (#rrggbb) to lay every frame on before it becomes a GIF,
 // so see-through parts blend into it instead of breaking up; null keeps
 // transparency
-export function exportGif(v, p) {
+// The frames are read here (a breath between them now and then); their colours
+// picked and the file put together in a worker (imaging/gifworker.js), so a
+// big GIF doesn't freeze the page — or here when there are no workers.
+export async function exportGif(v, p) {
   const s = outputSize(p, v);
   const durs = frameDurations(v, p.fps);
-  const frames = v.frames.map((_f, i) => {
+  const frames = [];
+  let t0 = performance.now();
+  for (let i = 0; i < v.frames.length; i++) {
     let c = renderFrame(v, i, p);
     if (p.gifMatte) {
       const m = createCanvas(s.w, s.h), mg = m.getContext("2d");
@@ -85,12 +95,39 @@ export function exportGif(v, p) {
       mg.drawImage(c, 0, 0);
       c = m;
     }
-    const q = quantizeFrame(c.getContext("2d").getImageData(0, 0, s.w, s.h));
-    q.delayCs = Math.max(1, Math.round(durs[i] / 10));
-    return q;
+    frames.push({ data: c.getContext("2d").getImageData(0, 0, s.w, s.h).data.buffer, delayCs: Math.max(1, Math.round(durs[i] / 10)) });
+    if (performance.now() - t0 > 30) { await new Promise((r) => setTimeout(r, 0)); t0 = performance.now(); }
+  }
+  const bytes = (await gifInWorker(s.w, s.h, frames)) || encodeGIF({
+    width: s.w, height: s.h, loop: 0,
+    frames: frames.map((f) => ({ ...quantizeFrame({ data: new Uint8ClampedArray(f.data), width: s.w, height: s.h }), delayCs: f.delayCs })),
   });
-  const bytes = encodeGIF({ width: s.w, height: s.h, frames, loop: 0 });
   return new Blob([bytes], { type: "image/gif" });
+}
+
+// the GIF's bytes made by workers — the frames' colours picked by a few at
+// once, the file put together by one — or null when they can't be had
+async function gifInWorker(width, height, frames) {
+  const n = Math.max(1, Math.min(4, ((typeof navigator !== "undefined" && navigator.hardwareConcurrency) || 2) - 1, frames.length));
+  const pool = [];
+  try {
+    for (let i = 0; i < n; i++) pool.push(new Worker(new URL("../imaging/gifworker.js", import.meta.url), { type: "module" }));
+  } catch { for (const w of pool) w.terminate(); return null; }
+  const ask = (wk, msg) => new Promise((resolve) => {
+    wk.onmessage = (e) => resolve(e.data && !e.data.error ? e.data : null);
+    wk.onerror = () => resolve(null);
+    wk.postMessage(msg);
+  });
+  try {
+    // (copied, not handed over: should a worker fail, they are made here)
+    const per = Math.ceil(frames.length / n);
+    const parts = await Promise.all(pool.map((wk, i) => ask(wk, { op: "quantize", width, height, frames: frames.slice(i * per, (i + 1) * per) })));
+    if (parts.some((r) => !r)) return null;
+    const r = await ask(pool[0], { op: "encode", width, height, frames: parts.flatMap((x) => x.frames) });
+    return r ? r.bytes : null;
+  } finally {
+    for (const w of pool) w.terminate();
+  }
 }
 
 // Animated WebP: full colour and 8-bit alpha, millisecond timing; quality 1 = lossless

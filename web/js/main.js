@@ -733,6 +733,14 @@ class App {
       .catch((err) => { console.error(err); this.toast("编辑器打开失败：" + err.message, "error"); });
   }
 
+  // ---------- scenes ----------
+  openScene(id) {
+    if (this.modalOpen()) return;
+    import("./scene/editor.js")
+      .then((m) => m.openSceneEditor(this, id))
+      .catch((err) => { console.error(err); this.toast("场景编辑器打开失败：" + err.message, "error"); });
+  }
+
   // ---------- characters (phase 3) ----------
   openTuner(id) {
     if (this.modalOpen()) return;

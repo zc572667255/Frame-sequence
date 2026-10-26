@@ -31,7 +31,7 @@ const enc = new TextEncoder();
 const KINDS = { pixel: "像素", trail: "攻击拖尾", stroke: "拖尾笔", ghost: "残影", vfx: "特效" };
 
 // the part of a canvas with anything in it, or null
-function alphaBox(c) {
+export function alphaBox(c) {
   const { width: w, height: h } = c;
   const d = c.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, w, h).data;
   let x0 = w, y0 = h, x1 = -1, y1 = -1;
@@ -122,8 +122,23 @@ const originOf = (k, w, h) => (k === "topleft" ? { x: 0, y: 0 } : k === "center"
 
 // opts: { mode: "animated" | "sprite", origin, trails: "baked" | "runtime", nearest }
 export async function exportLayeredZip(app, cardId, name, opts) {
+  const r = await layeredFiles(app, cardId, name, opts);
+  return { blob: makeZip(r.files), layers: r.layers };
+}
+
+// The files of a layered export, all under the folder dir (default: the
+// name): { files: [{ name, data }], layers, scene (its .tscn's path), w, h,
+// origin, fps, durations }. The scene export (godot/scenepack.js) puts each
+// animation it holds in a folder of its own this way.
+export async function layeredFiles(app, cardId, name, opts, dir) {
   const r = await renderLayers(app, cardId, opts);
+  // opts.frameMs: every frame that long (in a scene, items step one frame per
+  // scene frame, at the scene's rate)
+  if (opts.frameMs) { r.durations = r.durations.map(() => opts.frameMs); r.fps = 1000 / opts.frameMs; }
   const root = safe(name);
+  dir = dir || root;
+  // its own files' names: the title, or (opts.fileName) something plain to refer to
+  const base = opts.fileName ? safe(opts.fileName) : root;
   const files = [];
   const origin = originOf(opts.origin, r.w, r.h);
   const layers = [];
@@ -141,7 +156,7 @@ export async function exportLayeredZip(app, cardId, name, opts) {
       if (!data.timeline.some(Boolean)) continue;
       const n = String(layers.length + 1).padStart(2, "0");
       for (const x of await attachVfxSheet(data, e.layer, "files", "vfx/" + n + "_")) {
-        files.push({ name: root + "/" + x.file, data: new Uint8Array(await x.blob.arrayBuffer()) });
+        files.push({ name: dir + "/" + x.file, data: new Uint8Array(await x.blob.arrayBuffer()) });
       }
       layers.push({ name: e.name, kind: "vfx", data });
       continue;
@@ -166,7 +181,7 @@ export async function exportLayeredZip(app, cardId, name, opts) {
       // its look (strip) and what flies off it (fx frames) as images next to the script
       const n = String(layers.length + 1).padStart(2, "0");
       for (const x of await attachStrips(data, [e.trail], r.frameIds, "files", "trails/" + n + "_")) {
-        files.push({ name: root + "/" + x.file, data: new Uint8Array(await x.blob.arrayBuffer()) });
+        files.push({ name: dir + "/" + x.file, data: new Uint8Array(await x.blob.arrayBuffer()) });
       }
       layers.push({ name: e.name, kind: "trail", data });
       continue;
@@ -185,7 +200,7 @@ export async function exportLayeredZip(app, cardId, name, opts) {
     e.canvases.forEach((c, i) => sg.drawImage(c, box.x0, box.y0, bw, bh, (i % cols) * bw, Math.floor(i / cols) * bh, bw, bh));
     // ASCII file names: some unzip tools still garble UTF-8 ones (the names stay on the nodes and in the JSON)
     const file = "layers/" + String(layers.length + 1).padStart(2, "0") + "_" + e.kind + (e.part === "back" ? "_back" : "") + ".png";
-    files.push({ name: root + "/" + file, data: new Uint8Array(await (await canvasToBlob(sheet)).arrayBuffer()) });
+    files.push({ name: dir + "/" + file, data: new Uint8Array(await (await canvasToBlob(sheet)).arrayBuffer()) });
     layers.push({ name: e.name, kind: "sprite", layerKind: e.kind, file, blend: e.blend || "normal", box: { x: box.x0, y: box.y0, w: bw, h: bh }, cols, rows });
   }
   if (!layers.length) throw new Error("所有图层都是空的，没有可导出的内容。");
@@ -193,12 +208,12 @@ export async function exportLayeredZip(app, cardId, name, opts) {
   nodeNames(layers.map((l) => l.name)).forEach((nn, i) => { layers[i].node = nn; });
 
   const pack = { rootName: nodeNames([name])[0], fps: r.fps, durations: r.durations, origin, layers };
-  files.push({ name: root + "/" + root + ".tscn", data: enc.encode(godotScene(pack, { mode: opts.mode, nearest: opts.nearest, rootScript: "layered_animation.gd", trailScript: "attack_trail.gd", trailCodeScript: "attack_trail_code.gd", vfxScript: "vfx_effect.gd", codeScript: "vfx_code.gd" })) });
-  files.push({ name: root + "/layered_animation.gd", data: enc.encode(layeredScript(name)) });
-  if (layers.some((l) => l.kind === "trail")) files.push({ name: root + "/attack_trail.gd", data: enc.encode(trailGodot(null)) });
-  if (layers.some((l) => l.kind === "trailcode")) files.push({ name: root + "/attack_trail_code.gd", data: enc.encode(trailCodeGodot(null)) });
-  if (layers.some((l) => l.kind === "vfx")) files.push({ name: root + "/vfx_effect.gd", data: enc.encode(vfxGodot(null)) });
-  if (layers.some((l) => l.kind === "code")) files.push({ name: root + "/vfx_code.gd", data: enc.encode(codeGodot(null)) });
+  files.push({ name: dir + "/" + base + ".tscn", data: enc.encode(godotScene(pack, { mode: opts.mode, nearest: opts.nearest, rootScript: "layered_animation.gd", trailScript: "attack_trail.gd", trailCodeScript: "attack_trail_code.gd", vfxScript: "vfx_effect.gd", codeScript: "vfx_code.gd" })) });
+  files.push({ name: dir + "/layered_animation.gd", data: enc.encode(layeredScript(name)) });
+  if (layers.some((l) => l.kind === "trail")) files.push({ name: dir + "/attack_trail.gd", data: enc.encode(trailGodot(null)) });
+  if (layers.some((l) => l.kind === "trailcode")) files.push({ name: dir + "/attack_trail_code.gd", data: enc.encode(trailCodeGodot(null)) });
+  if (layers.some((l) => l.kind === "vfx")) files.push({ name: dir + "/vfx_effect.gd", data: enc.encode(vfxGodot(null)) });
+  if (layers.some((l) => l.kind === "code")) files.push({ name: dir + "/vfx_code.gd", data: enc.encode(codeGodot(null)) });
 
   // the same, engine-neutral
   const json = {
@@ -220,8 +235,8 @@ export async function exportLayeredZip(app, cardId, name, opts) {
       runtime: "kind = attack-trail-runtime 的层是运行时画的攻击拖尾，vfx-runtime 的层是运行时播放的特效；data 的格式见 attack_trail.gd / vfx_effect.gd，或从像素编辑器导出的 JSON（notes 字段）。",
     },
   };
-  files.push({ name: root + "/" + root + "_layers.json", data: enc.encode(JSON.stringify(json, null, 2)) });
-  return { blob: makeZip(files), layers };
+  files.push({ name: dir + "/" + base + "_layers.json", data: enc.encode(JSON.stringify(json, null, 2)) });
+  return { files, layers, scene: dir + "/" + base + ".tscn", w: r.w, h: r.h, origin, fps: r.fps, durations: r.durations };
 }
 
 // the dialog on an animation card: pick the options, export, download

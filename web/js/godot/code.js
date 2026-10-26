@@ -8,21 +8,24 @@
 // the bloom from the blurred mip levels.
 //
 // The kinds drawn with shapes and gradients — 命中火花, 冲击波, 蓄力, 治疗光圈,
-// 流光, 翅膀, 魔法阵 (with its fire rim) — and with 光效点缀; the ones made of
-// per-pixel noise — 环绕光, 燃烧, 爆炸, 烟尘 — in a shader that works out the
-// same noise (the same integer hash, value noise and octaves, the same loop
-// cross-fade) and the same shading per pixel. Not carried over: the other rims
-// and the ground auras of 魔法阵, and the pixel look — it is drawn smooth.
+// 流光, 翅膀, 魔法阵 (with its fire rim and its ground auras) — and with 光效点缀;
+// the ones made of per-pixel noise — 环绕光, 燃烧, 爆炸, 烟尘, the energy clouds
+// of 能量爆发 and the smoke of 幽魂光环 — in a shader that works out the same
+// noise (the same integer hash, value noise and octaves, the same loop
+// cross-fade) and the same shading per pixel; 云朵 in the same shader, its puffs
+// as distances. Not carried over: the other rims of 魔法阵, and the pixel look —
+// it is drawn smooth.
 import { vfxSettings } from "../vfx/layer.js";
 import { VFX_DEFAULTS, VFX_KINDS } from "../vfx/effects.js";
 import { paletteOf } from "../vfx/common.js";
 import { vfxData } from "./vfx.js";
 import { ACCENTS, accentAmounts } from "../vfx/accents.js";
+import { isGroundAura } from "../vfx/kinds/auras.js";
 
-export const CODE_KINDS = ["hit", "shock", "charge", "heal", "ribbon", "wings", "circle", "aura", "burn", "explosion", "dust"];
-const PATTERNS = { hex: 0, penta: 1, square: 2, taiji: 3 };
+export const CODE_KINDS = ["hit", "shock", "charge", "heal", "ribbon", "wings", "circle", "aura", "burn", "explosion", "dust", "cloud"];
+const PATTERNS = { hex: 0, penta: 1, square: 2, taiji: 3, burst: 4, holy: 5, whirl: 6, stars: 7, wisp: 8, arrows: 9 };
 // how much bloom each kind gets (vfx/effects.js BLOOM)
-const BLOOM = { hit: 1, shock: 0.8, charge: 1, heal: 0.7, circle: 0, ribbon: 1, wings: 1, aura: 0.9, burn: 0.9, explosion: 0.7, dust: 0 };
+const BLOOM = { hit: 1, shock: 0.8, charge: 1, heal: 0.7, circle: 0, ribbon: 1, wings: 1, aura: 0.9, burn: 0.9, explosion: 0.7, dust: 0, cloud: 0 };
 
 export function codeSupported(l) {
   const s = vfxSettings(l);
@@ -46,7 +49,8 @@ export function codeParamsFrom(s, w, h, fps, name) {
     size: Math.max(0.05, Math.min(1, s.size / 100)),
     squash: Math.max(0.15, Math.cos(Math.max(0, Math.min(80, s.tilt)) * Math.PI / 180)),
     side: s.view === "side", pattern: PATTERNS[s.pattern] ?? 0, bolts: !!s.bolts,
-    edge: (s.edge === "auto" ? pal.element : s.edge) === "fire" ? 1 : 0,
+    root: Math.max(0.1, Math.min(1, (s.root ?? 100) / 100)), drift: !!s.drift,
+    edge: (s.edge === "auto" ? (isGroundAura(s.pattern) ? "none" : pal.element) : s.edge) === "fire" ? 1 : 0,
     loop: !!s.loop, frames: Math.max(1, s.frames | 0), fps: fps || s.fps || 12,
     glow, amount: Math.max(0, s.amount / 100), seed: s.seed | 0 || 1, rotate: +s.rotate || 0,
     soft: !pixel,
@@ -79,7 +83,7 @@ export function kindSettings(kind, patch = {}) {
 export function codeProps(p) {
   return [
     `kind = ${p.kind}`, `box_size = Vector2(${num(p.w)}, ${num(p.h)})`, `size = ${num(p.size)}`,
-    `squash = ${num(p.squash)}`, `side_view = ${p.side}`, `bolts = ${p.bolts}`, `pattern = ${p.pattern}`, `edge_effect = ${p.edge}`,
+    `squash = ${num(p.squash)}`, `side_view = ${p.side}`, `bolts = ${p.bolts}`, `root_width = ${num(p.root ?? 1)}`, `cloud_drift = ${!!p.drift}`, `pattern = ${p.pattern}`, `edge_effect = ${p.edge}`,
     `loop = ${p.loop}`, `frames = ${p.frames}`, `fps = ${num(p.fps)}`, `glow = ${num(p.glow)}`, `amount = ${num(p.amount)}`,
     `random_seed = ${p.seed}`, `rotate_degrees = ${num(p.rotate)}`, `soft_light = ${p.soft}`, `bloom = ${num(p.bloom)}`, `additive = ${p.additive}`,
     `colors = ${tscnColors(p.cols)}`, `accents = PackedFloat32Array(${p.accents.map(num).join(", ")})`, `core_color = ${color(p.core)}`, `rim_color = ${color(p.rim)}`, `splat_color = ${color(p.splat)}`,
@@ -96,7 +100,7 @@ export function codeGodot(p) {
 # 特效（纯代码）—— 由「光台 · 序列帧工作室」导出：${d.name}
 # Godot 4.x。不用任何图片：特效的每一帧都由本脚本实时画出来，形状、随机细节、节奏和编辑器里一样，
 # 任意放大都清晰，类型、颜色、大小、速度都能随时改。编辑器里也会动（@tool），可以直接在 2D 视图里看效果。
-# 支持：命中火花、冲击波、蓄力、治疗光圈、流光、翅膀、魔法阵（含火焰边缘）、环绕光、燃烧、爆炸、烟尘，以及光效点缀
+# 支持：命中火花、冲击波、蓄力、治疗光圈、流光、翅膀、魔法阵（含火焰边缘和六种地面光环）、环绕光、燃烧、爆炸、烟尘、云朵，以及光效点缀
 #（星光、粉尘、余烬、雪花、碎片、闪电、光芒、气泡、水滴、落叶、碎石）。
 # 两种用法：
 #   单独播放（mode = 单独播放，默认）：新建一个 Node2D 挂上本脚本，节点位置是特效画幅的中心。
@@ -123,7 +127,7 @@ signal finished
 ## 空闲时把还没画过的帧提前一帧一帧画好（第一遍播放也不卡）
 @export var prewarm := true
 @export_group("特效")
-@export_enum("命中火花", "冲击波", "蓄力", "治疗光圈", "流光", "翅膀", "魔法阵", "环绕光", "燃烧", "爆炸", "烟尘") var kind := ${d.kind}
+@export_enum("命中火花", "冲击波", "蓄力", "治疗光圈", "流光", "翅膀", "魔法阵", "环绕光", "燃烧", "爆炸", "烟尘", "云朵") var kind := ${d.kind}
 ## 画幅大小（编辑器里特效的画幅框）
 @export var box_size := Vector2(${num(d.w)}, ${num(d.h)})
 ## 特效大小：占画幅的比例
@@ -134,7 +138,12 @@ signal finished
 @export var side_view := ${d.side}
 ## 环绕光：带闪电（超级赛亚人 2 那样）
 @export var bolts := ${d.bolts}
-@export_enum("六芒星", "五芒星", "双方形", "太极八卦") var pattern := ${d.pattern}
+## 燃烧：根部宽度，1 = 整片火焰一样宽，越小越像火把上的火焰
+@export_range(0.1, 1.0) var root_width := ${num(d.root ?? 1)}
+## 云朵：横向飘动（循环时每朵云正好飘过一圈）
+@export var cloud_drift := ${!!d.drift}
+## 魔法阵的图案；后六种是地面光环
+@export_enum("六芒星", "五芒星", "双方形", "太极八卦", "能量爆发", "圣光光环", "旋风光环", "星辉光环", "幽魂光环", "箭阵光环") var pattern := ${d.pattern}
 @export_enum("无", "火焰") var edge_effect := ${d.edge}
 @export var loop := ${d.loop}
 ## 特效帧数，和 fps 一起决定一遍的时长
@@ -222,6 +231,7 @@ uniform float cy = 0.0;
 uniform float rx = 1.0;
 uniform float ry = 1.0;
 uniform float k = 0.1;
+uniform float root_w = 1.0;
 uniform float rs = 1.0;
 uniform float amt = 1.0;
 uniform float cool = 1.0;
@@ -235,7 +245,7 @@ uniform vec4 smoke_lo : source_color;
 uniform vec4 smoke_hi : source_color;
 uniform vec4 fsmoke_hi : source_color;
 uniform int nb = 0;
-uniform vec4 blobs[48];
+uniform vec4 blobs[64];
 uniform float cell = 4.0;
 uniform vec2 drift = vec2(0.0);
 uniform float rough = 0.5;
@@ -244,6 +254,22 @@ uniform float vheat = 0.0;
 uniform float thr = 0.3;
 uniform float fade = 1.0;
 uniform int vcolor = 0;
+// 地面光环（能量爆发、幽魂光环）和云朵
+uniform vec4 ea[240];
+uniform vec4 eb[240];
+uniform int ne = 0;
+uniform float gr = 1.0;
+uniform float gkx = 1.0;
+uniform float gk = 1.0;
+uniform float env = 1.0;
+uniform float rev = 1.0;
+uniform float haze = 0.0;
+uniform vec4 c_rim : source_color;
+uniform vec4 c_core : source_color;
+uniform vec4 c_deep : source_color;
+uniform vec4 c_light : source_color;
+uniform vec4 c_body : source_color;
+uniform vec4 c_shade : source_color;
 
 float lh(int x, int y, int s) {
 	uint v = (uint(x) * 374761393u) ^ (uint(y) * 668265263u) ^ uint(s);
@@ -327,13 +353,20 @@ void fragment() {
 		float hgt = (cy - y - 0.5) / (2.0 * ry);
 		if (hgt < -0.02) { discard; }
 		float xs = x + (loopn(vec2(x, y), 73, k * 0.3, 0.4, 1.5) - 0.5) * rx * (0.1 + 0.6 * hgt);
-		float u = (xs + 0.5 - cx) / rx;
+		// 根部宽度：往上三分之一处最宽，往下两侧沿圆弧收到根部（火把上的火焰圆圆的底），根部的火舌抖得轻一些
+		float nr = 1.0 - root_w;
+		float wv = 1.0 - clamp(hgt / 0.3, 0.0, 1.0);
+		float wd = (0.45 + 0.55 * root_w) * (root_w + nr * sqrt(1.0 - wv * wv));
+		float u = (xs + 0.5 - cx) / rx / wd;
 		float n = loopn(vec2(xs, y), 67, k, 0.42, 4.0);
-		float f = (1.0 - hgt) * 1.05 - pow(abs(u), 1.4) * (0.9 + 1.4 * hgt) + (n - 0.5) * (0.8 + 1.1 * hgt) - 0.18;
+		float calm = 1.0 - nr * 0.6 * (1.0 - sm(0.0, 0.45, hgt));
+		float f = (1.0 - hgt) * 1.05 - pow(abs(u), 1.4) * (0.9 + 1.4 * hgt) + (n - 0.5) * (0.8 + 1.1 * hgt) * calm - 0.18;
 		if (f <= -0.14) { discard; }
 		float s = strand(loopn(vec2(xs + (n - 0.5) * rx * 0.35, y), 79, k * 2.2, 0.13, 6.0), 4.0);
 		float topf = 1.0 - sm(0.95, 1.15, hgt);
-		float body = sm(-0.03, 0.22, f) * sm(-0.02, 0.05, hgt) * topf;
+		// 底边：整片火焰是平的；根部窄时往两边弯上去（把圆弧底合上），柔和地淡入
+		float base = sm(-0.02, 0.05 + 0.07 * nr, hgt - 0.1 * nr * min(1.0, u * u));
+		float body = sm(-0.03, 0.22, f) * base * topf;
 		float wisp = s * sm(-0.14, 0.02, f) * (1.0 - body) * (0.4 + hgt) * topf;
 		float heat = clamp(f * 0.9 + (1.0 - hgt) * 0.08 + s * 0.3 * body, 0.0, 1.0);
 		if (dark) {
@@ -372,6 +405,104 @@ void fragment() {
 		float heat = clamp((d * 1.2 + (b - 0.5) * 0.55) * cool + flash * body, 0.0, 1.0);
 		a = body * sm(0.04, 0.35, heat) + tongue * cool;
 		col = texture(ramp_flame, vec2(heat, 0.5)).rgb;
+	} else if (mode == 5) {
+		// 能量爆发：一团团能量云从中心沿地面滚出去，噪声翻卷，按热度着色（ea = 每团的位置和半径，eb = 浓度、热度）
+		float D = 0.0;
+		float H = 0.0;
+		for (int i = 0; i < ne; i++) {
+			vec4 q = ea[i];
+			vec2 dv = vec2((x - q.x) / q.z, (y - q.y) / q.w);
+			float d2 = dot(dv, dv);
+			if (d2 >= 1.0) { continue; }
+			float f = (1.0 - d2) * (1.0 - d2) * eb[i].x;
+			D += f;
+			H = max(H, f * eb[i].y);
+		}
+		if (D <= 0.003) { discard; }
+		float u = (x - cx) / gkx / gr;
+		float w = (y - cy) / gk / gr;
+		float r = length(vec2(u, w));
+		float ang = atan(w, u);
+		float m = (ang + PI) / TAU;
+		// 顺着半径往外流的条纹（角度绕一圈接回来：差一圈的两份交叉混合，没有接缝）
+		float ns = loopn(vec2(ang * 5.0, r * 3.0), 29, 1.0, 1.0, -2.5) * (1.0 - m) + loopn(vec2((ang - TAU) * 5.0, r * 3.0), 29, 1.0, 1.0, -2.5) * m;
+		float dens = (1.0 - exp(-D * 1.3)) * (0.3 + 1.15 * ns) + (loopn(vec2(x, y), 23, 3.2 / gr, 1.0, 2.0) - 0.5) * 0.3;
+		// 外面一层光晕（编辑器里是模糊后叠加的那一份）
+		float hz = haze * sm(0.04, 0.8, (1.0 - exp(-D * 1.3)) * 0.875) * 0.8 * env;
+		float ca = dens > 0.04 ? sm(0.04, 0.8, dens) * 0.8 * env : 0.0;
+		if (ca + hz <= 0.002) { discard; }
+		// 大多是配色的边缘色，最浓最热的地方才发白
+		float light = clamp(H * 0.95 + (ns - 0.5) * 0.6 + dens * 0.15, 0.0, 1.0);
+		vec3 cc = light < 0.7 ? mix(c_deep.rgb, c_rim.rgb, light / 0.7) : mix(c_rim.rgb, c_core.rgb, (light - 0.7) / 0.3);
+		a = min(1.0, ca + hz);
+		col = (cc * ca + c_rim.rgb * hz) / max(a, 0.0001);
+	} else if (mode == 6) {
+		// 幽魂光环：一圈翻滚的烟
+		float u = (x - cx) / gkx / gr;
+		float v = (y - cy) / gk / gr;
+		float r = length(vec2(u, v));
+		if (r > 1.02 * rev + 0.02) { discard; }
+		float th = atan(v, u) - r * 2.2;
+		float n = loopn(vec2(cos(th) * r * gr + gr * 2.0, sin(th) * r * gr + gr * 2.0), 41, 3.0 / gr, 1.0, 3.0);
+		float band = sm(0.45, 0.72, r) * (1.0 - sm(0.86, 1.02, r));
+		float d = band * (n * 1.4 - 0.35);
+		if (d <= 0.02) { discard; }
+		col = mix(c_deep.rgb, c_rim.rgb, min(1.0, d * 1.6));
+		a = min(1.0, d * 1.4) * env;
+	} else if (mode == 7) {
+		// 云朵：一朵朵依次盖上去。每朵由一团团云团叠成：密度是各云团之和，整朵云被慢噪声推歪扯开（轮廓、云底都不规则），
+		// 边缘被噪声磨毛（薄的云半透明、更毛），外面一圈淡淡的雾气和细丝；每个云团左上受光，最强的那个云团盖过别的
+		// （云团之间有褶皱），越往上越亮，云底一带是阴影，云底柔和地淡出
+		// blobs[3i] = (中心 x, 底边 y, 宽, 高)，blobs[3i + 1] = (透明度, 第一个云团, 云团个数, 浓度)，
+		// blobs[3i + 2] = (第几朵, 噪声尺度, 细丝噪声尺度, 中心两侧伸出多远)；ea = 云团 (相对中心 x, 相对底边 y, 半径)
+		vec3 acc = vec3(0.0);
+		float aac = 0.0;
+		for (int d = 0; d < nb; d++) {
+			vec4 A = blobs[d * 3];
+			vec4 B = blobs[d * 3 + 1];
+			vec4 Cc = blobs[d * 3 + 2];
+			float X = A.x;
+			float Y = A.y;
+			float Hc = A.w;
+			if (x < X - Cc.w - Hc * 0.2 || x > X + Cc.w + Hc * 0.2 || y < Y - Hc * 1.4 || y > Y + Hc * 0.13 + 2.0) { continue; }
+			vec2 lp = vec2(x - X + Cc.x * 131.0, y);
+			float n = loopn(lp, 101, Cc.y, 1.0, 2.0);
+			float wx = x + (loopn(lp, 107, Cc.y * 0.5, 1.0, 1.0) - 0.5) * Hc * 0.25;
+			float wy = y + (n - 0.5) * Hc * 0.16;
+			float D = 0.0;
+			float Lw = 0.0;
+			float Ls = 0.0;
+			int i0 = int(B.y);
+			int i1 = i0 + int(B.z);
+			for (int i = i0; i < i1; i++) {
+				vec4 q = ea[i];
+				float u = (wx - X - q.x) / q.z;
+				float v = (wy - Y - q.y) / q.z;
+				float d2 = u * u + v * v;
+				if (d2 >= 1.0) { continue; }
+				float f = (1.0 - d2) * (1.0 - d2);
+				float qq = f * f * f * f;
+				D += f;
+				Lw += qq;
+				Ls += qq * clamp(0.5 - (v * 0.8 + u * 0.35) * 0.55, 0.0, 1.0);
+			}
+			if (D <= 0.002) { continue; }
+			float body = 1.0 - exp(-D * 2.5);
+			// 细丝只在边缘（里面没有可磨的）
+			float edge = 1.0 - sm(0.25, 0.65, body);
+			float dens = body + (n - 0.5) * (0.3 + 0.4 * (1.0 - B.w)) + (edge > 0.0 ? (loopn(lp, 103, Cc.z, 1.0, 3.0) - 0.5) * 0.5 * edge : 0.0);
+			float al = max(sm(0.06, 0.55, dens), 0.3 * sm(0.0, 0.35, body)) * (0.8 + 0.2 * B.w) * (1.0 - sm(Y - Hc * 0.14, Y + Hc * 0.03, wy)) * B.x;
+			if (al <= 0.004) { continue; }
+			float up = clamp((Y - wy) / Hc, 0.0, 1.0);
+			float light = clamp(0.55 * (Ls / Lw) + 0.5 * up + (n - 0.5) * 0.15 - 0.28 * (1.0 - sm(0.0, 0.35, up)) + 0.07, 0.0, 1.0);
+			float s3 = light * 3.0;
+			vec3 cc = s3 < 1.0 ? mix(c_deep.rgb, c_shade.rgb, s3) : (s3 < 2.0 ? mix(c_shade.rgb, c_body.rgb, s3 - 1.0) : mix(c_body.rgb, c_light.rgb, s3 - 2.0));
+			acc = cc * al + acc * (1.0 - al);
+			aac = al + aac * (1.0 - al);
+		}
+		if (aac <= 0.001) { discard; }
+		col = acc / aac;
+		a = aac;
 	} else {
 		// 一团团噪声组成的体积（烟尘、深色配色的爆炸）
 		vec2 px = UV;
@@ -536,6 +667,18 @@ func _exit_tree() -> void:
 	_vs = 0
 
 
+# 着色器：所有特效节点共用，同一段代码只编译一次（场景里特效多时省下大量编译，也更稳）
+static var _shader_cache := {}
+
+
+static func _shader(code: String) -> Shader:
+	if not _shader_cache.has(code):
+		var s := Shader.new()
+		s.code = code
+		_shader_cache[code] = s
+	return _shader_cache[code]
+
+
 # 离屏图：盖住最大的画幅（跟着动画时每帧的画幅可能不一样大）
 func _build() -> void:
 	for n in [_vp, _blur_vp, _disp]:
@@ -568,9 +711,7 @@ func _build() -> void:
 			l.material = m
 		elif role >= 2:
 			var fm := ShaderMaterial.new()
-			var fs := Shader.new()
-			fs.code = FIELD_SHADER % ("blend_mix" if role == 2 else "blend_add")
-			fm.shader = fs
+			fm.shader = _shader(FIELD_SHADER % ("blend_mix" if role == 2 else "blend_add"))
 			_setup_field(fm)
 			l.material = fm
 		_canvas.add_child(l)
@@ -589,9 +730,7 @@ func _build() -> void:
 	bsp.texture = _vp.get_texture()
 	bsp.scale = Vector2(bs) / Vector2(vsz)
 	_blur_mat = ShaderMaterial.new()
-	var bsh := Shader.new()
-	bsh.code = BLUR_SHADER
-	_blur_mat.shader = bsh
+	_blur_mat.shader = _shader(BLUR_SHADER)
 	var so := maxf(0.05, sg / k)
 	var spc := maxf(1.0, so / 2.0)
 	_blur_mat.set_shader_parameter("src_tex", bsp.texture)
@@ -608,9 +747,7 @@ func _build() -> void:
 	_disp.texture = _vp.get_texture()
 	_disp.region_enabled = true
 	_disp_mat = ShaderMaterial.new()
-	var sh := Shader.new()
-	sh.code = BLOOM_SHADER % (["blend_premul_alpha", ADD_OUT] if additive else ["blend_mix", MIX_OUT])
-	_disp_mat.shader = sh
+	_disp_mat.shader = _shader(BLOOM_SHADER % (["blend_premul_alpha", ADD_OUT] if additive else ["blend_mix", MIX_OUT]))
 	_disp_mat.set_shader_parameter("blur_tex", _blur_vp.get_texture())
 	_disp.material = _disp_mat
 	_disp.visible = false
@@ -682,7 +819,8 @@ func _all_keys() -> Array:
 
 
 func _caching() -> bool:
-	return cache_frames and not smooth_motion and not Engine.is_editor_hint()
+	# headless (a server): nothing is drawn, nothing to keep
+	return cache_frames and not smooth_motion and not Engine.is_editor_hint() and DisplayServer.get_name() != "headless"
 
 
 # 清掉记下来的帧（运行时改了参数之后调用）
@@ -715,8 +853,11 @@ func _process(delta: float) -> void:
 			_blur_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
 			if _busy >= 0:
 				# 记下画好的这一帧
-				if _caching():
-					_cache[_busy] = [ImageTexture.create_from_image(_vp.get_texture().get_image()), ImageTexture.create_from_image(_blur_vp.get_texture().get_image())]
+				# (nothing to read back without a renderer, e.g. a headless server: not cached)
+				var im := _vp.get_texture().get_image() if _caching() else null
+				var bl := _blur_vp.get_texture().get_image() if im else null
+				if im and bl:
+					_cache[_busy] = [ImageTexture.create_from_image(im), ImageTexture.create_from_image(bl)]
 					if _cur == _busy:
 						_apply(_cache[_busy][0], _cache[_busy][1])
 				_busy = -1
@@ -761,7 +902,7 @@ func _draw_layer(cv: CanvasItem, role: int) -> void:
 	_cv = cv
 	_role = role
 	_pass_light = role == 1
-	if role >= 2 and kind < 7:
+	if role >= 2 and not _has_field():
 		return  # 只有噪声画的特效用这两层
 	_px = 1.0 / maxf(0.0001, absf(cv.get_global_transform_with_canvas().get_scale().x))
 	if _draw_key == -1:
@@ -788,6 +929,11 @@ func _draw_layer(cv: CanvasItem, role: int) -> void:
 		RenderingServer.canvas_item_add_triangle_array(cv.get_canvas_item(), _ai, _ap, _ac)
 	elif role == 0 and not _bi.is_empty():
 		RenderingServer.canvas_item_add_triangle_array(cv.get_canvas_item(), _bi, _bp, _bc)
+
+
+# 噪声层有没有东西：噪声画的特效、云朵，和魔法阵的能量爆发、幽魂光环
+func _has_field() -> bool:
+	return kind >= 7 or (kind == 6 and (pattern == 4 or pattern == 8))
 
 
 # 攒起来的三角形（点按当前的变换算好）
@@ -865,11 +1011,16 @@ func _draw_effect(w: float, h: float, t: float) -> void:
 		3: _k_heal()
 		4: _k_ribbon()
 		5: _k_wings()
-		6: _k_circle()
+		6:
+			if pattern >= 4:
+				_k_ground()
+			else:
+				_k_circle()
 		7: _k_aura()
 		8: _k_burn()
 		9: _k_explosion()
 		10: _k_dust()
+		11: pass  # 云朵：整个在噪声层里画
 	_gmul = 1.0
 	_accents()
 
@@ -1509,6 +1660,184 @@ func _tongue(base: Vector2, wb: float, h: float, sway: float, a: float, flame: C
 			_tri(idx, pts, cols)
 
 
+# 地面光环共用的：出现、淡出、透视、圆心
+func _gframe() -> Dictionary:
+	var t := _t
+	return {
+		"reveal": 1.0 if loop else _ease_out(t / 0.3, 2.0),
+		"env": 1.0 if loop else 1.0 - _smooth(0.75, 1.0, t),
+		"kx": squash if side_view else 1.0,
+		"k": 1.0 if side_view else squash,
+		"o": Vector2(_cx, _cy if side_view else _gy),
+	}
+
+
+# 魔法阵的地面光环（与编辑器 vfx/kinds/auras.js 相同）：能量爆发、圣光、旋风、星辉、幽魂、箭阵
+# 能量爆发的能量云、幽魂光环的烟在噪声层里画（_ground_field）；这里是线条、光圈、光点
+func _k_ground() -> void:
+	var t := _t
+	var R := _R
+	var G := _gframe()
+	var env: float = G.env
+	var kx: float = G.kx
+	var k: float = G.k
+	var o: Vector2 = G.o
+	var a: float = env * G.reveal
+	var lw := maxf(0.8, R * 0.02)
+	var px := 1.0 if soft_light else 1.7
+	var to := func(x: float, y: float, rot: float) -> Vector2:
+		return o + Vector2((x * cos(rot) - y * sin(rot)) * kx, (x * sin(rot) + y * cos(rot)) * k)
+	var circ := func(r: float) -> PackedVector2Array:
+		var pts := PackedVector2Array()
+		for i in 97:
+			var q := TAU * i / 96.0
+			pts.append(o + Vector2(cos(q) * r * kx, sin(q) * r * k))
+		return pts
+	# 线条：[[折线...], 颜色, 宽度, 透明度]，最后一起画（普通盖上去，带一层淡淡的光晕）
+	var lines := []
+	_add = true
+	# 地上的一片淡光（像素风格时没有）
+	var pool := func(r: float, al: float) -> void:
+		if soft_light:
+			_blob(o, r, [[0.0, rim_color, al], [0.75, rim_color, al * 0.5], [1.0, rim_color, 0.0]], Vector2(kx, k))
+	# 从地上半径 rr 以内升起、左右摇摆的光点（每遍整数个来回）
+	var P := Rand.new(random_seed * 53 + 11)
+	var motes := func(n: int, rr: float, rise: float, wd: float) -> void:
+		for i in n:
+			var th := P.next() * TAU
+			var r := sqrt(P.next()) * rr
+			var ph := P.next()
+			var sp := 1.0 + floorf(P.next() * 2.0)
+			var sw := P.next() * TAU
+			var p := fposmod(ph + t * sp, 1.0)
+			var b: Vector2 = to.call(cos(th) * r, sin(th) * r, 0.0)
+			var path := func(q: float) -> Vector2:
+				return b + Vector2(R * 0.05 * sin(sw + q * TAU), -rise * q)
+			_comet(path, p, 0.25, maxf(0.6, R * 0.013 * wd) * px, sin(PI * p) * a, rim_color, core_color)
+	match pattern:
+		4:  # 能量爆发
+			pool.call(R * 0.95, 0.08 * a)
+			motes.call(int(round(10.0 * amount)), R * 0.9, R * 0.8, 1.0)
+		5:  # 圣光光环：柔和的光圈里转着一圈符文
+			pool.call(R * 0.9, 0.14 * a)
+			_ring(o, R * 0.86, R * 0.13, k, rim_color, 0.45 * a, kx)
+			_ring(o, R * 0.86, R * 0.04, k, core_color, 0.6 * a, kx)
+			# 16 个符文，两种交替，每遍转两个符文
+			var Gr := Rand.new(random_seed * 37 + 9)
+			var glyphs := []
+			for gi in 2:
+				var strokes := []
+				for si in 3:
+					strokes.append([Gr.next(), Gr.next(), Gr.next(), Gr.next()])
+				glyphs.append(strokes)
+			var band := R * 0.13
+			var rot := TAU / 8.0 * t * (1.0 if loop else 0.6)
+			var runes := []
+			for n in 16:
+				var rn := rot + n * TAU / 16.0
+				for st in glyphs[n % 2]:
+					runes.append(PackedVector2Array([to.call((st[0] - 0.5) * band, (st[1] - 0.5) * band - R * 0.86, rn), to.call((st[2] - 0.5) * band, (st[3] - 0.5) * band - R * 0.86, rn)]))
+			lines.append([runes, core_color, lw * 0.7, a])
+			lines.append([[circ.call(R * 0.98), circ.call(R * 0.74)], rim_color, lw * 0.7, a])
+			# 整个光圈一呼一吸：每遍两次
+			_ring(o, R * 0.5, R * 0.45, k, rim_color, (0.08 + 0.06 * sin(TAU * t * 2.0)) * a, kx)
+			motes.call(int(round(12.0 * amount)), R * 0.85, R * 1.1, 0.8)
+		6:  # 旋风光环：三道光追着绕圈
+			pool.call(R * 0.85, 0.1 * a)
+			_ring(o, R * 0.8, R * 0.2, k, rim_color, 0.22 * a, kx)
+			for j in 3:
+				for sp in [[0.84, 2.3, 2.6, 1.0], [0.64, 1.6, 1.8, 0.8]]:
+					var dir := 1.0 if sp[0] > 0.7 else -1.0
+					var head: float = TAU * (t / 3.0 + j / 3.0) * dir
+					var pts := PackedVector2Array()
+					for i in 29:
+						var q: float = head - dir * sp[1] * (1.0 - i / 28.0)
+						pts.append(o + Vector2(cos(q) * R * sp[0] * kx, sin(q) * R * sp[0] * k))
+					_trail(pts, lw * sp[2] * px, a * sp[3], true, rim_color, core_color)
+			# 被卷着一起转的尘
+			var D := Rand.new(random_seed * 61 + 3)
+			for i in int(round(18.0 * amount)):
+				var th0 := D.next() * TAU
+				var rr := R * (0.55 + 0.4 * D.next())
+				var ph := D.next()
+				var p := fposmod(ph + t, 1.0)
+				var up := R * 0.25 * D.next()
+				var path := func(q: float) -> Vector2:
+					return o + Vector2(cos(th0 + q * 2.2) * rr * kx, sin(th0 + q * 2.2) * rr * k - up * q)
+				_comet(path, p, 0.3, maxf(0.5, R * 0.01) * px, a * sin(PI * p) * 0.8, rim_color, core_color)
+		7:  # 星辉光环：地上生出的四角星，一闪一闪往上飘
+			pool.call(R * 0.9, 0.12 * a)
+			_ring(o, R * 0.9, R * 0.06, k, core_color, 0.35 * a, kx)
+			_ring(o, R * 0.9, R * 0.2, k, rim_color, 0.15 * a, kx)
+			lines.append([[circ.call(R * 0.9)], rim_color, lw * 0.6, a * 0.8])
+			var S := Rand.new(random_seed * 83 + 7)
+			for i in int(round(22.0 * maxf(0.3, amount))):
+				var th := S.next() * TAU
+				var r := sqrt(S.next()) * R * 0.88
+				var ph := S.next()
+				var sp := 1.0 + floorf(S.next() * 2.0)
+				var sz := 0.5 + S.next()
+				var p := fposmod(ph + t * sp, 1.0)
+				var tw := sin(PI * p) * (0.6 + 0.4 * sin(TAU * (p * 3.0 + ph)))
+				var at := o + Vector2(cos(th) * r * kx, sin(th) * r * k - R * 0.7 * p)
+				var s := maxf(2.0, R * 0.1 * sz) * px
+				for th2 in [0.0, PI / 2.0, PI, PI * 1.5]:
+					_spike(at, th2, s, s * 0.16, core_color, rim_color, a * tw)
+				_blob(at, s * 0.5, [[0.0, core_color, a * tw], [1.0, rim_color, 0.0]])
+		8:  # 幽魂光环：烟在噪声层；一道内圈，往上卷的魂丝
+			lines.append([[circ.call(R * 0.6)], rim_color, lw * 0.6, a * 0.7])
+			var Wr := Rand.new(random_seed * 97 + 13)
+			for i in int(round(9.0 * maxf(0.3, amount))):
+				var th := Wr.next() * TAU
+				var r := R * (0.7 + 0.25 * Wr.next())
+				var ph := Wr.next()
+				var sw := Wr.next() * TAU
+				var hh := R * (0.6 + 0.6 * Wr.next())
+				var p := fposmod(ph + t, 1.0)
+				var b := o + Vector2(cos(th) * r * kx, sin(th) * r * k)
+				var path := func(q: float) -> Vector2:
+					return b + Vector2(R * 0.12 * sin(sw + q * TAU * 1.5) * q, -hh * q)
+				_comet(path, p, 0.45, maxf(0.8, R * 0.025) * px, a * sin(PI * p) * 0.7, rim_color, core_color)
+		_:  # 箭阵光环：八列箭头一步步往外走
+			pool.call(R * 0.8, 0.1 * a)
+			lines.append([[circ.call(R * 0.98), circ.call(R * 0.42)], rim_color, lw * 0.8, a])
+			var s := R * 0.08
+			for i in 8:
+				var rot := i * TAU / 8.0
+				for j in 3:
+					var q := fposmod(j / 3.0 + t, 1.0)
+					var r := R * (0.45 + 0.48 * q)
+					lines.append([[PackedVector2Array([to.call(-s, -r + s * 0.7, rot), to.call(0.0, -r - s * 0.3, rot), to.call(s, -r + s * 0.7, rot)])], core_color, lw * 1.1, a * sin(PI * q)])
+			_ring(o, R * 0.98, R * 0.08, k, rim_color, 0.3 * a, kx)
+			motes.call(int(round(8.0 * amount)), R * 0.9, R * 0.7, 1.0)
+	# 线条：淡淡的光晕、一层宽的暗边、亮线（和魔法阵一样）
+	_add = false
+	if _ok() and not lines.is_empty():
+		var glow_a := minf(1.0, env * (0.9 if soft_light else 0.35) * glow)
+		var nrms := []
+		for L in lines:
+			var arr := []
+			for pl in L[0]:
+				arr.append(_normals(pl))
+			nrms.append(arr)
+		for ps in [[R * 0.12, 0.10], [R * 0.06, 0.16]]:
+			for li in lines.size():
+				var L: Array = lines[li]
+				for pi in (L[0] as Array).size():
+					_line_n(L[0][pi], nrms[li][pi], _col(rim_color, ps[1] * L[3] * glow_a), L[2] + ps[0])
+		for li in lines.size():
+			var L: Array = lines[li]
+			for pi in (L[0] as Array).size():
+				_line_n(L[0][pi], nrms[li][pi], _col(rim_color, 0.25 * L[3] * env), L[2] * 3.4)
+		for li in lines.size():
+			var L: Array = lines[li]
+			for pi in (L[0] as Array).size():
+				_line_n(L[0][pi], nrms[li][pi], _col(L[1], L[3] * env), L[2])
+	_add = true
+	if edge_effect == 1:
+		_fire_edge(o, R, kx, k, a)
+
+
 # ---------- 噪声画出来的特效：环绕光、燃烧、爆炸、烟尘（形状在 FIELD_SHADER 里逐像素算） ----------
 
 # 这一帧噪声层要画什么：设好 shader 参数，画一块覆盖范围的四边形（UV = 画幅像素坐标）
@@ -1525,6 +1854,12 @@ func _field_pass() -> void:
 	m.set_shader_parameter("gmul", 1.0)
 	m.set_shader_parameter("dark", not additive)
 	match kind:
+		6:  # 魔法阵的地面光环：能量爆发的能量云、幽魂光环的烟（叠加）
+			if not mix_pass:
+				_ground_field(m)
+		11:  # 云朵（普通盖上去）
+			if mix_pass:
+				_cloud_field(m)
 		7:  # 环绕光
 			if mix_pass:
 				return
@@ -1541,6 +1876,7 @@ func _field_pass() -> void:
 				return
 			var L := _burn_layout()
 			m.set_shader_parameter("mode", 1)
+			m.set_shader_parameter("root_w", root_width)
 			m.set_shader_parameter("cx", L.cx)
 			m.set_shader_parameter("cy", L.by)
 			m.set_shader_parameter("rx", L.rx)
@@ -1624,11 +1960,12 @@ func _volume(m: ShaderMaterial, blobs: Array, cell: float, drift: Vector2, rough
 	for b in blobs:
 		lo = lo.min(Vector2(b.x - b.z, b.y - b.z))
 		hi = hi.max(Vector2(b.x + b.z, b.y + b.z))
-	while blobs.size() < 48:
+	var nb := mini(64, blobs.size())
+	while blobs.size() < 64:
 		blobs.append(Vector4(0, 0, 0, 0))
 	m.set_shader_parameter("mode", 4)
-	m.set_shader_parameter("nb", mini(48, blobs.size()))
-	m.set_shader_parameter("blobs", PackedVector4Array(blobs.slice(0, 48)))
+	m.set_shader_parameter("nb", nb)
+	m.set_shader_parameter("blobs", PackedVector4Array(blobs.slice(0, 64)))
 	m.set_shader_parameter("cell", cell)
 	m.set_shader_parameter("drift", drift)
 	m.set_shader_parameter("rough", rough)
@@ -1637,6 +1974,179 @@ func _volume(m: ShaderMaterial, blobs: Array, cell: float, drift: Vector2, rough
 	m.set_shader_parameter("thr", thr)
 	m.set_shader_parameter("fade", fade)
 	m.set_shader_parameter("vcolor", color_mode)
+	_field_quad(lo.x, lo.y, hi.x, hi.y)
+
+
+# 能量爆发的能量云、幽魂光环的烟（和编辑器一样的随机数）
+func _ground_field(m: ShaderMaterial) -> void:
+	var t := _t
+	var R := _R
+	var G := _gframe()
+	var o: Vector2 = G.o
+	var kx: float = G.kx
+	var k: float = G.k
+	m.set_shader_parameter("cx", o.x)
+	m.set_shader_parameter("cy", o.y)
+	m.set_shader_parameter("gr", R)
+	m.set_shader_parameter("gkx", kx)
+	m.set_shader_parameter("gk", k)
+	m.set_shader_parameter("env", G.env)
+	m.set_shader_parameter("rev", G.reveal)
+	m.set_shader_parameter("c_rim", rim_color)
+	m.set_shader_parameter("c_core", core_color)
+	var c0: Color = colors[0]
+	if pattern == 8:
+		m.set_shader_parameter("mode", 6)
+		m.set_shader_parameter("c_deep", rim_color.lerp(c0.lerp(Color8(58, 56, 60), 0.75), 0.5))
+		_field_quad(o.x - R * 1.05 * kx, o.y - R * 1.05 * k, o.x + R * 1.05 * kx, o.y + R * 1.05 * k)
+		return
+	if pattern != 4:
+		return
+	# 每团能量云：从中心附近小而热地冒出来，滚出去时变大、冷却成深色、变淡，后面再跟一团（循环时每遍整数次；不循环时一起涌出去）
+	var C := Rand.new(random_seed * 89 + 7)
+	var M := int(round(44.0 * maxf(0.4, amount)))
+	var ea := []
+	var eb := []
+	var lo := Vector2(_w, _h)
+	var hi := Vector2.ZERO
+	for i in M:
+		var th := (i + C.next() * 0.8) / M * TAU
+		var ph := C.next()
+		var sp := 1.0 + floorf(C.next() * 2.0)
+		var far := 0.72 + 0.32 * C.next()
+		var sz := 0.7 + 0.6 * C.next()
+		var p := fposmod(ph + t * sp, 1.0) if loop else clampf((t - ph * 0.25) / 0.75, 0.0, 1.0)
+		var s := _smooth(0.04, 0.32, p) * (1.0 - _smooth(0.6, 1.0, p)) * (1.0 if loop else 1.0 - _smooth(0.8, 1.0, t))
+		if s <= 0.01 or ea.size() >= 240:
+			continue
+		var r := R * far * (0.06 + 0.94 * _ease_out(p, 1.7))
+		var rb := R * (0.16 + 0.3 * p) * sz
+		# 贴着地面（地面越扁越扁），稍微鼓起来一点
+		var rx := rb * (maxf(0.5, kx) if side_view else 1.0)
+		var ry := rb * (1.0 if side_view else maxf(0.5, k))
+		var at := o + Vector2(cos(th) * r * kx, sin(th) * r * k - ry * 0.3)
+		ea.append(Vector4(at.x, at.y, rx, ry))
+		eb.append(Vector4(s, _smooth(0.12, 0.35, p) * (1.0 - _smooth(0.45, 0.95, p)), 0.0, 0.0))
+		lo = lo.min(at - Vector2(rx, ry))
+		hi = hi.max(at + Vector2(rx, ry))
+	if ea.is_empty():
+		return
+	var n := ea.size()
+	while ea.size() < 240:
+		ea.append(Vector4(0, 0, 1, 1))
+		eb.append(Vector4(0, 0, 0, 0))
+	m.set_shader_parameter("mode", 5)
+	m.set_shader_parameter("ne", n)
+	m.set_shader_parameter("ea", PackedVector4Array(ea))
+	m.set_shader_parameter("eb", PackedVector4Array(eb))
+	m.set_shader_parameter("haze", minf(1.0, 0.7 * glow))
+	m.set_shader_parameter("c_deep", rim_color.lerp(c0, 0.6))
+	_field_quad(lo.x, lo.y, hi.x, hi.y)
+
+
+# 云朵（与编辑器 vfx/kinds/cloud.js 相同，同样的随机数）：不规则的积云。每朵云的轮廓是几个宽窄高低不一的鼓包，
+# 有时旁边飘着一两块扯下来的碎云；云团翻滚、一涨一缩、边缘涌动（每遍整数次），可以横向飘动
+func _cloud_field(m: ShaderMaterial) -> void:
+	var t := _t
+	var w := _w
+	var h := _h
+	var env := 1.0 if loop else _smooth(0.0, 0.15, t) * (1.0 - _smooth(0.75, 1.0, t))
+	if env <= 0.01:
+		return
+	var P := Rand.new(random_seed * 97 + 5)
+	var n := clampi(int(round(amount * (0.7 + 0.85 * w / h))), 1, 10)
+	var Hmax := h * 0.8 * maxf(0.2, size)
+	var draws := []
+	var pf := []
+	var lo := Vector2(w, h)
+	var hi := Vector2.ZERO
+	for i in n:
+		# 多大、多宽、多浓
+		var big := 1.0 if n == 1 else P.next()
+		var H := maxf(6.0, Hmax * (0.3 + 0.7 * pow(big, 1.5)))
+		var W := minf(w * (0.95 if n == 1 else 0.75), H * (1.8 + 2.4 * P.next()))
+		var dn := 0.35 + 0.65 * P.next()
+		# 在哪：沿宽度分散开，云底在放得下的任意高度
+		var x0 := 0.5 if n == 1 else (i + 0.15 + 0.7 * P.next()) / n
+		var by := (h + H) / 2.0 if n == 1 else H + 2.0 + (h - 4.0 - H) * P.next()
+		# 轮廓：宽窄高低不一的鼓包，最高的到 H，往两边收
+		var humps := []
+		for j in 4 + int(floor(P.next() * 4.0)):
+			humps.append([(P.next() - 0.5) * 0.85, 0.08 + 0.16 * P.next(), 1.0 if j == 0 else 0.3 + 0.6 * P.next()])
+		var top := func(u: float) -> float:
+			var v := 0.0
+			for hp in humps:
+				var e: float = (u - hp[0]) / hp[1]
+				v = maxf(v, hp[2] * exp(-e * e))
+			return H * maxf(0.22, v) * sqrt(maxf(0.0, 1.0 - pow(2.0 * u, 4.0)))
+		# 云团：一列列排开（互相重叠），大小不一：一个堆到轮廓的，够大时上面冒一两个小的（菜花），中间一个，底下一个填到云底
+		var K := maxi(3, mini(int(round(3.0 + 4.0 * W / H)), int(floor((240.0 / n - 6.0) / 5.0))))
+		var gap := W / K
+		var puffs := []
+		for k in K:
+			var u := ((k + 0.5) / K - 0.5) * 0.9 + (P.next() - 0.5) * 0.8 / K
+			var tp := maxf(H * 0.2, top.call(u))
+			var r := maxf(gap * 0.55, tp * (0.18 + 0.32 * P.next()))
+			var y := minf(-r * 0.5, -tp + r)
+			puffs.append([u * W, y, r, P.next(), 1.0 + floorf(P.next() * 2.0)])
+			var nbub := 1 + int(floor(P.next() * 2.0)) if r > H * 0.15 else 0
+			for j in nbub:
+				var an := -PI / 2.0 + (P.next() - 0.5) * 2.2
+				var r2 := r * (0.38 + 0.2 * P.next())
+				puffs.append([u * W + cos(an) * r * 0.78, y + sin(an) * r * 0.78, r2, P.next(), 1.0 + floorf(P.next() * 2.0)])
+			var rm := tp * (0.2 + 0.12 * P.next())
+			puffs.append([u * W + (P.next() - 0.5) * gap * 0.8, minf(-rm * 0.6, -tp * (0.35 + 0.35 * P.next())), rm, P.next(), 1.0 + floorf(P.next() * 2.0)])
+			var rb := maxf(gap * 0.75, tp * (0.3 + 0.15 * P.next()))
+			var yb := minf(-rb * 0.45, -rb * 0.7 - maxf(0.0, tp - 2.0 * rb) * 0.5 * P.next())
+			puffs.append([u * W, yb, rb, P.next(), 1.0 + floorf(P.next() * 2.0)])
+		# 有时旁边飘着一两块扯下来的碎云
+		var scraps := 1 + int(floor(P.next() * 2.0)) if P.next() < 0.6 else 0
+		for j in scraps:
+			var su := (-1.0 if P.next() < 0.5 else 1.0) * (0.5 + 0.1 * P.next())
+			var sr := H * (0.1 + 0.1 * P.next())
+			var sy := -H * (0.15 + 0.35 * P.next())
+			for q in 3:
+				puffs.append([su * W + (P.next() - 0.5) * sr * 2.5, sy + (P.next() - 0.5) * sr * 0.8, sr * (0.6 + 0.5 * P.next()), P.next(), 1.0 + floorf(P.next() * 2.0)])
+		var E := W * 0.62 + H * 0.5
+		var ph := P.next()
+		# 云团翻滚、一涨一缩（每遍整数次）
+		var first := pf.size()
+		for q in puffs:
+			var an: float = TAU * (t * q[4] + q[3])
+			pf.append(Vector4(q[0] + cos(an) * q[2] * 0.06, q[1] + sin(an) * q[2] * 0.04, q[2] * (1.0 + 0.06 * sin(an)), 0.0))
+		# 这一帧在哪（横向飘动、循环时从一边出去的同时从另一边进来）
+		var x: float
+		if cloud_drift and loop:
+			x = fposmod(x0 + t, 1.0) * (w + 2.0 * E) - E
+		elif cloud_drift:
+			x = x0 * w + w * 0.12 * t
+		else:
+			x = maxf(minf(W / 2.0, w / 2.0), minf(maxf(w - W / 2.0, w / 2.0), x0 * w))
+		var Y := by + sin(TAU * (t + ph)) * H * 0.025
+		for X in ([x, x - (w + 2.0 * E)] if cloud_drift and loop else [x]):
+			if X + E + H * 0.2 < 0.0 or X - E - H * 0.2 > w:
+				continue
+			draws.append(Vector4(X, Y, W, H))
+			draws.append(Vector4(env, first, puffs.size(), dn))
+			draws.append(Vector4(i, 5.0 / H, 14.0 / H, E))
+			lo = lo.min(Vector2(X - E - H * 0.2, Y - H * 1.4))
+			hi = hi.max(Vector2(X + E + H * 0.2, Y + H * 0.13 + 2.0))
+	if draws.is_empty():
+		return
+	var nd := int(draws.size() / 3.0)
+	while draws.size() < 64:
+		draws.append(Vector4(0, 0, 0, 0))
+	while pf.size() < 240:
+		pf.append(Vector4(0, 0, 1, 0))
+	var c0: Color = colors[0]
+	m.set_shader_parameter("mode", 7)
+	m.set_shader_parameter("nb", nd)
+	m.set_shader_parameter("blobs", PackedVector4Array(draws.slice(0, 64)))
+	m.set_shader_parameter("ea", PackedVector4Array(pf.slice(0, 240)))
+	m.set_shader_parameter("c_light", Color.WHITE.lerp(core_color, 0.08))
+	m.set_shader_parameter("c_body", Color8(236, 242, 252).lerp(rim_color, 0.12))
+	m.set_shader_parameter("c_shade", Color8(176, 196, 228).lerp(rim_color, 0.25))
+	m.set_shader_parameter("c_deep", Color8(132, 158, 204).lerp(c0, 0.25))
 	_field_quad(lo.x, lo.y, hi.x, hi.y)
 
 
@@ -1733,6 +2243,7 @@ func _k_burn() -> void:
 	var by: float = L.by
 	_add = true
 	var P := Rand.new(random_seed * 71 + 3)
+	var wmax := 0.45 + 0.55 * root_width
 	for k in int(round(18.0 * amount)):
 		var ux := (P.next() * 2.0 - 1.0) * 0.9
 		var ph := P.next()
@@ -1741,7 +2252,7 @@ func _k_burn() -> void:
 		var big := P.next()
 		var p := fposmod(ph + t * sp, 1.0)
 		var path := func(q: float) -> Vector2:
-			return Vector2(cx + ux * rx * (1.0 + 0.4 * q) + sin(sw + q * TAU) * rx * 0.12, by - ry * (0.3 + 2.0 * q))
+			return Vector2(cx + ux * rx * (root_width + (wmax - root_width + 0.4) * q) + sin(sw + q * TAU) * rx * 0.12 * wmax, by - ry * (0.3 + 2.0 * q))
 		_comet(path, p, 0.14, maxf(0.8, rx * (0.012 + 0.018 * big)) * (1.0 if soft_light else 1.6), sin(PI * p) * (1.0 - p * 0.4), rim_color, core_color)
 
 

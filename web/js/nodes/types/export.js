@@ -19,8 +19,8 @@ async function run(ctx, label, fn) {
 }
 
 const actions = {
-  gif: (ctx, matte) => run(ctx, "GIF", (v, p) => {
-    const blob = exportGif(v, { ...p, gifMatte: matte || null });
+  gif: (ctx, matte) => run(ctx, "GIF", async (v, p) => {
+    const blob = await exportGif(v, { ...p, gifMatte: matte || null });
     downloadBlob(blob, (p.name || "animation") + ".gif");
     ctx.toast("已生成 " + v.frames.length + " 帧的 GIF（" + fmtBytes(blob.size) + "）" + (matte ? "，底色 " + matte : "") + "。", "ok");
   }),
@@ -83,8 +83,10 @@ function sheetDialog(ctx) {
     const g = sheetGrid(n, params());
     num.value = g.cols;
     const s = outputSize(ctx.params(), v);
-    info.textContent = "共 " + n + " 帧 → " + g.cols + " 列 × " + g.rows + " 行" + (g.cols * g.rows > n ? "（最后一行空 " + (g.cols * g.rows - n) + " 格）" : "") + "，单帧 " + s.w + "×" + s.h + "，整图 " + s.w * g.cols + "×" + s.h * g.rows;
-    const r = renderSheet(v, params());
+    info.textContent = "共 " + n + " 帧 → " + g.cols + " 列 × " + g.rows + " 行" + (g.cols * g.rows > n ? "（最后一行空 " + (g.cols * g.rows - n) + " 格）" : "") + "，单帧 " + s.w + "×" + s.h + "，整图 " + s.w * g.cols + "×" + s.h * g.rows +
+      // (browsers can't make a picture much over 16 000 px a side)
+      (Math.max(s.w * g.cols, s.h * g.rows) > 16384 ? "。⚠ 整图太大，浏览器可能画不出来：改成「接近正方形」，或者在「输出单帧尺寸」里缩小" : "");
+    const r = renderSheet(v, params(), 2048);
     pv.width = r.sheet.width; pv.height = r.sheet.height;
     pv.getContext("2d").drawImage(r.sheet, 0, 0);
   };
@@ -132,7 +134,7 @@ defineNode({
         if (key === lastKey) return;
         lastKey = key;
         // the sheet preview is the real export layout, so what you see is what you get
-        stage.show(renderSheet(v, p).sheet);
+        stage.show(renderSheet(v, p, 2048).sheet);
       },
     };
   },

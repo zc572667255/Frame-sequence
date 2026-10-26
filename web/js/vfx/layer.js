@@ -80,7 +80,7 @@ export function vfxRegion(s, frameIds, fi, ctx) {
 
 // where a region's canvas goes: whole pixels, so pixel art stays on the grid
 export function vfxRect(r) {
-  const w = Math.max(4, Math.min(1024, Math.round(r.w))), h = Math.max(4, Math.min(1024, Math.round(r.h)));
+  const w = Math.max(4, Math.min(2048, Math.round(r.w))), h = Math.max(4, Math.min(1024, Math.round(r.h)));
   return { x: Math.round(r.x - w / 2), y: Math.round(r.y - h / 2), w, h };
 }
 
@@ -127,7 +127,9 @@ export function vfxCanvas(s, i, w, h, draft = false) {
 // draw them without waiting. Without workers it all falls back to rendering
 // here when a frame is drawn.
 
-let worker = null; // null: not started yet; false: not available
+// A few workers, taking the frames in turn: the heavy kinds (clouds, fire,
+// smoke) render on several cores at once.
+let worker = null; // null: not started yet; false: not available; else { postMessage } over the pool
 let nextId = 1;
 const asked = new Map();   // key -> Promise of the frame
 const replies = new Map(); // message id -> { key, resolve }
@@ -136,8 +138,10 @@ const readyFns = new Set();
 function getWorker() {
   if (worker === null) {
     try {
-      worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
-      worker.onmessage = (e) => {
+      const n = Math.max(1, Math.min(4, ((typeof navigator !== "undefined" && navigator.hardwareConcurrency) || 2) - 1));
+      const pool = Array.from({ length: n }, () => new Worker(new URL("./worker.js", import.meta.url), { type: "module" }));
+      let turn = 0;
+      const onReply = (e) => {
         const { id, bmp } = e.data, r = replies.get(id);
         if (!r) return;
         replies.delete(id);
@@ -150,11 +154,15 @@ function getWorker() {
         r.resolve(bmp || null);
       };
       // a worker that can't start (an old browser): everything renders here
-      worker.onerror = () => {
+      const onFail = () => {
+        if (worker === false) return;
         worker = false;
+        for (const wk of pool) wk.terminate();
         for (const r of replies.values()) { asked.delete(r.key); r.resolve(null); }
         replies.clear();
       };
+      for (const wk of pool) { wk.onmessage = onReply; wk.onerror = onFail; }
+      worker = { postMessage: (m) => pool[turn++ % n].postMessage(m) };
     } catch { worker = false; }
   }
   return worker || null;
@@ -213,7 +221,7 @@ export function vfxFrameReady(layers, frameIds, fi, ctx) {
 // one frame of an effect as a canvas, rendered in the background when it can
 // be (the 特效 card's frames: other cards draw on them, so canvases)
 export async function renderVfxAsync(p, i) {
-  const look = lookOf(p), w = Math.max(8, Math.min(1024, p.w | 0)), h = Math.max(8, Math.min(1024, p.h | 0));
+  const look = lookOf(p), w = Math.max(8, Math.min(2048, p.w | 0)), h = Math.max(8, Math.min(1024, p.h | 0));
   const bmp = await vfxPrefetch({ ...look }, i, w, h);
   if (!bmp) return renderVfx({ ...look, w, h }, i);
   const c = createCanvas(w, h);

@@ -529,7 +529,8 @@ details.f-section[open] > summary::before { content: "▾ "; }
 
 /* ---------- menus ---------- */
 .menu {
-  position: fixed; z-index: 1000;
+  /* over the full-screen editors (1200) and dialogs (1500), under the toasts */
+  position: fixed; z-index: 1700;
   min-width: 200px; max-width: 320px;
   padding: 5px;
   background: var(--panel); border: 1px solid var(--line-strong); border-radius: 10px;

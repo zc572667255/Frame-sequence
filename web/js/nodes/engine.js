@@ -65,16 +65,31 @@ export class Engine extends Emitter {
     }
   }
 
+  // the cards a card draws on without a connection (a 场景's items): def.refs(params)
+  refsOf(card) {
+    const def = nodeType(card.type);
+    return def && def.refs ? def.refs(card.params || {}).filter((id) => id !== card.id && this.store.cards[id]) : [];
+  }
+
+  // does anything take this card's output?
+  isUsed(id) {
+    const edges = this.store.edges;
+    for (const k in edges) if (edges[k].from.card === id) return true;
+    return false;
+  }
+
   topoOrder() {
     const cards = this.store.cards, edges = this.store.edges;
     const indeg = new Map(), out = new Map();
     for (const id in cards) { indeg.set(id, 0); out.set(id, []); }
-    for (const k in edges) {
-      const e = edges[k];
-      if (!indeg.has(e.from.card) || !indeg.has(e.to.card)) continue;
-      indeg.set(e.to.card, indeg.get(e.to.card) + 1);
-      out.get(e.from.card).push(e.to.card);
-    }
+    const link = (from, to) => {
+      if (!indeg.has(from) || !indeg.has(to)) return;
+      indeg.set(to, indeg.get(to) + 1);
+      out.get(from).push(to);
+    };
+    for (const k in edges) link(edges[k].from.card, edges[k].to.card);
+    // what a card refers to is worked out before it, like an input
+    for (const id in cards) for (const r of this.refsOf(cards[id])) link(r, id);
     const queue = [...indeg].filter(([, d]) => d === 0).map(([id]) => id);
     const order = [];
     while (queue.length) {
@@ -85,7 +100,9 @@ export class Engine extends Emitter {
         if (indeg.get(n) === 0) queue.push(n);
       }
     }
-    return order; // cycles are refused at connect time, so nothing is left over
+    // cycles are refused at connect time; one through references (which can't
+    // be refused there) leaves its cards out here rather than hanging
+    return order;
   }
 
   async pass() {
@@ -106,6 +123,14 @@ export class Engine extends Emitter {
         inputs[inp.name] = v;
         parts.push(v ? v.ver : "-");
       }
+      // what it refers to (their outputs' versions), and, for a card that only
+      // works when something takes its output (def.whenUsed), whether anything does
+      for (const r of this.refsOf(card)) {
+        const rr = this.results.get(r);
+        parts.push(r + "@" + (rr && rr.outputs ? Object.values(rr.outputs).map((o) => (o ? o.ver : "-")).join(",") : "-"));
+      }
+      const used = def.whenUsed ? this.isUsed(id) : true;
+      if (def.whenUsed) parts.push(used ? "used" : "unused");
       const key = parts.join("|");
       const prev = this.results.get(id);
       if (prev && prev.key === key && !prev.busy) continue;
@@ -149,7 +174,7 @@ export class Engine extends Emitter {
       let res;
       const t0 = performance.now();
       try {
-        const r = (await def.evaluate(card.params, inputs, this.ctx())) || {};
+        const r = (await def.evaluate(card.params, inputs, { ...this.ctx(), id, used })) || {};
         const outputs = r.outputs || {};
         for (const k in outputs) if (outputs[k]) outputs[k].ver = ++this.verSeq;
         res = { key, outputs, info: r.info || null, view: r.view || null, error: null, ms: performance.now() - t0 };
@@ -169,6 +194,8 @@ export class Engine extends Emitter {
     return {
       projectId: store.projectId,
       asset: (aid) => getAssetCanvas(store.projectId, aid),
+      // for a card reading other cards' results (refs)
+      store, engine: this,
     };
   }
 }

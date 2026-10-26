@@ -1,0 +1,62 @@
+{
+  "id": "fantasy_village",
+  "name": "魔幻村庄",
+  "source": "SOURCE.md",
+  "sprites": [
+    { "id": "house_workshop", "name": "锻造屋", "group": "建筑", "file": "sprites/house_workshop.png" },
+    { "id": "house_home", "name": "民居", "group": "建筑", "file": "sprites/house_home.png" },
+    { "id": "shrine_amber", "name": "魔法祭坛", "group": "建筑", "file": "sprites/shrine_amber.png" },
+    { "id": "tree_old", "name": "古树", "group": "植物", "file": "sprites/tree_old.png" },
+    { "id": "shrub", "name": "灌木", "group": "植物", "file": "sprites/shrub.png" },
+    { "id": "lantern_post", "name": "灯柱", "group": "装饰", "file": "sprites/lantern_post.png" },
+    { "id": "fence_segment", "name": "木栅栏", "group": "装饰", "file": "sprites/fence_segment.png" },
+    { "id": "banner_red", "name": "旗帜", "group": "装饰", "file": "sprites/banner_red.png" },
+    { "id": "well", "name": "水井", "group": "建筑", "file": "sprites/well.png", "w": 82 },
+    { "id": "flowers", "name": "野花", "group": "植物", "file": "sprites/flowers.png", "w": 28 },
+    { "id": "rune_stone", "name": "符文石", "group": "装饰", "file": "sprites/rune_stone.png", "w": 53 },
+    { "id": "lantern_hanging", "name": "吊灯", "group": "装饰", "file": "sprites/lantern_hanging.png", "w": 46 },
+    { "id": "signpost", "name": "路标", "group": "装饰", "file": "sprites/signpost.png", "w": 56 },
+    { "id": "notice_board", "name": "告示板", "group": "装饰", "file": "sprites/notice_board.png", "w": 68 },
+    { "id": "bench", "name": "长凳", "group": "装饰", "file": "sprites/bench.png", "w": 42 },
+    { "id": "barrel", "name": "木桶", "group": "道具", "file": "sprites/barrel.png", "w": 26 },
+    { "id": "crate", "name": "木箱", "group": "道具", "file": "sprites/crate.png", "w": 31 },
+    { "id": "sacks", "name": "麻袋", "group": "道具", "file": "sprites/sacks.png", "w": 32 },
+    { "id": "hay_bale", "name": "草垛", "group": "道具", "file": "sprites/hay_bale.png", "w": 44 },
+    { "id": "chest", "name": "宝箱", "group": "道具", "file": "sprites/chest.png", "w": 31 },
+    { "id": "pots", "name": "陶罐", "group": "道具", "file": "sprites/pots.png", "w": 35 },
+    { "id": "cart", "name": "手推车", "group": "道具", "file": "sprites/cart.png", "w": 63 },
+    { "id": "logs", "name": "原木堆", "group": "道具", "file": "sprites/logs.png", "w": 34 },
+    { "id": "baskets", "name": "藤筐", "group": "道具", "file": "sprites/baskets.png", "w": 33 },
+    { "id": "floating_ruin", "name": "浮空遗迹", "group": "远景", "file": "sprites/floating_ruin.png" },
+    { "id": "mountain_ridge", "name": "远山", "group": "远景", "file": "sprites/mountain_ridge.png" }
+
+  ],
+  "tiles": {
+    "size": 16,
+    "materials": [
+      { "id": "sand", "name": "沙地", "files": ["tiles/sand_00.png", "tiles/sand_01.png", "tiles/sand_02.png", "tiles/sand_03.png"] },
+      { "id": "grass", "name": "草地", "files": ["tiles/grass_00.png", "tiles/grass_01.png", "tiles/grass_02.png", "tiles/grass_03.png"] },
+      { "id": "soil", "name": "泥土", "files": ["tiles/soil_00.png", "tiles/soil_01.png", "tiles/soil_02.png", "tiles/soil_03.png"] },
+      { "id": "stone", "name": "石面", "files": ["tiles/stone_00.png", "tiles/stone_01.png", "tiles/stone_02.png", "tiles/stone_03.png"] }
+    ],
+    "grassTop": "tiles/grass_top_overlay_x_only.png"
+  },
+  "scene": {
+    "name": "魔幻村庄",
+    "w": 960, "h": 540, "bg": "#96c4e8",
+    "ground": { "material": "sand", "y": 405, "scale": 3 },
+    "items": [
+      { "sprite": "mountain_ridge", "x": 480, "y": 405, "w": 948 },
+      { "sprite": "floating_ruin", "x": 717, "y": 189, "w": 166 },
+      { "ground": true },
+      { "sprite": "tree_old", "x": 132, "y": 405, "w": 264 },
+      { "sprite": "house_workshop", "x": 354, "y": 405, "w": 313 },
+      { "sprite": "banner_red", "x": 522, "y": 405, "w": 41 },
+      { "sprite": "shrub", "x": 567, "y": 405, "w": 55 },
+      { "sprite": "shrine_amber", "x": 610, "y": 405, "w": 83 },
+      { "sprite": "lantern_post", "x": 655, "y": 405, "w": 26 },
+      { "sprite": "fence_segment", "x": 694, "y": 405, "w": 83 },
+      { "sprite": "house_home", "x": 847, "y": 405, "w": 225 }
+    ]
+  }
+}

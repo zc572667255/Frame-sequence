@@ -300,3 +300,71 @@
 .trail-thumb.vfx-thumb { aspect-ratio: 1; }
 .tl-cel.ghost.has i { background: var(--k-same); border-color: var(--k-same); box-shadow: 0 0 0 2px color-mix(in srgb, var(--k-same) 35%, transparent); }
 .tm-brush-pv { width: 120px; height: 28px; border-radius: 5px; border: 1px solid var(--line-strong); background: #000; image-rendering: pixelated; }
+
+/* 场景编辑器 (scene/editor.js) */
+.scene-editor .sc-left, .scene-editor .sc-right { width: 236px; }
+.sc-lib { display: flex; flex-direction: column; gap: 4px; }
+.sc-lib-item {
+  display: grid; grid-template-columns: 40px 1fr; grid-template-rows: auto auto; column-gap: 8px; align-items: center;
+  padding: 5px 6px; border: 1px solid transparent; border-radius: 8px; background: var(--panel-2);
+  color: var(--text); text-align: left; cursor: grab;
+}
+.sc-lib-item:hover { border-color: var(--accent); }
+.sc-lib-item.empty { opacity: 0.5; cursor: default; }
+.sc-thumb { grid-row: 1 / 3; width: 40px; height: 40px; border-radius: 5px; image-rendering: pixelated; background-color: #8e8f97;
+  background-image: linear-gradient(45deg, #a9aab2 25%, transparent 25%, transparent 75%, #a9aab2 75%), linear-gradient(45deg, #a9aab2 25%, transparent 25%, transparent 75%, #a9aab2 75%);
+  background-size: 10px 10px; background-position: 0 0, 5px 5px; }
+.sc-lib-name { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc-lib-kind { font-size: 10.5px; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc-stage .ed-canvas { cursor: default; }
+.sc-bg-row { display: flex; align-items: center; gap: 8px; margin: 4px 0 8px; }
+.sc-color { width: 44px; height: 26px; padding: 0 2px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--panel-2); }
+
+.sc-tl { position: relative; overflow: hidden; min-width: 100%; font-size: 12px; user-select: none; }
+.sc-row { display: grid; grid-template-columns: 130px 1fr; align-items: center; height: 26px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.sc-row:hover { background: var(--panel-3); }
+.sc-row.on { background: var(--accent-soft); }
+.sc-row-name { padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-dim); }
+.sc-row.on .sc-row-name { color: var(--text); }
+.sc-row-head { display: flex; align-items: center; min-width: 0; height: 100%; }
+.sc-row-head .sc-row-name { flex: 1; min-width: 0; }
+.sc-row-del { flex: none; width: 20px; height: 20px; margin-right: 4px; padding: 0; border: 0; border-radius: 4px; background: none; color: var(--text-dim); font-size: 15px; line-height: 20px; cursor: pointer; opacity: 0.45; }
+.sc-row:hover .sc-row-del, .sc-row.on .sc-row-del { opacity: 1; }
+.sc-row-del:hover { background: rgba(255, 107, 107, 0.15); color: var(--danger); }
+.sc-track { position: relative; height: 100%; margin-right: 10px; }
+.sc-ruler-row { height: 22px; cursor: default; background: var(--panel); position: sticky; top: 0; z-index: 2; }
+.sc-ruler-row:hover { background: var(--panel); }
+.sc-ruler { position: absolute; inset: 0; cursor: pointer; }
+.sc-tick { position: absolute; top: 4px; font-size: 10px; color: var(--text-faint); transform: translateX(-1px); padding-left: 2px; border-left: 1px solid var(--line-strong); line-height: 12px; }
+.sc-head { position: absolute; top: 0; height: 2000px; width: 2px; margin-left: -1px; background: #ffd25c; pointer-events: none; z-index: 3; }
+.sc-bar {
+  position: absolute; top: 5px; bottom: 5px; min-width: 4px; border-radius: 4px; cursor: ew-resize;
+  background: var(--accent); opacity: 0.85;
+}
+.sc-bar.loop { background: repeating-linear-gradient(135deg, var(--accent) 0 8px, color-mix(in srgb, var(--accent) 65%, #fff) 8px 16px); }
+.sc-bar.still { background: #3fc1b0; }
+.sc-bar.off { opacity: 0.3; }
+.sc-bar.missing { background: #6b6e78; }
+.sc-empty { padding: 6px 10px; }
+
+/* 预设素材 (scene/presets.js) */
+.sc-pack { margin-bottom: 14px; }
+.sc-pgroup { margin-bottom: 8px; }
+.sc-pgroup-name { font-size: 10.5px; color: var(--text-faint); margin: 2px 0 4px; }
+.sc-preset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(58px, 1fr)); gap: 4px; }
+.sc-preset {
+  display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 2px 3px;
+  border: 1px solid transparent; border-radius: 7px; background: var(--panel-2); color: var(--text-dim); cursor: grab; font-size: 11px;
+}
+.sc-preset:hover { border-color: var(--accent); color: var(--text); }
+.sc-preset img { width: 48px; height: 40px; object-fit: contain; pointer-events: none; }
+.sc-preset.tile { cursor: pointer; }
+.sc-preset.tile img { width: 32px; height: 32px; image-rendering: pixelated; border-radius: 3px; }
+.sc-pack .ed-check { margin-top: 4px; }
+
+/* restacking a scene's items by dragging their rows */
+.sc-row-name { cursor: grab; }
+.sc-row.dragging { opacity: 0.55; }
+.sc-row.drop-above { box-shadow: inset 0 2px 0 var(--accent); }
+.sc-row.drop-below { box-shadow: inset 0 -2px 0 var(--accent); }
+.sc-ruler-row .sc-row-name { cursor: default; }

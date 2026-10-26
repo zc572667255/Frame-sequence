@@ -29,6 +29,7 @@ import { aura, auraBody } from "./kinds/aura.js";
 import { ribbon } from "./kinds/ribbon.js";
 import { wings } from "./kinds/wings.js";
 import { burn } from "./kinds/burn.js";
+import { cloud, cloudColors } from "./kinds/cloud.js";
 
 // kinds: name, what it is for, and the settings it starts with
 export const VFX_KINDS = [
@@ -40,7 +41,8 @@ export const VFX_KINDS = [
   { id: "circle", name: "魔法阵", help: "旋转的法阵：圆环、符文、星形，向上飘的光点；侧面是竖起来侧对着的法阵，像一道传送门", defaults: { palette: "crescent", frames: 16, loop: true, size: 80 }, side: true },
   { id: "heal", name: "治疗光圈", help: "脚下的光圈和升起的光柱、十字光点", defaults: { palette: "venom", frames: 12, loop: true, size: 80 } },
   { id: "aura", name: "环绕光", help: "超级赛亚人那样包住角色的斗气：向上舔动的光焰、中间透明、上升的光束和火花，可加闪电", defaults: { palette: "radiant", frames: 8, loop: true, size: 95, pad: 20 }, around: true, fit: auraBody },
-  { id: "burn", name: "燃烧", help: "从区域底部烧起来的火焰，火舌摇动，火星上飘", defaults: { palette: "blaze", frames: 8, loop: true, size: 95 } },
+  { id: "burn", name: "燃烧", help: "从区域底部烧起来的火焰，火舌摇动，火星上飘；「根部宽度」调小就像火把上的火焰", defaults: { palette: "blaze", frames: 8, loop: true, size: 95 } },
+  { id: "cloud", name: "云朵", help: "不规则的积云：轮廓坑坑洼洼、高低不一、底边不平，有时旁边飘着扯下来的碎云；一团团菜花状的云堆，左上受光发白，褶皱和平平的云底是蓝灰色的阴影，边缘半透明地化开、带一圈淡淡的雾气。每朵云的形状、大小、浓淡都随机（「换一个随机样子」换一批）；粒子越多、画幅越宽，云越多，宽画幅就是一整片天际线。云团会翻滚起伏，默认横向飘动（循环时每朵正好飘过一圈：帧数越多飘得越慢）", defaults: { palette: "frost", frames: 48, loop: true, size: 90, acc: "none", w: 384, h: 160, drift: true } },
   { id: "ribbon", name: "流光", help: "柔和流动的光带：几束细丝交织起伏、扭转，带闪烁的光尘", defaults: { palette: "dream", frames: 16, loop: true, size: 95 } },
   { id: "wings", name: "翅膀", help: "光做的翅膀，重神不重形：一扇从肩部放出的发光笔触、淡淡的光幕，光沿笔触流向翼尖，翼尖飘落光点；循环时扇动一次，不循环时展开后散成光点。正面是一对，侧面是向后展开的近翼和后面的远翼", defaults: { palette: "radiant", frames: 16, loop: true, size: 95 }, side: true },
 ];
@@ -58,6 +60,8 @@ export const VFX_DEFAULTS = {
   pattern: "hex", // 魔法阵: "hex" 六芒星 | "penta" 五芒星 | "square" 双方形 | "taiji" 太极八卦 | 光环（kinds/auras.js GROUND_AURAS）
   edge: "auto",  // 魔法阵: what plays round the rim — "auto" (the palette's element) | "none" | "fire" 火焰 | "earth" 岩石 | "wind" 风刃 | "water" 水波 | "bolt" 闪电
   bolts: false,  // 环绕光: lightning crawling over it
+  root: 100,     // 燃烧: 根部宽度, % of the fire's width (small: a torch's flame)
+  drift: false,  // 云朵: 横向飘动 (once across the box a loop)
   view: "front", // "front" 正面 | "side" 侧面, for the kinds that have one (hasSide)
   rotate: 0,     // degrees, the whole effect turned about its centre
   acc: "auto",  // 光效点缀 (vfx/accents.js): "auto" the trail preset's mix | "none" | "custom" (acc_<id>, 0..100)
@@ -72,15 +76,15 @@ export const VFX_PALETTES = GLOW_PRESETS.map((p) => [p.id, p.name]);
 // 魔法阵: what can play round its rim (circleEdge); "auto" takes the palette's element
 export const VFX_EDGES = [["auto", "自动（按配色）"], ["none", "无"], ["fire", "火焰"], ["earth", "岩石"], ["wind", "风刃"], ["water", "水波"], ["bolt", "闪电"]];
 
-const EFFECTS = { hit, explosion, shock, dust, charge, circle, heal, aura, ribbon, wings, burn };
+const EFFECTS = { hit, explosion, shock, dust, charge, circle, heal, aura, ribbon, wings, burn, cloud };
 
 // how much bloom each kind gets on top of what it draws itself
-const BLOOM = { hit: 1, shock: 0.8, charge: 1, heal: 0.7, circle: 0, explosion: 0.7, dust: 0, aura: 0.9, burn: 0.9, ribbon: 1, wings: 1 };
+const BLOOM = { hit: 1, shock: 0.8, charge: 1, heal: 0.7, circle: 0, explosion: 0.7, dust: 0, aura: 0.9, burn: 0.9, ribbon: 1, wings: 1, cloud: 0 };
 
 // one frame: a w×h canvas
 export function renderVfx(p, i) {
   const s = { ...VFX_DEFAULTS, ...p };
-  const w = Math.max(8, Math.min(1024, s.w | 0)), h = Math.max(8, Math.min(1024, s.h | 0));
+  const w = Math.max(8, Math.min(2048, s.w | 0)), h = Math.max(8, Math.min(1024, s.h | 0));
   const n = Math.max(1, Math.min(64, s.frames | 0));
   // a loop runs 0 → (n − 1) / n so the last frame leads into the first; a
   // one-shot samples the middle of each frame's slot, so it starts just after
@@ -98,6 +102,7 @@ export function renderVfx(p, i) {
     gy: s.kind === "dust" ? h * 0.85 : ground ? h / 2 + R * squash * 0.5 : h / 2,
     squash: s.kind === "shock" && s.tilt <= 2 ? 1 : squash,
     amount: Math.max(0, s.amount / 100), glow: Math.max(0, s.glow / 100), loop: !!s.loop, pattern: s.pattern, edge: s.edge || "auto",
+    root: Math.max(0.1, Math.min(1, (s.root ?? 100) / 100)), drift: !!s.drift,
     pixel: s.style === "pixel", px: Math.max(1, Math.min(8, s.pxSize | 0 || 1)), bolts: !!s.bolts, view: hasSide(s.kind) ? s.view : "front",
   };
   // what stands on the ground sits low, its ring just inside the bottom edge
@@ -143,7 +148,11 @@ export function renderVfx(p, i) {
   out = fadeEdges(out);
   if (s.style !== "pixel") return out;
   // pixel art: blocks on the preset's palette (smoke and dust shades added)
-  const st = { glowColors: pal.preset.colors, glowCore: pal.preset.core, glowRim: pal.preset.rim, glowSplat: pal.preset.splat, tailTint: 1, glowTail: toHex(pal.smoke) };
+  // (clouds snap to their own whites and shades, not to the glow's colours)
+  const cc = s.kind === "cloud" ? cloudColors(pal) : null;
+  const st = cc
+    ? { glowColors: [cc.deep, cc.shade, cc.body, cc.light].map(toHex), glowCore: toHex(cc.light), glowRim: toHex(cc.body), glowSplat: toHex(cc.light), tailTint: 1, glowTail: toHex(cc.shade) }
+    : { glowColors: pal.preset.colors, glowCore: pal.preset.core, glowRim: pal.preset.rim, glowSplat: pal.preset.splat, tailTint: 1, glowTail: toHex(pal.smoke) };
   return pixelateGlow(out, st, { size: s.pxSize, alpha: s.pxAlpha });
 }
 

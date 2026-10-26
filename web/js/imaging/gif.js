@@ -1,6 +1,6 @@
 // Animated GIF: per-frame quantization + a GIF89a encoder (local colour table per
 // frame, LZW).
-import { medianCut, nearestIndexIn } from "./color.js";
+import { medianCut } from "./color.js";
 
 // Returns { width, height, indices: Uint8Array, palette: [[r,g,b],...], transparentIndex: number|null }
 export function quantizeFrame(imageData) {
@@ -39,8 +39,31 @@ export function quantizeFrame(imageData) {
     const colors = uniqueKeys.map((k) => [(k >> 16) & 255, (k >> 8) & 255, k & 255]);
     const counts = uniqueKeys.map((k) => colorCount.get(k));
     paletteColors = medianCut(colors, counts, maxOpaque);
+    // nearest (color.js nearestIndexIn, the same "redmean" distance and the
+    // same first-found on a tie), unrolled over flat arrays: it runs for every
+    // distinct colour against every palette entry
+    // The palette is gone through by green, outwards from the colour's own:
+    // the distance is at least 4·dg², so once that alone is past the best so
+    // far, nothing further out can win (an equal one wins only with a lower
+    // index — the same answer as going through it all in order).
+    const P = paletteColors.length, order = [...paletteColors.keys()].sort((a, b) => paletteColors[a][1] - paletteColors[b][1]);
+    const pr = new Float64Array(P), pg = new Float64Array(P), pb = new Float64Array(P), pj = new Int32Array(P);
+    order.forEach((j, o) => { pr[o] = paletteColors[j][0]; pg[o] = paletteColors[j][1]; pb[o] = paletteColors[j][2]; pj[o] = j; });
     for (let i = 0; i < uniqueKeys.length; i++) {
-      colorToIndex.set(uniqueKeys[i], nearestIndexIn(colors[i], paletteColors));
+      const c = colors[i], r = c[0], g = c[1], b = c[2];
+      let lo = 0, hi = P;
+      while (lo < hi) { const m = (lo + hi) >> 1; if (pg[m] < g) lo = m + 1; else hi = m; }
+      let bi = 0, bd = Infinity;
+      const at = (o) => {
+        const rmean = (r + pr[o]) / 2, dr = r - pr[o], dg = g - pg[o], db = b - pb[o];
+        const d = (2 + rmean / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rmean) / 256) * db * db;
+        if (d < bd || (d === bd && pj[o] < bi)) { bd = d; bi = pj[o]; }
+      };
+      for (let up = lo, dn = lo - 1; up < P || dn >= 0;) {
+        if (up < P) { const dg = pg[up] - g; if (4 * dg * dg > bd) up = P; else at(up++); }
+        if (dn >= 0) { const dg = g - pg[dn]; if (4 * dg * dg > bd) dn = -1; else at(dn--); }
+      }
+      colorToIndex.set(uniqueKeys[i], bi);
     }
   }
 

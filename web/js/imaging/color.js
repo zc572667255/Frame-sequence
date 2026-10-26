@@ -110,27 +110,37 @@ export function medianCut(colors, counts, k) {
     }
     return [mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]];
   };
-  const boxes = [colors.map((c, i) => ({ c, n: counts[i] }))];
+  // each box with its range, worked out once when it is made (not again for
+  // every box on every split: with tens of thousands of colours that was
+  // nearly all the time)
+  const boxOf = (items) => {
+    const r = items.length < 2 ? null : rangeOf(items);
+    return { items, r, ch: r ? (r[0] >= r[1] ? (r[0] >= r[2] ? 0 : 2) : (r[1] >= r[2] ? 1 : 2)) : 0 };
+  };
+  const boxes = [boxOf(colors.map((c, i) => ({ c, n: counts[i] })))];
   while (boxes.length < k) {
     let bi = -1, bestR = -1, bestCh = 0;
     for (let i = 0; i < boxes.length; i++) {
-      if (boxes[i].length < 2) continue;
-      const r = rangeOf(boxes[i]);
-      const ch = r[0] >= r[1] ? (r[0] >= r[2] ? 0 : 2) : (r[1] >= r[2] ? 1 : 2);
-      if (r[ch] > bestR) { bestR = r[ch]; bi = i; bestCh = ch; }
+      const b = boxes[i];
+      if (!b.r) continue;
+      if (b.r[b.ch] > bestR) { bestR = b.r[b.ch]; bi = i; bestCh = b.ch; }
     }
     if (bi < 0) break;
-    const box = boxes[bi];
-    box.sort((a, b) => a.c[bestCh] - b.c[bestCh]);
+    // sorted along that channel: by counting (values are 0..255), stable —
+    // the same order a stable sort gives, without its cost on big boxes
+    const items = boxes[bi].items, cnt = new Int32Array(257), box = new Array(items.length);
+    for (const e of items) cnt[e.c[bestCh] + 1]++;
+    for (let v = 0; v < 256; v++) cnt[v + 1] += cnt[v];
+    for (const e of items) box[cnt[e.c[bestCh]]++] = e;
     let tot = 0; for (const e of box) tot += e.n;
     let acc = 0, cut = 1;
     for (let i = 0; i < box.length; i++) {
       acc += box[i].n;
       if (acc >= tot / 2) { cut = Math.min(Math.max(i, 1), box.length - 1); break; }
     }
-    boxes.splice(bi, 1, box.slice(0, cut), box.slice(cut));
+    boxes.splice(bi, 1, boxOf(box.slice(0, cut)), boxOf(box.slice(cut)));
   }
-  return boxes.filter((b) => b.length).map((box) => {
+  return boxes.map((b) => b.items).filter((b) => b.length).map((box) => {
     let sr = 0, sg = 0, sb = 0, sn = 0;
     for (const e of box) { sr += e.c[0] * e.n; sg += e.c[1] * e.n; sb += e.c[2] * e.n; sn += e.n; }
     return [Math.round(sr / sn), Math.round(sg / sn), Math.round(sb / sn)];

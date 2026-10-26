@@ -856,6 +856,13 @@ export function removeCards(doc, ids) {
     const e = doc.board.edges[k];
     if (set.has(e.from.card) || set.has(e.to.card)) delete doc.board.edges[k];
   }
+  // a 场景's items showing a card that is gone go with it (one undo brings both back)
+  for (const k in doc.board.cards) {
+    const c = doc.board.cards[k];
+    if (c.type === "scene" && c.params && Array.isArray(c.params.items) && c.params.items.some((it) => set.has(it.card))) {
+      c.params.items = c.params.items.filter((it) => !set.has(it.card));
+    }
+  }
 }
 
 function curve(a, b) {

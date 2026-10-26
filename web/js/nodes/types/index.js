@@ -13,4 +13,5 @@ import "./recolor.js";
 import "./preview.js";
 import "./export.js";
 import "./character.js";
+import "./scene.js";
 import "./whiteboard.js";

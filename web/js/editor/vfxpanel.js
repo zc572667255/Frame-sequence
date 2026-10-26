@@ -223,7 +223,7 @@ export class VfxPanel {
     const st = Math.max(0, ids.indexOf(s.start));
     row("开始", el("span", { class: "mono" }, "第 " + (st + 1) + " 帧"),
       btn("从本帧开始", "让特效从当前帧开始", () => this.edit({ start: ids[here] }), st !== here));
-    slider("特效帧数", "frames", 2, 48, " 帧", "特效本身有几帧：越多播得越慢、越细");
+    slider("特效帧数", "frames", 2, 64, " 帧", "特效本身有几帧：越多播得越慢、越细");
     const loop = el("input", { type: "checkbox", checked: !!s.loop, onchange: () => this.edit({ loop: loop.checked }) });
     P.append(el("label", { class: "ed-check" }, loop, "循环播放（蓄力、魔法阵、治疗光圈这类持续的特效）"));
     slider("持续", "length", 0, Math.max(1, ids.length - st), " 帧", "特效在动画里出现几帧；0 = 自动（不循环：播完为止；循环：到最后一帧）",
@@ -240,6 +240,11 @@ export class VfxPanel {
     if (s.kind === "circle") {
       choose("法阵图案", "pattern", [["hex", "六芒星"], ["penta", "五芒星"], ["square", "双方形（八角）"], ["taiji", "太极八卦"], ...GROUND_AURAS]);
       choose("边缘特效", "edge", EDGES);
+    }
+    if (s.kind === "burn") slider("根部宽度", "root", 10, 100, "%", "火焰根部有多宽：100% 是整片一样宽；调小就像火把上的火焰：底部沿圆弧收拢成圆圆的底，往上鼓起再收尖");
+    if (s.kind === "cloud") {
+      const drift = el("input", { type: "checkbox", checked: !!s.drift, onchange: () => this.edit({ drift: drift.checked }) });
+      P.append(el("label", { class: "ed-check" }, drift, "横向飘动（循环时每朵云正好飘过一圈）"));
     }
     if (s.kind === "aura") {
       const bolts = el("input", { type: "checkbox", checked: !!s.bolts, onchange: () => this.edit({ bolts: bolts.checked }) });
@@ -272,7 +277,7 @@ export class VfxPanel {
     if (codeSupported(l)) {
       row("纯代码", el("div", { class: "tm-colors" },
         btn("Godot 纯代码", "不带任何图片：Godot 脚本每一帧自己把这个特效画出来（形状、随机细节、光效点缀都和这里一样），任意放大都清晰，类型、颜色、大小、速度都能在 Godot 里改；编辑器里也会动", () => this.exportCode())), el("span"));
-      P.append(el("p", { class: "ed-hint" }, "纯代码版画风是平滑的（不做像素化）；魔法阵的边缘特效目前只有火焰，光环类图案还不支持。"));
+      P.append(el("p", { class: "ed-hint" }, "纯代码版画风是平滑的（不做像素化）；魔法阵的边缘特效目前只有火焰。"));
     }
   }
 
