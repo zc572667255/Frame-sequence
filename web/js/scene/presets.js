@@ -8,7 +8,7 @@
 // (it remembers params.preset). Ground strips are drawn from the tiles, a new
 // card each.
 import { el, createCanvas, blobToCanvas } from "../core/util.js";
-import { putBlobAsset, putCanvasAsset } from "../core/assets.js";
+import { putBlobAsset, putCanvasAsset, getAssetCanvas } from "../core/assets.js";
 import { openModal } from "../ui/modal.js";
 
 const PACKS = ["fantasy_village"];
@@ -102,6 +102,56 @@ export async function groundCard(app, pack, material, tilesX, tilesY, grassTop, 
   const id = app.addCard("image", at.x, at.y, { asset, name, preset: pack.id + "/ground:" + m.id }, { size, title: name, select: false });
   await whenReady(app, id);
   return id;
+}
+
+// A whole strip of ground (pack.strips: one picture whose left and right edges
+// meet) repeated `times` across, as a 素材图 card — the same card again for the
+// same strip and count; resolves to its id
+export async function stripCard(app, pack, strip, times, nearId) {
+  const key = pack.id + "/strip:" + strip.id + ":" + times;
+  const had = Object.values(app.store.cards).find((c) => c.type === "image" && c.params && c.params.preset === key);
+  if (had) { await whenReady(app, had.id); return had.id; }
+  const img = await loadImage(pack.base + strip.file);
+  const c = createCanvas(img.width * times, img.height), g = c.getContext("2d");
+  for (let i = 0; i < times; i++) g.drawImage(img, i * img.width, 0);
+  const asset = await putCanvasAsset(app.store.projectId, c);
+  const name = "地面 · " + strip.name;
+  const size = app.imageCardSize(c.width, c.height), at = placeNear(app, nearId, size);
+  const id = app.addCard("image", at.x, at.y, { asset, name, preset: key }, { size, title: name, select: false });
+  await whenReady(app, id);
+  return id;
+}
+
+// What a ground card was made from, to make it again at another width: its
+// params.ground, or (cards from before that) read off its preset key —
+// { pack, kind: "strip" | "tiles", id, grassTop, seed } — or null.
+export function groundSpec(card) {
+  const p = (card && card.params) || {};
+  if (p.ground) return p.ground;
+  const m = /^([^/]+)\/(strip|ground):([^:]+)/.exec(p.preset || "");
+  if (!m) return null;
+  return m[2] === "strip" ? { pack: m[1], kind: "strip", id: m[3] } : { pack: m[1], kind: "tiles", id: m[3], grassTop: /草边/.test(p.name || ""), seed: 1 };
+}
+
+// that ground `width` px wide (its own pixels) and `height` tall (tiles: as
+// many rows as fit; a strip keeps its own height): a strip repeated and cut
+// where the width ends, tiles laid by the grid
+// (kind "image": any picture of the project's, spec.asset, repeated the same way)
+export async function groundOfWidth(pack, spec, width, height, projectId) {
+  if (spec.kind === "strip" || spec.kind === "image") {
+    let img;
+    if (spec.kind === "image") img = await getAssetCanvas(projectId, spec.asset);
+    else {
+      const st = (pack.strips || []).find((x) => x.id === spec.id);
+      if (!st) throw new Error("素材包里没有这种地面了");
+      img = await loadImage(pack.base + st.file);
+    }
+    const c = createCanvas(Math.max(1, Math.round(width)), img.height), g = c.getContext("2d");
+    for (let x = 0; x < c.width; x += img.width) g.drawImage(img, x, 0);
+    return c;
+  }
+  const s = pack.tiles.size;
+  return groundCanvas(pack, spec.id, Math.max(1, Math.round(width / s)), Math.max(1, Math.round(height / s)), spec.grassTop, spec.seed || 1);
 }
 
 // the scale that shows a sprite as wide as the pack's example scene does

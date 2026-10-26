@@ -16,9 +16,10 @@ import {
   ITEM_DEFAULTS, normalizeScene, placeableCards, sourceOf, sources, itemFrame, itemEnd, sceneLength,
   itemCorners, hitItem, drawScene,
 } from "./model.js";
-import { loadPacks, spriteCard, groundCard, exampleScale, askExample, whenReady } from "./presets.js";
+import { loadPacks, spriteCard, groundCard, stripCard, groundSpec, groundOfWidth, exampleScale, askExample, whenReady } from "./presets.js";
 import { VFX_KINDS, VFX_DEFAULTS } from "../vfx/effects.js";
 import { renderVfxAsync } from "../vfx/layer.js";
+import { putCanvasAsset } from "../core/assets.js";
 
 const HANDLE = 6;      // corner handle half-size, screen px
 const ROT_GAP = 26;    // the turn handle above the top edge, screen px
@@ -291,10 +292,15 @@ class SceneEditor {
             return b;
           })))),
         pack.tiles ? el("div", { class: "sc-pgroup" },
-          el("div", { class: "sc-pgroup-name" }, "地面（16×16 图块铺满舞台宽度）"),
-          el("div", { class: "sc-preset-grid" }, ...pack.tiles.materials.map((m) => el("button", {
-            class: "sc-preset tile", title: "在舞台底部铺一条" + m.name + "地面（变体随机混排）", onclick: () => this.addGround(pack, m.id, grassTop.checked),
-          }, el("img", { src: pack.base + m.files[0], alt: m.name }), el("span", null, m.name)))),
+          el("div", { class: "sc-pgroup-name" }, "地面（铺满舞台宽度）"),
+          el("div", { class: "sc-preset-grid" },
+            // whole strips first (a picture repeated across), then the 16×16 tiles
+            ...(pack.strips || []).map((st) => el("button", {
+              class: "sc-preset", title: "在舞台底部横着铺一条「" + st.name + "」（整张地面图左右无缝重复，高度随舞台）", onclick: () => this.addStrip(pack, st),
+            }, el("img", { src: pack.base + st.file, alt: st.name }), el("span", null, st.name))),
+            ...pack.tiles.materials.map((m) => el("button", {
+              class: "sc-preset tile", title: "在舞台底部铺一条" + m.name + "地面（16×16 图块，变体随机混排）", onclick: () => this.addGround(pack, m.id, grassTop.checked),
+            }, el("img", { src: pack.base + m.files[0], alt: m.name }), el("span", null, m.name)))),
           pack.tiles.grassTop ? el("label", { class: "ed-check" }, grassTop, "顶上加一道草边") : null) : null);
     }));
   }
@@ -375,6 +381,70 @@ class SceneEditor {
     let index = 0;
     while (index < items.length && far.has(((this.store.cards[items[index].card] || {}).params || {}).preset)) index++;
     this.addItem(id, { x: s.w / 2, y: s.h }, { scale: k, index });
+  }
+
+  // A ground item made another width (stage px), its height kept: its picture
+  // made again that wide (presets.js groundOfWidth) — into its own card if
+  // other layers show the same one (forkCard), into that card otherwise. fill:
+  // also put it at the bottom middle of the stage.
+  // A ground item made another width (stage px), its height kept: its picture
+  // made again that wide (presets.js groundOfWidth) — into its own card if
+  // other layers show the same one (forkCard), into that card otherwise. An
+  // imported picture (not yet a ground) always gets a 地面 card of its own made
+  // from it: the picture's card stays as it is. fill: also put it at the
+  // bottom middle of the stage.
+  async setGroundWidth(itemId, stageW, fill) {
+    const it = this.item(itemId), card = it && this.store.cards[it.card], src = it && this.srcs.get(it.card);
+    const spec = groundSpec(card) || this.pictureGround(card);
+    if (!spec || !src) return;
+    const pack = spec.kind === "image" ? null : (this.packs || []).find((p) => p.id === spec.pack);
+    if (spec.kind !== "image" && !pack) { this.app.toast("素材包还没加载好，稍后再试", "warn"); return; }
+    const k = Math.abs(it.scale || 1), width = Math.max(4, Math.round(Math.max(16, Math.min(20000, stageW || 0)) / k));
+    if (width === src.w && !fill) return;
+    const made = await this.busy("正在铺地面…", async () => {
+      const canvas = await groundOfWidth(pack, spec, width, src.h, this.store.projectId);
+      return { canvas, asset: await putCanvasAsset(this.store.projectId, canvas) };
+    });
+    if (!made) return;
+    const ground = { ...spec, width: made.canvas.width };
+    if (spec.kind === "image") {
+      const patch = { asset: made.asset, ground, preset: "" };
+      if (!groundSpec(card)) this.forkCard(itemId, { ...patch, name: "地面 · " + spec.name }, { title: "地面 · " + spec.name });
+      else if (this.sharedCard(it.card, itemId)) this.forkCard(itemId, patch);
+      else this.store.mutate((d) => { const c = d.board.cards[it.card]; if (c) Object.assign(c.params, patch); });
+    } else {
+      // its own key from now on: a new strip of the old width doesn't pick this one up
+      const patch = { asset: made.asset, ground, preset: spec.pack + "/" + (spec.kind === "strip" ? "strip" : "ground") + ":" + spec.id + ":w" + made.canvas.width };
+      if (this.sharedCard(it.card, itemId)) this.forkCard(itemId, patch);
+      else this.store.mutate((d) => { const c = d.board.cards[it.card]; if (c) Object.assign(c.params, patch); });
+    }
+    if (fill) { const s = this.scene(); this.setItem(itemId, { x: s.w / 2, y: s.h }); }
+  }
+
+  // an imported picture as a ground to repeat across: { kind: "image", asset,
+  // name } — not the presets' buildings and props (sprites), or null
+  pictureGround(card) {
+    if (!card || card.type !== "image" || !card.params || !card.params.asset) return null;
+    const pr = card.params.preset || "";
+    if (pr && !/\/(strip|ground):/.test(pr)) return null;
+    return { kind: "image", asset: card.params.asset, name: card.title || card.params.name || "图片" };
+  }
+
+  // a whole strip of ground (pack.strips) along the bottom: as tall as its
+  // share of the stage, repeated to cover its width, above the distant layers
+  async addStrip(pack, strip) {
+    const s = this.scene();
+    const id = await this.busy("正在铺地面…", async () => {
+      const img = await new Promise((ok, no) => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => no(new Error("地面图加载失败")); im.src = pack.base + strip.file; });
+      const k = +((s.h * (strip.share || 0.27)) / img.height).toFixed(4), times = Math.max(1, Math.ceil(s.w / (img.width * k)));
+      return { card: await stripCard(this.app, pack, strip, times, this.id), k };
+    });
+    if (!id) return;
+    const far = new Set(pack.sprites.filter((x) => x.group === "远景").map((x) => pack.id + "/" + x.id));
+    const items = this.scene().items;
+    let index = 0;
+    while (index < items.length && far.has(((this.store.cards[items[index].card] || {}).params || {}).preset)) index++;
+    this.addItem(id.card, { x: s.w / 2, y: s.h }, { scale: id.k, index });
   }
 
   // the pack's example scene: every piece where its preview has it
@@ -467,6 +537,22 @@ class SceneEditor {
     t.buttons(["铺满舞台", () => this.fillStage(id), { title: "放大到盖住整个舞台并放到最底层，适合背景图" }],
       ["底边居中", () => { const s = this.scene(); this.setItem(id, { x: s.w / 2, y: s.h }); }],
       ["重置变换", () => this.setItem(id, { scale: 1, rot: 0, flip: false, opacity: 100 })]);
+    // a ground (from the presets): its width on its own, the height kept
+    const isGround = !!groundSpec(this.store.cards[it.card]), asPicture = !isGround && this.pictureGround(this.store.cards[it.card]);
+    if (isGround || asPicture) {
+      const gb = isGround
+        ? section("地面", "只改宽度、高度不变：整张地面左右无缝地重复、在宽度处截断，图块地面按格子铺。")
+        : section("横向平铺（当地面用）", "把这张图当成可以左右重复的地面：改宽度时高度不变，图片横着重复、在宽度处截断（图的左右边缘能接上就看不出接缝）。第一次修改会另外生成一张「地面」卡片给这个图层，原来的图片卡片不变。");
+      const shownW = () => { const x = this.item(id), src = x && this.srcs.get(x.card); return src ? Math.round(src.w * Math.abs(x.scale || 1)) : 0; };
+      const wIn = el("input", { type: "number", class: "mono", min: 16, max: 20000, step: 10, value: shownW(),
+        onchange: () => this.setGroundWidth(id, +wIn.value), onkeydown: (e) => { if (e.key === "Enter") wIn.blur(); } });
+      f.syncers.push(() => { if (document.activeElement !== wIn) wIn.value = shownW(); });
+      gb.append(el("label", { class: "f-field wide" }, el("span", { class: "f-label" }, "宽度（舞台像素）"), wIn),
+        el("div", { class: "f-buttons" },
+          el("button", { class: "btn", title: "和舞台一样宽，并放到底边正中", onclick: () => this.setGroundWidth(id, this.scene().w, true) }, "铺满舞台宽度"),
+          el("button", { class: "btn", onclick: () => this.setGroundWidth(id, shownW() - 100) }, "−100"),
+          el("button", { class: "btn", onclick: () => this.setGroundWidth(id, shownW() + 100) }, "+100")));
+    }
     const pl = makeForm(ctx, section("播放"), { syncers: f.syncers });
     pl.number("延迟帧数（0 = 一开始就出现）", "start", { min: 0, max: 100000, wide: true });
     pl.hint(() => { const x = this.item(id); return x ? "在第 " + (x.start + 1) + " 帧出现（" + (x.start / this.scene().fps).toFixed(2) + " 秒）。" : ""; });
@@ -530,11 +616,12 @@ class SceneEditor {
   forkCard(itemId, patch, opts = {}) {
     const it = this.item(itemId), src = it && this.store.cards[it.card];
     if (!src) return null;
-    const base = src.title || nodeType(src.type).title, titles = new Set(Object.values(this.store.cards).map((c) => c.title));
-    let n = 2;
-    while (titles.has(base + " " + n)) n++;
+    // (opts.title: its title, numbered when taken)
+    const base = opts.title || src.title || nodeType(src.type).title, titles = new Set(Object.values(this.store.cards).map((c) => c.title));
+    let n = opts.title ? 1 : 2;
+    while (titles.has(n === 1 ? base : base + " " + n)) n++;
     const spot = this.app.freeSpot(src.x + src.w + 40, src.y, src.w, src.h);
-    const card = this.app.makeCard(src.type, spot.x, spot.y, JSON.parse(JSON.stringify(src.params)), { title: base + " " + n, size: { w: src.w, h: src.h } });
+    const card = this.app.makeCard(src.type, spot.x, spot.y, JSON.parse(JSON.stringify(src.params)), { title: n === 1 ? base : base + " " + n, size: { w: src.w, h: src.h } });
     if (typeof patch === "function") patch(card.params, card);
     else for (const k in patch) setPath(card.params, k, patch[k]);
     this.store.mutate((d) => {

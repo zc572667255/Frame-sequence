@@ -41,6 +41,9 @@
     ],
     "grassTop": "tiles/grass_top_overlay_x_only.png"
   },
+  "strips": [
+    { "id": "meadow_path", "name": "草地小路", "file": "tiles/meadow_path.png", "share": 0.27 }
+  ],
   "scene": {
     "name": "魔幻村庄",
     "w": 960, "h": 540, "bg": "#96c4e8",
