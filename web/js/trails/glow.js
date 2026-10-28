@@ -151,6 +151,8 @@ export function mixStyle(st) {
 //             the flash sits at the first stick, splatter flies off later ones
 //   ended, after — the swing has reached its last stick, and how many frames
 //             ago: the impact burst goes off there
+//   loop  — frames per cycle when what moves with time (the flowing body,
+//             wind, water) has to come round to where it started (0: it doesn't)
 // Returns a fullW×fullH canvas, or null when there is nothing to draw.
 export function renderGlow(runs, style, fullW, fullH, ctx = {}) {
   runs = (runs || []).filter((r) => r.length >= 2);
@@ -227,7 +229,7 @@ export function renderGlow(runs, style, fullW, fullH, ctx = {}) {
 
     // ---- flow: the textured body
     if (UV && pct("flow") > 0) {
-      F = flowLayer(UV, cols, coreC, seed, frame, alpha, tail, pct("flow"));
+      F = flowLayer(UV, cols, coreC, seed, frame, alpha, tail, pct("flow"), ctx.loop | 0);
       og.drawImage(F, 0, 0, UV.mw * UV.k, UV.mh * UV.k);
     }
 
@@ -236,7 +238,7 @@ export function renderGlow(runs, style, fullW, fullH, ctx = {}) {
     if (Rk) og.drawImage(Rk, 0, 0);
 
     // ---- wind wound round the blade: its back half goes under the blade
-    const Cw = pct("curls") > 0 ? curls(runs, w, h, coreC, rimC, seed, frame, alpha, maxW, pct("curls")) : null;
+    const Cw = pct("curls") > 0 ? curls(runs, w, h, coreC, rimC, seed, frame, alpha, maxW, pct("curls"), ctx.loop | 0) : null;
     if (Cw) { og.globalCompositeOperation = "lighter"; og.drawImage(Cw.back, 0, 0); og.globalCompositeOperation = "source-over"; }
 
     // ---- flames: tongues of fire off the blade
@@ -388,7 +390,7 @@ export function renderGlow(runs, style, fullW, fullH, ctx = {}) {
     const Sl = pct("speedLines") > 0 ? speedLines(runs, w, h, coreC, rimC, seed, frame, alpha, maxW, pct("speedLines")) : null;
     if (Sl) { og.globalCompositeOperation = "lighter"; og.drawImage(Sl, 0, 0); og.globalCompositeOperation = "source-over"; }
     // ---- caustics inside the water
-    const Ca = UV && pct("caustic") > 0 ? caustics(UV, colorAcross(cols, 0.85), seed, frame, alpha, pct("caustic")) : null;
+    const Ca = UV && pct("caustic") > 0 ? caustics(UV, colorAcross(cols, 0.85), seed, frame, alpha, pct("caustic"), ctx.loop | 0) : null;
     if (Ca) { og.globalCompositeOperation = "lighter"; og.drawImage(Ca, 0, 0, UV.mw * UV.k, UV.mh * UV.k); og.globalCompositeOperation = "source-over"; }
     // ---- saw teeth along the inner side
     const Sr = pct("serrate") > 0 ? serrate(runs, w, h, cols, coreC, seed, alpha, tail, pct("serrate")) : null;
@@ -415,7 +417,7 @@ export function renderGlow(runs, style, fullW, fullH, ctx = {}) {
 
   // erosion: as the trail dissolves, noise eats it from the thin parts inward
   // (the usual alpha-erosion of slash VFX) instead of it just turning see-through
-  if (UV && pct("tear") > 0) tear(og, UV, seed, frame, pct("tear"));
+  if (UV && pct("tear") > 0) tear(og, UV, seed, frame, pct("tear"), ctx.loop | 0);
   if (runs.length && pct("tailTint") > 0 && st.glowTail) tintTail(og, w, h, runs, hexToRgb(st.glowTail), pct("tailTint"), maxW);
   if (runs.length) erode(og, w, h, x0, y0, seed, pct("erode"), ctx.alpha ?? 1, maxW, UV);
 

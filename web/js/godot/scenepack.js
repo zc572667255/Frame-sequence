@@ -66,13 +66,13 @@ export async function exportSceneZip(app, cardId, opts) {
       const dir = "actors/" + String(++ai).padStart(2, "0") + (ascii(name) ? "_" + ascii(name) : "");
       const r = await layeredFiles(app, it.card, name, { mode: opts.mode, origin: "feet", trails: opts.trails, vfx: opts.vfx, nearest: opts.nearest, fileName: "actor", frameMs: 1000 / scene.fps }, root + "/" + dir);
       files.push(...r.files);
-      parts.set(it.card, { kind: "actor", name, scene: r.scene.slice(root.length + 1), w: r.w, h: r.h, seconds: r.durations.length / scene.fps });
+      parts.set(it.card, { kind: "actor", name, scene: r.scene.slice(root.length + 1), w: r.w, h: r.h, seconds: r.durations.length / scene.fps, n: r.durations.length });
       continue;
     }
     if (c.type === "vfx" && opts.fx === "code" && codeSupported({ vfx: c.params })) {
       // drawn by vfx_code.gd, from the card's settings
       const v = { ...VFX_DEFAULTS, ...c.params };
-      parts.set(it.card, { kind: "code", name, w: src.w, h: src.h, params: codeParamsFrom(v, src.w, src.h, scene.fps, name), seconds: src.frames.length / scene.fps });
+      parts.set(it.card, { kind: "code", name, w: src.w, h: src.h, params: codeParamsFrom(v, src.w, src.h, scene.fps, name), seconds: src.frames.length / scene.fps, n: src.frames.length });
       continue;
     }
     // anything else as one sheet, trimmed to what it ever covers
@@ -101,7 +101,7 @@ export async function exportSceneZip(app, cardId, opts) {
       kind: src.still ? "image" : "frames", name, file, w: src.w, h: src.h, box: { x: box.x0, y: box.y0, w: bw, h: bh }, cols, rows,
       // the sheet's scale (< 1: made smaller) and its cells' size
       f: cw / bw, cell: { w: cw, h: ch },
-      durations: src.frames.map(() => 1000 / scene.fps), seconds: src.frames.length / scene.fps,
+      durations: src.frames.map(() => 1000 / scene.fps), seconds: src.frames.length / scene.fps, n: src.frames.length,
     });
   }
   const items = scene.items.filter((it) => parts.get(it.card));
@@ -163,13 +163,20 @@ export async function exportSceneZip(app, cardId, opts) {
       subs.push(`[sub_resource type="SpriteFrames" id="${sf}"]\nanimations = [{\n"frames": [${frames.join(", ")}],\n"loop": ${!!it.loop},\n"name": &"default",\n"speed": ${num(fps)}\n}]`);
       nodes.push([`[node name=${str(name)} type="AnimatedSprite2D" parent="."]`, ...place, `sprite_frames = SubResource("${sf}")`, `animation = &"default"`, "centered = false", `offset = ${vec((p.box.x - anchor.x) * f, (p.box.y - anchor.y) * f)}`].filter(Boolean).join("\n"));
     }
-    const start = it.start / fps;
-    meta.push({ node: name, kind: p.kind, start, loop: !!it.loop, shown: it.visible !== false, hideAt: !it.loop && it.after === "hide" && p.kind !== "image" ? start + p.seconds : -1 });
+    // (the same rules as scene/model.js itemTime / itemLook; frames, the scene's)
+    const every = Math.max(0, it.every | 0);
+    let span = every > 0 ? every : -1;
+    if (p.kind !== "image" && !it.loop && it.after === "hide") span = span < 0 ? p.n : Math.min(span, p.n);
+    // the picture's middle from its anchor, in the node's own units (a sheet made smaller: its pixels)
+    const k2 = p.kind === "image" || p.kind === "frames" ? p.f : 1;
+    meta.push({ node: name, kind: p.kind, start: it.start, every, span, loop: !!it.loop, shown: it.visible !== false,
+      enter: it.enter || "none", enterLen: Math.max(1, it.enterLen | 0 || 6), exit: it.exit || "none", exitLen: Math.max(1, it.exitLen | 0 || 6),
+      center: [(p.w / 2 - Math.floor(p.w / 2)) * k2, (-p.h / 2) * k2] });
   });
   if (opts.camera !== false) nodes.push(`[node name="Camera2D" type="Camera2D" parent="."]\nposition = ${vec(scene.w / 2, scene.h / 2)}`);
   const tscn = [`[gd_scene load_steps=${ext.length + subs.length + 1} format=3]`, ext.join("\n"), ...subs, ...nodes].filter(Boolean).join("\n\n") + "\n";
   files.push({ name: root + "/" + root + ".tscn", data: enc.encode(tscn) });
-  files.push({ name: root + "/scene.gd", data: enc.encode(sceneScript(title, meta)) });
+  files.push({ name: root + "/scene.gd", data: enc.encode(sceneScript(title, meta, fps)) });
   if (codeScript) files.push({ name: root + "/vfx_code.gd", data: enc.encode(codeGodot(null)) });
 
   // ---- the same, engine-neutral ----
@@ -183,6 +190,7 @@ export async function exportSceneZip(app, cardId, opts) {
         node: names[k], name: it.name || p.name, kind: p.kind === "code" ? "vfx-code" : p.kind, source: p.kind === "actor" ? p.scene : p.kind === "code" ? "vfx_code.gd" : p.file,
         x: it.x, y: it.y, scale: it.scale || 1, rotation: it.rot || 0, flip: !!it.flip, opacity: (it.opacity ?? 100) / 100,
         start: it.start, startSeconds: it.start / fps, loop: !!it.loop, afterOnce: it.after, visible: it.visible !== false,
+        every: Math.max(0, it.every | 0), enter: it.enter || "none", enterFrames: Math.max(1, it.enterLen | 0 || 6), exit: it.exit || "none", exitFrames: Math.max(1, it.exitLen | 0 || 6),
         size: { w: p.w, h: p.h }, anchor: { x: Math.floor(p.w / 2), y: p.h },
         ...(p.kind === "code" ? { params: p.params } : {}),
         ...(p.kind === "actor" || p.kind === "code" ? {} : { box: p.box, sheetScale: +p.f.toFixed(4), cell: p.cell, columns: p.cols, rows: p.rows, durations: p.durations.map(Math.round) }),
@@ -191,7 +199,8 @@ export async function exportSceneZip(app, cardId, opts) {
     notes: {
       place: "每个元素以图片底边中点（anchor，向下取整）为锚点：先缩放（flip 时 x 取负），再旋转 rotation 度，锚点放在舞台的 (x, y)。",
       sheet: "图片 / 序列帧的精灵图裁到画面出现过的范围（box，原图像素）；只被缩小显示的图按它在场景里最大的显示比例预先缩小（sheetScale），每格 cell 像素，摆放时缩放要除以 sheetScale。",
-      time: "元素在第 start 帧（场景帧率）出现，按自己的帧时长播放；loop = false 时播完停在最后一帧，afterOnce = hide 时播完消失。",
+      time: "元素在第 start 帧（场景帧率）出现，每个场景帧放它自己的一帧；loop = false 时播完停在最后一帧，afterOnce = hide 时播完消失。every > 0 时从 start 起每隔 every 帧重新出现一次、从第一帧播放，每次显示到下一次出现前（播完消失的元素播完就消失）。",
+      look: "enter（fade 淡入 / grow 从小到大 / pop 弹出）在每次出现的前 enterFrames 帧，exit（fade 淡出 / shrink 缩小）在每次显示的最后 exitFrames 帧；大小以图片中心为准。第 lf 帧（从 0 数）的进度 p = min(1, (lf + 1) / enterFrames)，fade 透明度 × p，grow 大小 × 1 − (1 − p)³，pop 大小 × easeOutBack(p)；消失时 q = min(1, (显示帧数 − lf) / exitFrames)，同理。",
       actor: "kind = actor 的元素是一段分层动画，source 指向它的子场景，里面的 *_layers.json 是它的分层说明。",
     },
   };
@@ -201,14 +210,15 @@ export async function exportSceneZip(app, cardId, opts) {
 
 // the root script: every item comes in at its start time and plays; the
 // whole scene runs `length` seconds and then loops (or stops)
-function sceneScript(title, meta) {
-  const items = meta.map((m) => `\t{"node": ${str(m.node)}, "kind": ${str(m.kind)}, "start": ${num(m.start)}, "loop": ${m.loop}, "shown": ${m.shown}, "hide_at": ${num(m.hideAt)}},`).join("\n");
+function sceneScript(title, meta, fps) {
+  const items = meta.map((m) => `\t{"node": ${str(m.node)}, "kind": ${str(m.kind)}, "start": ${m.start}, "every": ${m.every}, "span": ${m.span}, "loop": ${m.loop}, "shown": ${m.shown}, "enter": ${str(m.enter)}, "enter_len": ${m.enterLen}, "exit": ${str(m.exit)}, "exit_len": ${m.exitLen}, "center": Vector2(${num(m.center[0])}, ${num(m.center[1])})},`).join("\n");
   return `# 场景 —— 由「光台 · 序列帧工作室」导出：${title}
 # Godot 4.x。舞台左上角是原点，Camera2D 对着舞台中间。
 #   动画元素是子场景（actors/ 里，单独打开也能播），图片是 Sprite2D，序列帧是 AnimatedSprite2D，
 #   纯代码特效是挂着 vfx_code.gd 的 Effect 子节点（不用图片，实时画）。
-#   play() 从头播放整个场景：每个元素到了自己的开始时间才出现并开始播放；stop() 全部停下。
-#   播到 length 秒时发出 scene_finished；loop 为真就接着从头播。
+#   play() 从头播放整个场景：每个元素到了自己的开始帧才出现并开始播放；stop() 全部停下。
+#   every > 0 的元素每隔 every 帧重新出现一次、从头播放；enter / exit 是出现、消失时的淡入淡出或缩放（以图片中心为准）。
+#   时间按场景帧率一帧一帧地算（和编辑器里一样）。播到 length 秒时发出 scene_finished；loop 为真就接着从头播。
 #   想在游戏里单独控制某个元素，直接取子节点，比如 $Hero.play() / $Hero.visible = false。
 extends Node2D
 
@@ -218,23 +228,29 @@ signal scene_finished
 @export var loop := true
 @export var length := 1.0
 
+const FPS := ${num(fps)}
 const ITEMS := [
 ${items}
 ]
 
 var _time := 0.0
 var _playing := false
-var _started := {}
+var _showing := {}  # 节点 → 现在是第几次出现
+var _base := {}  # 节点 → [位置, 缩放, 透明度]
 
 
 func _ready() -> void:
+	for it in ITEMS:
+		var n := get_node_or_null(NodePath(it.node)) as Node2D
+		if n:
+			_base[it.node] = [n.position, n.scale, n.modulate.a]
 	if autoplay:
 		play()
 
 
 func play() -> void:
 	_time = 0.0
-	_started.clear()
+	_showing.clear()
 	_playing = true
 	for it in ITEMS:
 		var n := get_node_or_null(NodePath(it.node)) as CanvasItem
@@ -267,16 +283,62 @@ func _process(delta: float) -> void:
 
 
 func _update() -> void:
+	var fi := int(floor(_time * FPS + 0.0001))
 	for it in ITEMS:
-		var n := get_node_or_null(NodePath(it.node)) as CanvasItem
+		var n := get_node_or_null(NodePath(it.node)) as Node2D
 		if n == null or not it.shown:
 			continue
-		if not _started.has(it.node) and _time >= it.start:
-			_started[it.node] = true
+		# 第几次出现、这次出现了几帧（-1：现在不显示）
+		var lf: int = fi - int(it.start)
+		var k := -1
+		if lf >= 0:
+			k = 0
+			if int(it.every) > 0:
+				k = lf / int(it.every)
+				lf -= k * int(it.every)
+			if int(it.span) >= 0 and lf >= int(it.span):
+				k = -1
+		if k < 0:
+			if n.visible:
+				n.visible = false
+				_stop_node(n, it)
+			continue
+		if _showing.get(it.node, -1) != k:
+			_showing[it.node] = k
 			n.visible = true
 			_start_node(n, it)
-		if it.hide_at >= 0.0 and _time >= it.hide_at:
-			n.visible = false
+		if it.enter != "none" or it.exit != "none":
+			_look(n, it, lf)
+
+
+# 出现、消失时的样子：透明度和大小（以图片中心为准）
+func _look(n: Node2D, it: Dictionary, lf: int) -> void:
+	var a := 1.0
+	var s := 1.0
+	if it.enter != "none":
+		var p := minf(1.0, float(lf + 1) / maxf(1.0, float(it.enter_len)))
+		match it.enter:
+			"fade":
+				a *= p
+			"grow":
+				s *= 1.0 - pow(1.0 - p, 3.0)
+			"pop":
+				var c := 1.70158
+				var q := p - 1.0
+				s *= 1.0 + (c + 1.0) * q * q * q + c * q * q
+	if it.exit != "none" and int(it.span) >= 0:
+		var q := minf(1.0, float(int(it.span) - lf) / maxf(1.0, float(it.exit_len)))
+		match it.exit:
+			"fade":
+				a *= q
+			"shrink":
+				s *= 1.0 - pow(1.0 - q, 3.0)
+	s = maxf(0.001, s)
+	var b: Array = _base[it.node]
+	var sc: Vector2 = b[1]
+	n.scale = sc * s
+	n.position = (b[0] as Vector2) + (sc * (it.center as Vector2)).rotated(n.rotation) * (1.0 - s)
+	n.modulate.a = float(b[2]) * a
 
 
 func _start_node(n: Node, it: Dictionary) -> void:

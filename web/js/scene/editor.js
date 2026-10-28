@@ -13,7 +13,7 @@ import { makeForm } from "../ui/form.js";
 import { dockSplit } from "../ui/dock.js";
 import { showMenu } from "../ui/menu.js";
 import {
-  ITEM_DEFAULTS, normalizeScene, placeableCards, sourceOf, sources, itemFrame, itemEnd, sceneLength,
+  ITEM_DEFAULTS, ENTERS, EXITS, normalizeScene, placeableCards, sourceOf, sources, itemFrame, itemEnd, sceneLength,
   itemCorners, hitItem, drawScene,
 } from "./model.js";
 import { loadPacks, spriteCard, groundCard, stripCard, groundSpec, groundOfWidth, exampleScale, askExample, whenReady } from "./presets.js";
@@ -558,6 +558,17 @@ class SceneEditor {
     pl.hint(() => { const x = this.item(id); return x ? "在第 " + (x.start + 1) + " 帧出现（" + (x.start / this.scene().fps).toFixed(2) + " 秒）。" : ""; });
     pl.check("循环播放", "loop");
     pl.select("不循环时播完后", "after", [["hold", "停在最后一帧"], ["hide", "消失"]], { wide: true });
+    // again and again, coming in and going out
+    pl.number("重复出现：每隔几帧出现一次（0 = 只出现一次）", "every", { min: 0, max: 100000, wide: true });
+    pl.hint(() => {
+      const x = this.item(id);
+      if (!x || !(x.every > 0)) return "";
+      return "第 " + (x.start + 1) + " 帧起每隔 " + x.every + " 帧（" + (x.every / this.scene().fps).toFixed(2) + " 秒）出现一次，每次从第一帧播放；" +
+        (x.loop ? "循环的元素每次显示到下一次出现前。" : x.after === "hide" ? "每次播完就消失。" : "每次播完停在最后一帧，直到下一次。");
+    });
+    pl.pair((s) => s.select("出现效果", "enter", ENTERS), (s) => s.number("帧数", "enterLen", { min: 1, max: 600 }));
+    pl.pair((s) => s.select("消失效果", "exit", EXITS), (s) => s.number("帧数", "exitLen", { min: 1, max: 600 }));
+    pl.hint("放大缩小都以图片中心为准。消失效果在每次显示的最后几帧：只出现一次又一直显示的元素没有「最后」，看不到消失效果——设了「重复出现」或「播完消失」才有。");
     pl.check("显示", "visible");
     const order = section("层级与操作");
     order.append(el("div", { class: "f-buttons" },
@@ -694,7 +705,20 @@ class SceneEditor {
       r.bar.style.left = pct(it.start);
       r.bar.style.width = pct(Math.max(0.5, end - it.start));
       r.bar.className = "sc-bar" + (src && !src.still && it.loop ? " loop" : "") + (src && src.still ? " still" : "") + (it.visible === false ? " off" : "") + (src ? "" : " missing");
-      r.bar.title = "第 " + (it.start + 1) + " 帧出现" + (end < n ? "，播到第 " + end + " 帧" : "") + "；左右拖动改出现时间";
+      const every = Math.max(0, it.every | 0);
+      r.bar.title = "第 " + (it.start + 1) + " 帧出现" + (end < n ? "，到第 " + end + " 帧" : "") + (every ? "，每隔 " + every + " 帧再出现" : "") + "；左右拖动改出现时间";
+      // its later showings (repeating), fainter: they follow the first
+      const later = [];
+      if (every > 0 && src) for (let st = it.start + every; st < n && later.length < 400; st += every) later.push(st);
+      r.ghosts = r.ghosts || [];
+      while (r.ghosts.length > later.length) r.ghosts.pop().remove();
+      while (r.ghosts.length < later.length) { const gh = el("div", { class: "sc-bar ghost" }); r.bar.parentElement.append(gh); r.ghosts.push(gh); }
+      later.forEach((st, j) => {
+        const gh = r.ghosts[j];
+        gh.className = r.bar.className + " ghost";
+        gh.style.left = pct(st);
+        gh.style.width = pct(Math.max(0.5, Math.min(n, st + (end - it.start)) - st));
+      });
       r.name.textContent = it.name || (card && card.title) || "元素";
       r.name.title = card ? card.title || "" : "卡片已删除";
       r.row.classList.toggle("on", it.id === this.sel);

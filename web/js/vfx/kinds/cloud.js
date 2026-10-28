@@ -1,9 +1,12 @@
 import { rng, smooth } from "../../trails/glow/util.js";
 import { TAU, frac, mixRgb, field, fieldScale, loopNoise } from "../common.js";
 
-// 云朵: anime cumulus over a sky — billowing heaps of round lobes, white where
-// the light from the upper left falls on each lobe, cooling to blue-grey in
-// the creases and under the flat base; edges frayed by noise. Every cloud is
+// 云朵: cumulus as in a photo — heaps of lobes with billows on billows (two
+// layers of a noise folded into round heaps, lit like bumps), lit by how much
+// cloud lies between a point and the sun (upper left): white on the side
+// facing it, a soft grey-blue on the far side, inside and under the base;
+// each lobe lit on its own upper left too (the heaps show, one on another);
+// edges frayed by noise. Every cloud is
 // made up from the seed: a tall tower, a long low bank or a small puff, its
 // own outline (a few humps of different height), size and density (thin ones
 // let the sky through). As many as the 粒子 and the width ask for — a wide box
@@ -15,11 +18,12 @@ import { TAU, frac, mixRgb, field, fieldScale, loopNoise } from "../common.js";
 
 // the cloud's own colours (also what 像素 snaps to): light, body, shade, deep
 export function cloudColors(pal) {
+  // a real cloud's shadows are a soft grey with the sky in them, not a strong blue
   return {
-    light: mixRgb([255, 255, 255], pal.core, 0.08),
-    body: mixRgb([236, 242, 252], pal.rim, 0.12),
-    shade: mixRgb([176, 196, 228], pal.rim, 0.25),
-    deep: mixRgb([132, 158, 204], pal.cols[0] || pal.rim, 0.25),
+    light: mixRgb([255, 255, 255], pal.core, 0.05),
+    body: mixRgb([241, 244, 249], pal.rim, 0.08),
+    shade: mixRgb([203, 212, 226], pal.rim, 0.14),
+    deep: mixRgb([150, 164, 188], pal.cols[0] || pal.rim, 0.14),
   };
 }
 
@@ -36,7 +40,10 @@ export function cloudLayout(c) {
     const big = n === 1 ? 1 : P();
     const H = Math.max(6, Hmax * (0.3 + 0.7 * Math.pow(big, 1.5)));
     const W = Math.min(w * (n === 1 ? 0.95 : 0.75), H * (1.8 + 2.4 * P()));
-    const dn = 0.35 + 0.65 * P();
+    // mostly solid; now and then a small thin one the sky shows through (the
+    // big ones and one alone: solid — a big thin sheet over others looks like film)
+    // (one draw, as ever: the shapes that follow keep their random numbers)
+    const roll = P(), dn = n > 1 && big < 0.55 && roll < 0.3 ? 0.3 + roll : 0.85 + 0.15 * roll;
     // where: spread across the width, the base anywhere it fits
     const x0 = n === 1 ? 0.5 : (i + 0.15 + 0.7 * P()) / n;
     const by = n === 1 ? (h + H) / 2 : H + 2 + (h - 4 - H) * P();
@@ -93,10 +100,14 @@ export function cloudPlaces(c, cl) {
 }
 
 // a noise sampled every step over a w × h area from (x0, y0), read back
-// bilinearly in between
-function noiseGrid(fn, x0, y0, w, h, step) {
+// bilinearly in between — only where keep(x, y) says it will be read (0.5
+// elsewhere: the empty sky round a cloud costs nothing)
+function noiseGrid(fn, x0, y0, w, h, step, keep) {
   const nx = Math.ceil(w / step) + 2, ny = Math.ceil(h / step) + 2, v = new Float32Array(nx * ny);
-  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) v[j * nx + i] = fn(x0 + i * step, y0 + j * step);
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const x = x0 + i * step, y = y0 + j * step;
+    v[j * nx + i] = !keep || keep(x, y) ? fn(x, y) : 0.5;
+  }
   return (x, y) => {
     const fx = Math.max(0, (x - x0) / step), fy = Math.max(0, (y - y0) / step);
     const i = Math.min(nx - 2, Math.floor(fx)), j = Math.min(ny - 2, Math.floor(fy)), tx = Math.min(1, fx - i), ty = Math.min(1, fy - j), k = j * nx + i;
@@ -130,6 +141,18 @@ export function cloud(g, c) {
       for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) (lists[j * gw + i] = lists[j * gw + i] || []).push(q[0], q[1], 1 / q[2]);
     }
     const cols = Array.from(lists, (l) => (l ? new Float64Array(l) : null));
+    // the lobes' density at a point (cloud-relative)
+    const densAt = (px, py) => {
+      const gi = Math.floor((px + off) / cell), gj = Math.floor((py + top) / cell);
+      const col = gi >= 0 && gj >= 0 && gi < gw && gj < gh ? cols[gj * gw + gi] : null;
+      let D = 0;
+      if (col) for (let i = 0; i < col.length; i += 3) {
+        const ir = col[i + 2], u = (px - col[i]) * ir, v = (py - col[i + 1]) * ir, d2 = u * u + v * v;
+        if (d2 < 1) D += (1 - d2) * (1 - d2);
+      }
+      return D;
+    };
+    const B = loopNoise(c, 109, 4.5 / cl.H, 1, 2), B2 = loopNoise(c, 113, 12 / cl.H, 1, 3);
     // where the cloud can be at all (each lobe, grown by the most the noise can
     // push it): the empty sky round it costs nothing
     const ms = Math.max(3, cl.H * 0.06), moy = cl.H * 1.6, mw = Math.ceil(2 * off / ms) + 1, mh = Math.ceil(cl.H * 2 / ms) + 1;
@@ -139,6 +162,13 @@ export function cloud(g, c) {
       const j0 = Math.max(0, Math.floor((dy - r - my + moy) / ms)), j1 = Math.min(mh - 1, Math.floor((dy + r + my + moy) / ms));
       for (let j = j0; j <= j1; j++) mask.fill(1, j * mw + i0, j * mw + i1 + 1);
     }
+    // and grown by what the noise grids read round a pixel (a grid step, and
+    // the billows a little nearer the sun): where their values are needed
+    const grow = Math.ceil((Math.max(1.5, cl.H / 48) + cl.H * 0.06) / ms) + 1, near = new Uint8Array(mw * mh);
+    for (let j = 0; j < mh; j++) for (let i = 0; i < mw; i++) {
+      if (!mask[j * mw + i]) continue;
+      for (let jj = Math.max(0, j - grow); jj <= Math.min(mh - 1, j + grow); jj++) near.fill(1, jj * mw + Math.max(0, i - grow), jj * mw + Math.min(mw - 1, i + grow) + 1);
+    }
     for (const [X, Y] of cloudPlaces(c, cl)) {
       const x0 = Math.max(0, Math.floor(X - cl.E - cl.H * 0.2)), x1 = Math.min(w, Math.ceil(X + cl.E + cl.H * 0.2));
       const y0 = Math.max(0, Math.floor(Y - cl.H * 1.4)), y1 = Math.min(h, Math.ceil(Y + cl.H * 0.13 + 2));
@@ -146,39 +176,60 @@ export function cloud(g, c) {
       // the slow noises (the push, the billows) read off a fine grid: they
       // change too slowly between its points for the difference to show
       const lx0 = x0 - 1 - X + cl.i * 131, step = Math.max(1.5, cl.H / 48);
-      const Ng = noiseGrid(N, lx0, y0 - 1, x1 - x0 + 2, y1 - y0 + 2, step), Wg = noiseGrid(Wp, lx0, y0 - 1, x1 - x0 + 2, y1 - y0 + 2, step);
-      field(g, x0, y0, x1, y1, fieldScale(c, cl.H * 0.35), (x0_, y0_, out) => {
+      const keep = (lx, y) => {
+        const i = Math.floor((lx - cl.i * 131 + off) / ms), j = Math.floor((y - Y + moy) / ms);
+        return i >= 0 && j >= 0 && i < mw && j < mh && near[j * mw + i] === 1;
+      };
+      const Ng = noiseGrid(N, lx0, y0 - 1, x1 - x0 + 2, y1 - y0 + 2, step, keep), Wg = noiseGrid(Wp, lx0, y0 - 1, x1 - x0 + 2, y1 - y0 + 2, step, keep);
+      const Bg = noiseGrid(B, lx0, y0 - 1, x1 - x0 + 2, y1 - y0 + 2, Math.max(1.5, step * 0.75), keep), B2g = noiseGrid(B2, lx0, y0 - 1, x1 - x0 + 2, y1 - y0 + 2, Math.max(1.5, step * 0.45), keep);
+      field(g, x0, y0, x1, y1, fieldScale(c, cl.H * 0.15), (x0_, y0_, out) => {
         const mi = Math.floor((x0_ - X + off) / ms), mj = Math.floor((y0_ - Y + moy) / ms);
         if (mi < 0 || mj < 0 || mi >= mw || mj >= mh || !mask[mj * mw + mi]) return false;
         const lx = x0_ - X + cl.i * 131;
         const n = Ng(lx, y0_), x = x0_ + (Wg(lx, y0_) - 0.5) * cl.H * 0.25, y = y0_ + (n - 0.5) * cl.H * 0.16;
+        const px = x - X, py = y - Y;
         // density from the lobes; each lobe lit on its upper left, the one in
-        // front (the strongest) taking over sharply: creases between lobes
+        // front (the strongest) taking over: the heaps show, one on another
         let D = 0, Lw = 0, Ls = 0;
-        const px = x - X, py = y - Y, gi = Math.floor((px + off) / cell), gj = Math.floor((py + top) / cell);
-        const col = gi >= 0 && gj >= 0 && gi < gw && gj < gh ? cols[gj * gw + gi] : null;
-        if (col) {
-          for (let i = 0; i < col.length; i += 3) {
-            const ir = col[i + 2], u = (px - col[i]) * ir, v = (py - col[i + 1]) * ir, d2 = u * u + v * v;
-            if (d2 >= 1) continue;
-            const f = (1 - d2) * (1 - d2), f2 = f * f, q = f2 * f2;
-            D += f; Lw += q;
-            const l = 0.5 - (v * 0.8 + u * 0.35) * 0.55;
-            Ls += q * (l < 0 ? 0 : l > 1 ? 1 : l);
+        {
+          const gi = Math.floor((px + off) / cell), gj = Math.floor((py + top) / cell);
+          const col = gi >= 0 && gj >= 0 && gi < gw && gj < gh ? cols[gj * gw + gi] : null;
+          if (col) {
+            for (let i = 0; i < col.length; i += 3) {
+              const ir = col[i + 2], u = (px - col[i]) * ir, v = (py - col[i + 1]) * ir, d2 = u * u + v * v;
+              if (d2 >= 1) continue;
+              const f = (1 - d2) * (1 - d2), f2 = f * f, q = f2 * f2;
+              D += f; Lw += q;
+              const l = 0.5 - (v * 0.8 + u * 0.35) * 0.55;
+              Ls += q * (l < 0 ? 0 : l > 1 ? 1 : l);
+            }
           }
         }
         if (D <= 0.002) return false;
         const body = 1 - Math.exp(-D * 2.5), edge = 1 - smooth(0.25, 0.65, body);
+        // billows: puffs within puffs (the cauliflower), a noise folded into
+        // round heaps with soft creases between them (squared: no sharp folds); and a little nearer the sun,
+        // to light them like bumps (the side towards it bright)
+        const e = cl.H * 0.05, b0 = 2 * Bg(lx, y0_) - 1, b1 = 2 * Bg(lx - 0.42 * e, y0_ - 0.91 * e) - 1, b = b0 * b0, bs = b1 * b1;
+        // and smaller ones on them
+        const e2 = cl.H * 0.02, c0 = 2 * B2g(lx, y0_) - 1, c1 = 2 * B2g(lx - 0.42 * e2, y0_ - 0.91 * e2) - 1, b2 = c0 * c0, b2s = c1 * c1;
         // a thin cloud: see-through, its edges more frayed; out at the edge,
         // finer wisps (only there: inside, nothing to fray)
-        const dens = body + (n - 0.5) * (0.3 + 0.4 * (1 - cl.dn)) + (edge > 0 ? (F(lx, y0_) - 0.5) * 0.5 * edge : 0);
+        // (the billows show in the light, hardly in the outline: the shape is the lobes')
+        const dens = body * (0.92 + 0.1 * b + 0.06 * b2) + (n - 0.5) * (0.3 + 0.4 * (1 - cl.dn)) + (edge > 0 ? (F(lx, y0_) - 0.5) * 0.5 * edge : 0);
         // misty: the edge thinning out to nothing over a wide band, a faint
         // haze of vapour round it, the base fading softly under its line
-        const a = Math.max(smooth(0.06, 0.55, dens), 0.3 * smooth(0, 0.35, body)) * (0.8 + 0.2 * cl.dn) * smooth(Y + cl.H * 0.03, Y - cl.H * 0.14, y) * env;
+        const a = Math.max(smooth(0.06, 0.52, dens), 0.15 * smooth(0, 0.35, body)) * (0.45 + 0.55 * cl.dn) * smooth(Y + cl.H * 0.03, Y - cl.H * 0.14, y) * env;
         if (a <= 0.004) return false;
-        // lit: the lobe's own top-left, higher up in the cloud; in shadow along the base
+        // lit like a real one: how much cloud lies between here and the sun
+        // (upper left) — the sides facing it white, the far side and the
+        // inside in soft shadow; higher up brighter, grey along the base, the
+        // billows catching the light
+        const toSun = densAt(px - 0.42 * cl.H * 0.09, py - 0.91 * cl.H * 0.09) * 0.6 + densAt(px - 0.42 * cl.H * 0.24, py - 0.91 * cl.H * 0.24) * 0.4;
+        const lit = 1 - 0.85 * (1 - Math.exp(-toSun * 1.5));
         const up = Math.max(0, Math.min(1, (Y - y) / cl.H));
-        const light = Math.max(0, Math.min(1, 0.55 * (Ls / Lw) + 0.5 * up + (n - 0.5) * 0.15 - 0.28 * (1 - smooth(0, 0.35, up)) + 0.07));
+        const bump = (Math.max(-0.18, Math.min(0.18, (b - bs) * 1.6)) + Math.max(-0.1, Math.min(0.1, (b2 - b2s) * 1.2))) * (0.4 + 0.6 * lit);
+        const light = Math.max(0, Math.min(1, 0.02 + 0.32 * lit + 0.3 * up + 0.45 * (Ls / Lw) + 0.6 * bump + (b - 0.5) * 0.06 + (n - 0.5) * 0.1 - 0.25 * (1 - smooth(0, 0.35, up))));
         const s = light * 3, j = Math.min(2, Math.floor(s)), k = s - j;
         const cc = ramp[j], cn = ramp[j + 1];
         out[0] = cc[0] + (cn[0] - cc[0]) * k; out[1] = cc[1] + (cn[1] - cc[1]) * k; out[2] = cc[2] + (cn[2] - cc[2]) * k;

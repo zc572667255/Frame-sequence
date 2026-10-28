@@ -35,7 +35,9 @@ let uvTex = null;
 function uvTexture() {
   if (uvTex) return uvTex;
   uvTex = createCanvas(256, 256);
-  const g = uvTex.getContext("2d");
+  // kept in memory, like the canvas it is drawn onto: on the GPU, every uvMap
+  // would read it back (and wait for the GPU) — the costliest step of a glow
+  const g = uvTex.getContext("2d", { willReadFrequently: true });
   const img = g.createImageData(256, 256);
   for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) {
     const i = (y * 256 + x) * 4;

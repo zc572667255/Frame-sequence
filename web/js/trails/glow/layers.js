@@ -5,6 +5,14 @@ import { createCanvas } from "../../core/util.js";
 import { crystal, rockShape } from "./shapes.js";
 import { clamp01, colorAcross, fbmNoise, lerp, noiseGrid, onRun, rgba, rng, smooth, worley } from "./util.js";
 
+// What moves with time and has to close a loop (loop: frames per cycle, 0 =
+// none): a noise value worked out at frame f and one whole cycle back, cross-
+// faded by how far into the cycle f is and rescaled so it stays as contrasty
+// mid-cycle (vfx/common.js loopNoise) — the last frame leads back into the first.
+// p, keep: loopMix(f, loop); at(f) gives the value at frame f.
+const loopMix = (f, loop) => { const p = loop ? (((f % loop) + loop) % loop) / loop : 0; return [p, 1 / Math.hypot(1 - p, p)]; };
+const looped = (at, f, loop, p, keep) => (loop ? clamp01(0.5 + ((at(f) - 0.5) * (1 - p) + (at(f - loop) - 0.5) * p) * keep) : at(f));
+
 export function erode(og, w, h, ox, oy, seed, amount, life, maxW, UV) {
   const t = amount * (0.08 + 0.92 * (1 - clamp01(life)));       // a little always, more while dissolving
   if (t <= 0.02) return;
@@ -34,17 +42,22 @@ export function erode(og, w, h, ox, oy, seed, amount, life, maxW, UV) {
 // The flowing body (流体): noise warped by noise, stretched along the swing and
 // moving a little every frame — licks of fire, rushing water, swirling energy.
 // It hugs the leading edge; toward the grip side it breaks into tongues. Hot
-// colours (and the core colour) near the edge, the darker ones inward.
-export function flowLayer(UV, cols, coreC, seed, frame, alpha, tail, amount) {
+// colours (and the core colour) near the edge, the darker ones inward. loop:
+// frames per cycle, for a body that flows on round a loop without a jump.
+export function flowLayer(UV, cols, coreC, seed, frame, alpha, tail, amount, loop = 0) {
   const { mw, mh, d } = UV;
   const img = new ImageData(mw, mh), o = img.data;
-  const fbm = fbmNoise(seed * 13 + 7), t = frame * 0.35;
+  const fbm = fbmNoise(seed * 13 + 7), [p, keep] = loopMix(frame, loop);
+  let u = 0, v = 0;
+  const at = (f) => {
+    const t = f * 0.35, wx = fbm(u * 4 - t * 0.4, v * 3), wy = fbm(u * 4 + 9.1, v * 3 + 4.7 - t * 0.3);
+    return fbm(u * 13 + (wx - 0.5) * 3 - t, v * 5 + (wy - 0.5) * 2.4);
+  };
   for (let i = 0; i < mw * mh * 4; i += 4) {
     const cov = d[i + 3];
     if (cov < 8) continue;
-    const u = d[i] / 255, v = d[i + 1] / 255;
-    const wx = fbm(u * 4 - t * 0.4, v * 3), wy = fbm(u * 4 + 9.1, v * 3 + 4.7 - t * 0.3);
-    const n = fbm(u * 13 + (wx - 0.5) * 3 - t, v * 5 + (wy - 0.5) * 2.4);
+    u = d[i] / 255; v = d[i + 1] / 255;
+    const n = looped(at, frame, loop, p, keep);
     const body = v * 1.25 + (n - 0.5) * 1.8 * amount;
     const m = smooth(0.42, 0.58, body) * smooth(0, tail, u);
     if (m <= 0.01) continue;
@@ -323,7 +336,7 @@ export function rays(runs, w, h, coreC, rimC, seed, frame, alpha, maxW, amount) 
 // disappears behind the blade); where it comes round the front it goes into
 // `front`, over the blade but see-through, wider and with a thin bright core.
 // The winding turns on every frame. Returns { back, front } canvases.
-export function curls(runs, w, h, coreC, rimC, seed, frame, alpha, maxW, amount) {
+export function curls(runs, w, h, coreC, rimC, seed, frame, alpha, maxW, amount, loop = 0) {
   const r = runs[runs.length - 1];
   if (r.length < 2) return null;
   const N = 2 + Math.round(amount * 2);
@@ -335,7 +348,8 @@ export function curls(runs, w, h, coreC, rimC, seed, frame, alpha, maxW, amount)
   for (let k = 0; k < N; k++) {
     const u0 = 0.02 + 0.3 * S(), u1 = Math.min(1, u0 + 0.6 + 0.4 * S());
     const turns = 0.6 + 0.4 * S(), amp = 0.75 + 0.2 * S();
-    const phase = S() * 6.28 + frame * (0.45 + 0.25 * S());
+    // round a loop: whole turns per cycle, near the speed it would have
+    const ph0 = S() * 6.28, rate = 0.45 + 0.25 * S(), phase = ph0 + frame * (loop ? Math.max(1, Math.round(rate * loop / 6.28)) * 6.28 / loop : rate);
     const fat = 0.7 + 0.5 * S();
     const n = 48;
     const pts = [], ws = [], fr = [];
@@ -416,15 +430,16 @@ export function serrate(runs, w, h, cols, coreC, seed, alpha, tail, amount) {
 // the borders of a cellular pattern (where the nearest two points are about as
 // far), stretched along the flow and drifting with it, brightest toward the
 // leading edge. Added as light over the body, on the uv map.
-export function caustics(UV, lightC, seed, frame, alpha, amount) {
+export function caustics(UV, lightC, seed, frame, alpha, amount, loop = 0) {
   const { mw, mh, d } = UV;
   const img = new ImageData(mw, mh), o = img.data;
+  const [p] = loopMix(frame, loop);
+  let u = 0, v = 0;
+  const at = (f) => { const c = worley(u * 9 - f * 0.18, v * 3.2 + Math.sin(u * 23 + f * 0.4) * 0.12, seed * 5 + 3); return 1 - smooth(0.02, 0.13, c.f2 - c.f1); };
   for (let i = 0; i < mw * mh * 4; i += 4) {
     if (d[i + 3] < 8) continue;
-    const u = d[i] / 255, v = d[i + 1] / 255;
-    const x = u * 9 - frame * 0.18, y = v * 3.2 + Math.sin(u * 23 + frame * 0.4) * 0.12;
-    const c = worley(x, y, seed * 5 + 3);
-    const line = 1 - smooth(0.02, 0.13, c.f2 - c.f1);
+    u = d[i] / 255; v = d[i + 1] / 255;
+    const line = loop ? at(frame) * (1 - p) + at(frame - loop) * p : at(frame);
     const a = 0.7 * line * amount * alpha * (0.35 + 0.65 * v) * (d[i + 3] / 255);
     if (a <= 0.02) continue;
     o[i] = lightC[0]; o[i + 1] = lightC[1]; o[i + 2] = lightC[2]; o[i + 3] = Math.round(255 * Math.min(1, a));
@@ -505,23 +520,24 @@ export function tintTail(og, w, h, runs, tint, amount, maxW) {
 // falling water — noise stretched along the flow, moving along it every frame,
 // tearing most at the tail and on the grip side so the leading edge holds.
 // Works on the uv map; pixels off the ribbon (the glow around) are kept.
-export function tear(og, UV, seed, frame, amount) {
+export function tear(og, UV, seed, frame, amount, loop = 0) {
   const { k, mw, mh, d } = UV;
   const fbm = fbmNoise(seed * 211 + 5);
   const img = new ImageData(mw, mh), o = img.data;
+  const [p, keep] = loopMix(frame, loop);
+  let u = 0, v = 0;
+  const at = (f) => fbm(u * 2.6 - f * 0.15, v * 34);
+  const holes = (f) => { const c = worley(u * 7 - f * 0.1, v * 2.6, seed * 7 + 1); return c.h < 0.35 * amount ? smooth(0.14, 0.24, c.f1) : 1; };
   for (let i = 0; i < mw * mh * 4; i += 4) {
     if (d[i + 3] < 8) { o[i + 3] = 255; continue; }
-    const u = d[i] / 255, v = d[i + 1] / 255;
-    const n = fbm(u * 2.6 - frame * 0.15, v * 34);
+    u = d[i] / 255; v = d[i + 1] / 255;
+    const n = looped(at, frame, loop, p, keep);
     const t = amount * (0.25 + 0.5 * (1 - u) + 0.4 * (1 - v));
     let m = (n - t + 0.06) / 0.12;
     m = m <= 0 ? 0 : m >= 1 ? 1 : m * m * (3 - 2 * m);
     // round holes punched through the body, in some of the cells of a cellular
     // noise, drifting with the flow; none on the leading edge
-    if (v < 0.85) {
-      const c = worley(u * 7 - frame * 0.1, v * 2.6, seed * 7 + 1);
-      if (c.h < 0.35 * amount) m *= smooth(0.14, 0.24, c.f1);
-    }
+    if (v < 0.85) m *= loop ? holes(frame) * (1 - p) + holes(frame - loop) * p : holes(frame);
     o[i + 3] = Math.round(m * 255);
   }
   const M = createCanvas(mw, mh);

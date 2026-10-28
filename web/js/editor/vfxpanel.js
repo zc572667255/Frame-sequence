@@ -3,6 +3,9 @@
 // Where and how big it is can also be set on the canvas (drag it, or a corner).
 import { el, downloadBlob } from "../core/util.js";
 import { VFX_KINDS, VFX_DEFAULTS, VFX_PALETTES, VFX_EDGES as EDGES, hasSide } from "../vfx/effects.js";
+import { PROJECTILES, SPINS } from "../vfx/kinds/arrow.js";
+import { pickCoreImage } from "../vfx/coreimg.js";
+import { SPRITE_GROUPS, spriteOf, spriteThumb } from "../vfx/projectiles.js";
 import { vfxSettings, renderVfxAsync } from "../vfx/layer.js";
 import { ACCENTS, ACC_MODES, autoAccents } from "../vfx/accents.js";
 import { GLOW_PRESETS } from "../trails/glow.js";
@@ -241,6 +244,31 @@ export class VfxPanel {
       choose("法阵图案", "pattern", [["hex", "六芒星"], ["penta", "五芒星"], ["square", "双方形（八角）"], ["taiji", "太极八卦"], ...GROUND_AURAS]);
       choose("边缘特效", "edge", EDGES);
     }
+    if (s.kind === "arrow") {
+      // the ready-made pictures, by group
+      for (const [gname, list] of SPRITE_GROUPS) {
+        P.append(el("div", { class: "proj-group" }, gname));
+        const g = el("div", { class: "trail-presets proj-grid" });
+        for (const sp of list) {
+          g.append(el("button", { class: "trail-preset" + (s.shape === "s:" + sp.id ? " on" : ""), title: sp.name + (sp.spin ? "（默认边飞边转）" : ""),
+            onclick: () => { if (s.shape !== "s:" + sp.id) this.edit({ shape: "s:" + sp.id }); } },
+            el("img", { class: "proj-thumb", src: spriteThumb(sp.id), alt: sp.name, loading: "lazy", decoding: "async" }), el("span", null, sp.name)));
+        }
+        P.append(g);
+      }
+      choose("外观", "shape", PROJECTILES);
+      choose("自转", "spin", SPINS);
+      slider("物体前后", "coreShift", -50, 50, "%", "物体离光头多远：正数往前伸出光头，负数缩进光里（按特效半径算）");
+      if (spriteOf(s.shape)) slider("核心大小", "coreScale", 30, 200, "%", "相对这张图预设的大小");
+      if (s.shape === "custom") {
+        const pick = () => pickCoreImage().then((r) => { if (r) this.edit(r); });
+        row("图片", el("span", { class: "mono" }, s.coreName || (s.coreImg ? "已导入" : "未导入")),
+          btn(s.coreImg ? "换一张" : "导入图片…", "核心用的图片（朝右飞：图片的前端朝右；不朝右就用下面的「朝向」转过来）", pick, !s.coreImg));
+        slider("核心大小", "coreSize", 10, 100, "%", "图片较长的一边占特效半径的多少");
+        slider("朝向", "coreTurn", -180, 180, "°", "图片转多少度才朝向飞行方向（右边）");
+        P.append(el("p", { class: "ed-hint" }, "没导入图片时只有光往前飞（和透明核心一样）。导出 Godot 纯代码时，核心就是这张图，外面的光由代码画。"));
+      }
+    }
     if (s.kind === "burn") slider("根部宽度", "root", 10, 100, "%", "火焰根部有多宽：100% 是整片一样宽；调小就像火把上的火焰：底部沿圆弧收拢成圆圆的底，往上鼓起再收尖");
     if (s.kind === "cloud") {
       const drift = el("input", { type: "checkbox", checked: !!s.drift, onchange: () => this.edit({ drift: drift.checked }) });
@@ -277,7 +305,8 @@ export class VfxPanel {
     if (codeSupported(l)) {
       row("纯代码", el("div", { class: "tm-colors" },
         btn("Godot 纯代码", "不带任何图片：Godot 脚本每一帧自己把这个特效画出来（形状、随机细节、光效点缀都和这里一样），任意放大都清晰，类型、颜色、大小、速度都能在 Godot 里改；编辑器里也会动", () => this.exportCode())), el("span"));
-      P.append(el("p", { class: "ed-hint" }, "纯代码版画风是平滑的（不做像素化）；魔法阵的边缘特效目前只有火焰。"));
+      P.append(el("p", { class: "ed-hint" }, "纯代码版画风是平滑的（不做像素化）；魔法阵的边缘特效目前只有火焰。"
+        + (s.kind === "arrow" ? "箭矢的核心（箭、匕首、长枪……或自定义的图片）导出成内嵌的图片，长枪的红缨不飘；外面的光由代码照拖尾的画法画（火舌、冰晶、闪电、风刃、流动的刀身都有），水纹、撕裂、尾部变色和消散时的侵蚀没有搬过去，光晕是近似的。" : "")));
     }
   }
 

@@ -10,6 +10,9 @@ import { renderVfxAsync } from "../../vfx/layer.js";
 import { ACCENTS, ACC_MODES, autoAccents } from "../../vfx/accents.js";
 import { GLOW_PRESETS } from "../../trails/glow.js";
 import { GROUND_AURAS } from "../../vfx/kinds/auras.js";
+import { PROJECTILES, SPINS } from "../../vfx/kinds/arrow.js";
+import { pickCoreImage } from "../../vfx/coreimg.js";
+import { spriteOf } from "../../vfx/projectiles.js";
 
 const GROUND = new Set(["shock", "dust", "circle", "heal"]);
 
@@ -18,7 +21,7 @@ defineNode({
   title: "特效",
   category: "素材",
   icon: "✦",
-  help: "生成一段独立的特效序列帧：命中火花、爆炸、冲击波、烟尘、蓄力、魔法阵、治疗光圈、环绕光（斗气）、燃烧、流光、翅膀。"
+  help: "生成一段独立的特效序列帧：命中火花、爆炸、冲击波、烟尘、蓄力、魔法阵、治疗光圈、环绕光（斗气）、燃烧、流光、翅膀、箭矢（还有匕首、长枪、棍棒、飞斧、手里剑、球、透明核心）。"
     + "选类型和配色（与拖尾光效同一套），可出高清或像素风；右键「烘焙为动画卡片」后能在像素编辑器里继续修改。",
   outputs: [{ name: "out", label: "序列帧", kind: "frames" }],
   size: { w: 260, h: 300 },
@@ -92,6 +95,14 @@ defineNode({
     const bolts = f.check("带闪电（超级赛亚人 2 那样在斗气上窜动）", "bolts");
     const root = f.slider("根部宽度", "root", { min: 10, max: 100, unit: "%" });
     const drift = f.check("横向飘动（循环时每朵云正好飘过一圈）", "drift");
+    const shape = f.select("外观", "shape", PROJECTILES, { wide: true });
+    const spin = f.select("自转", "spin", SPINS, { wide: true });
+    const shift = f.slider("物体前后", "coreShift", { min: -50, max: 50, unit: "%" });
+    const coreBtns = f.buttons(["导入核心图片…", () => pickCoreImage().then((r) => { if (r) ctx.set(r); })]);
+    const coreName = f.hint(() => (p().coreImg ? "核心图片：" + (p().coreName || "已导入") : "还没导入图片：只有光往前飞"));
+    const coreSize = f.slider("核心大小", "coreSize", { min: 10, max: 100, unit: "%" });
+    const coreTurn = f.slider("朝向", "coreTurn", { min: -180, max: 180, unit: "°" });
+    const coreScale = f.slider("核心大小", "coreScale", { min: 30, max: 200, unit: "%" });
     // 光效点缀: the trails' accents; 自定义 starts from the palette's own mix
     const presetOf = () => GLOW_PRESETS.find((x) => x.id === p().palette) || GLOW_PRESETS[0];
     f.select("光效点缀", "acc", ACC_MODES, { wide: true, onChange: (v) => { if (v === "custom") ctx.set(autoAccents(presetOf())); } });
@@ -107,6 +118,11 @@ defineNode({
       bolts.style.display = k === "aura" ? "" : "none";
       root.style.display = k === "burn" ? "" : "none";
       drift.style.display = k === "cloud" ? "" : "none";
+      shape.style.display = k === "arrow" ? "" : "none";
+      spin.style.display = k === "arrow" ? "" : "none";
+      shift.style.display = k === "arrow" ? "" : "none";
+      for (const e of [coreBtns, coreName, coreSize, coreTurn]) e.style.display = k === "arrow" && p().shape === "custom" ? "" : "none";
+      coreScale.style.display = k === "arrow" && spriteOf(p().shape) ? "" : "none";
       px.style.display = p().style === "pixel" ? "" : "none";
       ground.style.display = GROUND.has(k) ? "" : "none";
       pattern.style.display = k === "circle" ? "" : "none";

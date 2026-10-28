@@ -13,19 +13,53 @@
 // of 能量爆发 and the smoke of 幽魂光环 — in a shader that works out the same
 // noise (the same integer hash, value noise and octaves, the same loop
 // cross-fade) and the same shading per pixel; 云朵 in the same shader, its puffs
-// as distances. Not carried over: the other rims of 魔法阵, and the pixel look —
-// it is drawn smooth.
+// as distances. 箭矢's glow is a trail's (trails/glow.js renderGlow): its layers
+// are drawn the way the trail's own pure code draws them (godot/trailcode.js),
+// its flowing body in the same shader, laid on the glow's mesh; what flies in
+// it goes as a picture drawn here (kinds/arrow.js projectileSprite). Not carried
+// over: the other rims of 魔法阵; the caustics, tearing, tail tint and erosion
+// of 箭矢's glow; and the pixel look — it is drawn smooth.
 import { vfxSettings } from "../vfx/layer.js";
-import { VFX_DEFAULTS, VFX_KINDS } from "../vfx/effects.js";
+import { VFX_DEFAULTS, VFX_KINDS, coreOf } from "../vfx/effects.js";
 import { paletteOf } from "../vfx/common.js";
 import { vfxData } from "./vfx.js";
 import { ACCENTS, accentAmounts } from "../vfx/accents.js";
 import { isGroundAura } from "../vfx/kinds/auras.js";
+import { glowStyle } from "../trails/glow.js";
+import { hexToRgb } from "../core/util.js";
+import { projectileSprite } from "../vfx/kinds/arrow.js";
 
-export const CODE_KINDS = ["hit", "shock", "charge", "heal", "ribbon", "wings", "circle", "aura", "burn", "explosion", "dust", "cloud"];
+export const CODE_KINDS = ["hit", "shock", "charge", "heal", "ribbon", "wings", "circle", "aura", "burn", "explosion", "dust", "cloud", "arrow"];
 const PATTERNS = { hex: 0, penta: 1, square: 2, taiji: 3, burst: 4, holy: 5, whirl: 6, stars: 7, wisp: 8, arrows: 9 };
-// how much bloom each kind gets (vfx/effects.js BLOOM)
-const BLOOM = { hit: 1, shock: 0.8, charge: 1, heal: 0.7, circle: 0, ribbon: 1, wings: 1, aura: 0.9, burn: 0.9, explosion: 0.7, dust: 0, cloud: 0 };
+// how much bloom each kind gets (vfx/effects.js BLOOM); 箭矢 more, standing in
+// for the bloom its trail glow adds to itself in the editor
+const BLOOM = { hit: 1, shock: 0.8, charge: 1, heal: 0.7, circle: 0, ribbon: 1, wings: 1, aura: 0.9, burn: 0.9, explosion: 0.7, dust: 0, cloud: 0, arrow: 1 };
+// 箭矢's glow: the trail look's amounts the script reads, in this order
+// (strands is a count, the rest 0..1) — GDScript TG_KEYS
+const TG_KEYS = ["strands", "core", "haze", "glow", "flow", "flames", "bolts", "crystal", "speedLines", "curls", "rays", "serrate", "rocks", "shadow"];
+
+// 箭矢's core as a picture (kinds/arrow.js projectileSprite) and how it flies;
+// R: the effect's radius at the size it is exported
+function arrowCore(s, pal, R) {
+  const none = { coreRect: [0, 0, 0, 0], coreLength: 0.8, coreRound: false, coreRadius: 0, coreSpin: false, coreShift: 0, corePng: "", coreLight: "" };
+  if (s.kind !== "arrow" || typeof document === "undefined") return none;
+  const o = projectileSprite(s.shape || "arrow", s.spin || "auto", pal, Math.max(8, R), coreOf(s));
+  return { coreRect: o.rect, coreLength: o.L, coreRound: o.round, coreRadius: o.ro, coreSpin: o.spin, coreShift: Math.max(-1, Math.min(1, (+s.coreShift || 0) / 100)), corePng: o.png, coreLight: o.light };
+}
+
+// the glow of the trail preset a palette comes from, as 箭矢 draws it: its
+// colours in the trail's order, its layers' amounts, and whether it is dark
+// (painted rather than added: 黑炎, 岩崩) — trails/glow.js renderGlow
+function trailGlow(pal) {
+  const st = glowStyle(pal.preset);
+  const cols = st.glowColors.map(hexToRgb);
+  const lum = (c) => (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]) / 255;
+  return {
+    trailCols: cols.slice(0, 8),
+    trailLook: TG_KEYS.map((k) => (k === "strands" ? Math.max(0, Math.min(160, st.strands | 0)) : Math.max(0, Math.min(1, (+st[k] || 0) / 100)))),
+    trailDark: !!st.solid || cols.reduce((a, c) => a + lum(c), 0) / cols.length < 0.18,
+  };
+}
 
 export function codeSupported(l) {
   const s = vfxSettings(l);
@@ -60,6 +94,8 @@ export function codeParamsFrom(s, w, h, fps, name) {
     cols: pal.cols, core: pal.core, rim: pal.rim, splat: pal.splat,
     // 光效点缀, in ACCENTS order: the palette's own mix (按配色), none, or the effect's own
     accents: (() => { const a = accentAmounts(s, pal.preset) || {}; return ACCENTS.map((x) => +(a[x.id] || 0)); })(),
+    ...trailGlow(pal),
+    ...arrowCore(s, pal, Math.min(w, h) / 2 * Math.max(0.05, Math.min(1, s.size / 100))),
   };
 }
 
@@ -87,6 +123,9 @@ export function codeProps(p) {
     `loop = ${p.loop}`, `frames = ${p.frames}`, `fps = ${num(p.fps)}`, `glow = ${num(p.glow)}`, `amount = ${num(p.amount)}`,
     `random_seed = ${p.seed}`, `rotate_degrees = ${num(p.rotate)}`, `soft_light = ${p.soft}`, `bloom = ${num(p.bloom)}`, `additive = ${p.additive}`,
     `colors = ${tscnColors(p.cols)}`, `accents = PackedFloat32Array(${p.accents.map(num).join(", ")})`, `core_color = ${color(p.core)}`, `rim_color = ${color(p.rim)}`, `splat_color = ${color(p.splat)}`,
+    `trail_colors = ${tscnColors(p.trailCols)}`, `trail_look = PackedFloat32Array(${p.trailLook.map(num).join(", ")})`, `trail_dark = ${p.trailDark}`,
+    `core_rect = Rect2(${p.coreRect.map(num).join(", ")})`, `core_length = ${num(p.coreLength)}`, `core_round = ${p.coreRound}`, `core_radius = ${num(p.coreRadius)}`, `core_spin = ${p.coreSpin}`, `core_shift = ${num(p.coreShift)}`,
+    p.corePng ? `core_png = "${p.corePng}"` : null, p.coreLight ? `core_light_png = "${p.coreLight}"` : null,
     p.follow ? `data_json = ${JSON.stringify(JSON.stringify(p.follow))}` : null,
   ].filter(Boolean);
 }
@@ -100,7 +139,7 @@ export function codeGodot(p) {
 # 特效（纯代码）—— 由「光台 · 序列帧工作室」导出：${d.name}
 # Godot 4.x。不用任何图片：特效的每一帧都由本脚本实时画出来，形状、随机细节、节奏和编辑器里一样，
 # 任意放大都清晰，类型、颜色、大小、速度都能随时改。编辑器里也会动（@tool），可以直接在 2D 视图里看效果。
-# 支持：命中火花、冲击波、蓄力、治疗光圈、流光、翅膀、魔法阵（含火焰边缘和六种地面光环）、环绕光、燃烧、爆炸、烟尘、云朵，以及光效点缀
+# 支持：命中火花、冲击波、蓄力、治疗光圈、流光、翅膀、魔法阵（含火焰边缘和六种地面光环）、环绕光、燃烧、爆炸、烟尘、云朵、箭矢（外面的光照拖尾的画法），以及光效点缀
 #（星光、粉尘、余烬、雪花、碎片、闪电、光芒、气泡、水滴、落叶、碎石）。
 # 两种用法：
 #   单独播放（mode = 单独播放，默认）：新建一个 Node2D 挂上本脚本，节点位置是特效画幅的中心。
@@ -127,7 +166,7 @@ signal finished
 ## 空闲时把还没画过的帧提前一帧一帧画好（第一遍播放也不卡）
 @export var prewarm := true
 @export_group("特效")
-@export_enum("命中火花", "冲击波", "蓄力", "治疗光圈", "流光", "翅膀", "魔法阵", "环绕光", "燃烧", "爆炸", "烟尘", "云朵") var kind := ${d.kind}
+@export_enum("命中火花", "冲击波", "蓄力", "治疗光圈", "流光", "翅膀", "魔法阵", "环绕光", "燃烧", "爆炸", "烟尘", "云朵", "箭矢") var kind := ${d.kind}
 ## 画幅大小（编辑器里特效的画幅框）
 @export var box_size := Vector2(${num(d.w)}, ${num(d.h)})
 ## 特效大小：占画幅的比例
@@ -170,6 +209,30 @@ signal finished
 @export_group("光效点缀")
 ## 每种点缀的量（0..1），顺序：星光、粉尘、余烬、雪花、碎片、闪电、光芒、气泡、水滴、落叶、碎石
 @export var accents := PackedFloat32Array([${d.accents.map(num).join(", ")}])
+@export_group("箭矢的光")
+## 箭矢外面那层光的配色（和同名拖尾一样，按拖尾里的顺序）
+@export var trail_colors := ${colors(d.trailCols)}
+## 各层的量：光丝根数，刃芯、光晕、辉光、流动、火舌、闪电、冰晶、速度线、风刃、光芒、锯齿、岩石、阴影（0..1）
+@export var trail_look := PackedFloat32Array([${d.trailLook.map(num).join(", ")}])
+## 深色的光（黑炎、岩崩）：火舌用深色画
+@export var trail_dark := ${d.trailDark}
+@export_group("箭矢的核心")
+## 核心的图：换成自己的图就填这里（和内嵌的那张一样大小、一样朝右摆放）；空着就用导出时内嵌的
+@export var core_texture: Texture2D
+## 核心的图放在哪：从它的尖（圆的、会转的：从它的正中）量，x、y、宽、高，单位是特效半径 R
+@export var core_rect := Rect2(${d.coreRect.map(num).join(", ")})
+## 核心的长度（R）：光从它的尖往后包多长
+@export var core_length := ${num(d.coreLength)}
+## 圆的或会转的：光包住整个核心，这是它转的半径（R）
+@export var core_round := ${d.coreRound}
+@export var core_radius := ${num(d.coreRadius)}
+## 边飞边转（循环时正好转一圈）
+@export var core_spin := ${d.coreSpin}
+## 核心离光头多远：正数往前伸出光头，负数缩进光里（R）
+@export var core_shift := ${num(d.coreShift)}
+## 内嵌的核心图（PNG，base64）和它身上、周围的光（叠加）
+@export_multiline var core_png := "${d.corePng}"
+@export_multiline var core_light_png := "${d.coreLight}"
 @export_group("")
 @export_multiline var data_json := """${follow}"""
 
@@ -181,16 +244,95 @@ shader_type canvas_item;
 render_mode unshaded, %s;
 uniform sampler2D blur_tex : repeat_disable, filter_linear;
 uniform float bloom = 0.0;
+// 箭矢：只留画幅内切圆里的（边缘渐隐），转到什么角度都不出框。span：画幅占离屏图的比例
+uniform bool round_clip = false;
+uniform vec2 span = vec2(1.0);
+uniform vec2 box = vec2(1.0);
 void fragment() {
 	vec4 c = texture(TEXTURE, UV);
 	vec4 b = texture(blur_tex, UV);
 	vec4 o = c + b * bloom;
+	if (round_clip) {
+		vec2 q = (UV / span - 0.5) * box / min(box.x, box.y) * 2.0;
+		float m = clamp((1.0 - length(q)) / 0.14, 0.0, 1.0);
+		o *= m;
+		c *= m;
+	}
 	%s
 }
 """
 const ADD_OUT := "COLOR = vec4(o.rgb, clamp(max(c.a, max(max(o.r, o.g), o.b)), 0.0, 1.0));"
 const MIX_OUT := "o.a = clamp(o.a, 0.0, 1.0); if (o.a > 0.0001) { o.rgb /= o.a; } COLOR = o;"
 # 高斯模糊，一遍（在缩小的图上）
+# 箭矢的光里流动的刀身（拖尾 trails/glow/layers.js flowLayer）：画在光的网格上，UV = 截面的 (u, v)；
+# 噪声和编辑器一样（整数哈希、值噪声、三层分形）。亮的配色叠加上去，深色的盖上去
+const FLOW_SHADER := """
+shader_type canvas_item;
+render_mode unshaded, %s;
+uniform int seed = 0;
+uniform float frame = 0.0;
+uniform float alpha = 1.0;
+uniform float tail = 0.6;
+uniform float amount = 0.0;
+uniform vec3 cols[8];
+uniform int ncols = 2;
+uniform vec3 core = vec3(1.0);
+// 循环时一圈的帧数（0 = 不循环）：流到最后一帧正好接回第一帧
+uniform float loop_n = 0.0;
+float lh(int x, int y, int s) {
+	uint v = (uint(x) * 374761393u) ^ (uint(y) * 668265263u) ^ uint(s);
+	v = (v ^ (v >> 13u)) * 1274126177u;
+	return float(v ^ (v >> 16u)) / 4294967295.0;
+}
+float one(vec2 p, int s) {
+	vec2 i = floor(p);
+	vec2 f = p - i;
+	f = f * f * (3.0 - 2.0 * f);
+	int ix = int(i.x);
+	int iy = int(i.y);
+	float a = lh(ix, iy, s);
+	float b = lh(ix + 1, iy, s);
+	float c = lh(ix, iy + 1, s);
+	float d = lh(ix + 1, iy + 1, s);
+	return a + (b - a) * f.x + (c - a) * f.y + (a - b - c + d) * f.x * f.y;
+}
+float fbm(vec2 p, int s) {
+	return one(p, s) * 0.55 + one(p * 2.1 + vec2(17.3, 3.1), s) * 0.3 + one(p * 4.3 + vec2(7.7, 29.5), s) * 0.15;
+}
+float sm(float e0, float e1, float x) { float u = clamp((x - e0) / max(e1 - e0, 0.000001), 0.0, 1.0); return u * u * (3.0 - 2.0 * u); }
+vec3 across(float v) {
+	float t = clamp(v, 0.0, 1.0) * float(ncols - 1);
+	int i = min(ncols - 2, int(floor(t)));
+	return mix(cols[i], cols[i + 1], t - float(i));
+}
+float flow_at(float u, float v, float f) {
+	float t = f * 0.35;
+	float wx = fbm(vec2(u * 4.0 - t * 0.4, v * 3.0), seed);
+	float wy = fbm(vec2(u * 4.0 + 9.1, v * 3.0 + 4.7 - t * 0.3), seed);
+	return fbm(vec2(u * 13.0 + (wx - 0.5) * 3.0 - t, v * 5.0 + (wy - 0.5) * 2.4), seed);
+}
+void fragment() {
+	float u = UV.x;
+	float v = UV.y;
+	float n = flow_at(u, v, frame);
+	// 循环：这一帧和往回一整圈的那一帧交叉淡化（和编辑器一样）
+	if (loop_n > 0.0) {
+		float p = mod(frame, loop_n) / loop_n;
+		float keep = 1.0 / length(vec2(1.0 - p, p));
+		n = clamp(0.5 + ((n - 0.5) * (1.0 - p) + (flow_at(u, v, frame - loop_n) - 0.5) * p) * keep, 0.0, 1.0);
+	}
+	float body = v * 1.25 + (n - 0.5) * 1.8 * amount;
+	float m = sm(0.42, 0.58, body) * sm(0.0, tail, u);
+	if (m <= 0.01) { discard; }
+	float lum = sm(0.25, 0.75, n);
+	float heat = clamp(v * 0.7 + (lum - 0.5) * 0.8 + 0.15, 0.0, 1.0);
+	vec3 c = across(heat);
+	if (heat > 0.85) { c = mix(c, core, (heat - 0.85) / 0.15); }
+	COLOR = vec4(c, clamp(m * (0.3 + 0.7 * lum) * alpha * (0.5 + 0.5 * amount), 0.0, 1.0));
+}
+"""
+# 箭矢的光读的各层的量（trail_look 的顺序）
+const TG_KEYS := ["strands", "core", "haze", "glow", "flow", "flames", "bolts", "crystal", "speedLines", "curls", "rays", "serrate", "rocks", "shadow"]
 const BLUR_SHADER := """
 shader_type canvas_item;
 render_mode blend_disabled;
@@ -323,6 +465,17 @@ float gridn(vec2 p) {
 	}
 	return outv;
 }
+// 云团在 p（相对云底中点）处的密度之和：ea[i0..i1)
+float cloud_dens(vec2 p, int i0, int i1) {
+	float D = 0.0;
+	for (int i = i0; i < i1; i++) {
+		vec4 q = ea[i];
+		vec2 uv = (p - q.xy) / q.z;
+		float d2 = dot(uv, uv);
+		if (d2 < 1.0) { D += (1.0 - d2) * (1.0 - d2); }
+	}
+	return D;
+}
 vec4 fire(float heat, float light) {
 	if (heat < 0.12) { return vec4(mix(smoke_lo.rgb, fsmoke_hi.rgb, light * light), 0.85); }
 	return vec4(texture(ramp_fire, vec2((heat - 0.12) / 0.88, 0.5)).rgb, 1.0);
@@ -451,12 +604,14 @@ void fragment() {
 		a = min(1.0, d * 1.4) * env;
 	} else if (mode == 7) {
 		// 云朵：一朵朵依次盖上去。每朵由一团团云团叠成：密度是各云团之和，整朵云被慢噪声推歪扯开（轮廓、云底都不规则），
-		// 边缘被噪声磨毛（薄的云半透明、更毛），外面一圈淡淡的雾气和细丝；每个云团左上受光，最强的那个云团盖过别的
-		// （云团之间有褶皱），越往上越亮，云底一带是阴影，云底柔和地淡出
+		// 上面两层「鼓包」噪声（大鼓包上的小鼓包，菜花那样，主要体现在明暗上），边缘被噪声磨毛，薄的云半透明；
+		// 光照像真的云：看这里到太阳（左上）之间隔着多少云——朝阳的一面白、背面和里面是柔和的阴影，越往上越亮，
+		// 云底一带灰一些，鼓包朝阳的一边亮，每个云团也各自左上受光（一团团叠着）；云底柔和地淡出
 		// blobs[3i] = (中心 x, 底边 y, 宽, 高)，blobs[3i + 1] = (透明度, 第一个云团, 云团个数, 浓度)，
 		// blobs[3i + 2] = (第几朵, 噪声尺度, 细丝噪声尺度, 中心两侧伸出多远)；ea = 云团 (相对中心 x, 相对底边 y, 半径)
 		vec3 acc = vec3(0.0);
 		float aac = 0.0;
+		vec2 sun = vec2(-0.42, -0.91);
 		for (int d = 0; d < nb; d++) {
 			vec4 A = blobs[d * 3];
 			vec4 B = blobs[d * 3 + 1];
@@ -469,32 +624,48 @@ void fragment() {
 			float n = loopn(lp, 101, Cc.y, 1.0, 2.0);
 			float wx = x + (loopn(lp, 107, Cc.y * 0.5, 1.0, 1.0) - 0.5) * Hc * 0.25;
 			float wy = y + (n - 0.5) * Hc * 0.16;
+			vec2 pp = vec2(wx - X, wy - Y);
+			int i0 = int(B.y);
+			int i1 = i0 + int(B.z);
 			float D = 0.0;
 			float Lw = 0.0;
 			float Ls = 0.0;
-			int i0 = int(B.y);
-			int i1 = i0 + int(B.z);
 			for (int i = i0; i < i1; i++) {
 				vec4 q = ea[i];
-				float u = (wx - X - q.x) / q.z;
-				float v = (wy - Y - q.y) / q.z;
+				float u = (pp.x - q.x) / q.z;
+				float v = (pp.y - q.y) / q.z;
 				float d2 = u * u + v * v;
 				if (d2 >= 1.0) { continue; }
 				float f = (1.0 - d2) * (1.0 - d2);
-				float qq = f * f * f * f;
+				float f2 = f * f;
+				float qq = f2 * f2;
 				D += f;
 				Lw += qq;
 				Ls += qq * clamp(0.5 - (v * 0.8 + u * 0.35) * 0.55, 0.0, 1.0);
 			}
 			if (D <= 0.002) { continue; }
 			float body = 1.0 - exp(-D * 2.5);
-			// 细丝只在边缘（里面没有可磨的）
 			float edge = 1.0 - sm(0.25, 0.65, body);
-			float dens = body + (n - 0.5) * (0.3 + 0.4 * (1.0 - B.w)) + (edge > 0.0 ? (loopn(lp, 103, Cc.z, 1.0, 3.0) - 0.5) * 0.5 * edge : 0.0);
-			float al = max(sm(0.06, 0.55, dens), 0.3 * sm(0.0, 0.35, body)) * (0.8 + 0.2 * B.w) * (1.0 - sm(Y - Hc * 0.14, Y + Hc * 0.03, wy)) * B.x;
+			// 鼓包：两层，各自再取一点朝太阳挪过去的，当凹凸来打光
+			float e1 = Hc * 0.05;
+			float e2 = Hc * 0.02;
+			float b0 = 2.0 * loopn(lp, 109, Cc.y * 0.9, 1.0, 2.0) - 1.0;
+			float b1 = 2.0 * loopn(lp + sun * e1, 109, Cc.y * 0.9, 1.0, 2.0) - 1.0;
+			float c0 = 2.0 * loopn(lp, 113, Cc.y * 2.4, 1.0, 3.0) - 1.0;
+			float c1 = 2.0 * loopn(lp + sun * e2, 113, Cc.y * 2.4, 1.0, 3.0) - 1.0;
+			float bb = b0 * b0;
+			float bs = b1 * b1;
+			float b2 = c0 * c0;
+			float b2s = c1 * c1;
+			float dens = body * (0.92 + 0.1 * bb + 0.06 * b2)
+				+ (n - 0.5) * (0.3 + 0.4 * (1.0 - B.w)) + (edge > 0.0 ? (loopn(lp, 103, Cc.z, 1.0, 3.0) - 0.5) * 0.5 * edge : 0.0);
+			float al = max(sm(0.06, 0.52, dens), 0.15 * sm(0.0, 0.35, body)) * (0.45 + 0.55 * B.w) * (1.0 - sm(Y - Hc * 0.14, Y + Hc * 0.03, wy)) * B.x;
 			if (al <= 0.004) { continue; }
+			float toSun = cloud_dens(pp + sun * Hc * 0.09, i0, i1) * 0.6 + cloud_dens(pp + sun * Hc * 0.24, i0, i1) * 0.4;
+			float lit = 1.0 - 0.85 * (1.0 - exp(-toSun * 1.5));
 			float up = clamp((Y - wy) / Hc, 0.0, 1.0);
-			float light = clamp(0.55 * (Ls / Lw) + 0.5 * up + (n - 0.5) * 0.15 - 0.28 * (1.0 - sm(0.0, 0.35, up)) + 0.07, 0.0, 1.0);
+			float bump = (clamp((bb - bs) * 1.6, -0.18, 0.18) + clamp((b2 - b2s) * 1.2, -0.1, 0.1)) * (0.4 + 0.6 * lit);
+			float light = clamp(0.02 + 0.32 * lit + 0.3 * up + 0.45 * (Ls / Lw) + 0.6 * bump + (bb - 0.5) * 0.06 + (n - 0.5) * 0.1 - 0.25 * (1.0 - sm(0.0, 0.35, up)), 0.0, 1.0);
 			float s3 = light * 3.0;
 			vec3 cc = s3 < 1.0 ? mix(c_deep.rgb, c_shade.rgb, s3) : (s3 < 2.0 ? mix(c_shade.rgb, c_body.rgb, s3 - 1.0) : mix(c_body.rgb, c_light.rgb, s3 - 2.0));
 			acc = cc * al + acc * (1.0 - al);
@@ -540,10 +711,11 @@ void fragment() {
 """
 
 
-# 四层：普通（盖上去）、噪声（盖上去）、噪声（叠加）、光（叠加变亮），放在一个 CanvasGroup 里整体加辉光
+# 几层：普通（盖上去）、噪声（盖上去）、噪声（叠加）、光（叠加变亮），放在一个 CanvasGroup 里整体加辉光；
+# 箭矢另有最下面一层（深色配色的光晕）、两层流动的刀身，和最上面两层（箭身盖上去、箭身上的光叠加）
 class Layer extends Node2D:
 	var host
-	var role := 0  # 0 普通，1 光，2 噪声（普通），3 噪声（叠加）
+	var role := 0  # 0 普通，1 光，2 噪声（普通），3 噪声（叠加），4 最上面（普通），5 最上面（光），6、7 流动的刀身，8 最下面（普通）
 
 	func _draw() -> void:
 		host._draw_layer(self, role)
@@ -609,6 +781,29 @@ var _gy := 0.0
 var _rx := 0.0
 var _ry := 0.0
 var _px := 1.0  # 一个屏幕像素在本地坐标里多长（画抗锯齿的线用）
+# 箭矢：最上面两层、最下面一层攒的三角形，两半光的流动刀身，画到哪一层
+var _t4i := PackedInt32Array()
+var _t4p := PackedVector2Array()
+var _t4c := PackedColorArray()
+var _t5i := PackedInt32Array()
+var _t5p := PackedVector2Array()
+var _t5c := PackedColorArray()
+var _t8i := PackedInt32Array()
+var _t8p := PackedVector2Array()
+var _t8c := PackedColorArray()
+var _fm := [{}, {}]
+var _over := false  # 画到最上面两层
+var _under := false  # 画到最下面一层
+var _tg_top := false  # 光薄薄地盖在箭身上的那一遍
+var _tg_light := true  # 光的这一层是叠加的
+var _tg_haze := false  # 正在画光晕
+var _tg_loop_n := 0.0  # 循环时一圈的帧数（流动的刀身、风刃转回原处）
+var _aw := {}  # 箭矢的形状（光的轮廓、摆动用）
+var _core_on := false  # 这一帧画核心的图
+var _core_xf := Transform2D.IDENTITY  # 核心的图：它自己的坐标 → 画幅
+var _core_box := Rect2()
+var _core_src := ["", ""]
+var _core_img: Array = [null, null]
 
 
 func _ready() -> void:
@@ -701,15 +896,19 @@ func _build() -> void:
 	_canvas = Node2D.new()
 	_canvas.scale = Vector2(_vs, _vs)
 	_vp.add_child(_canvas)
-	for role in [0, 2, 3, 1]:
+	for role in [8, 6, 7, 0, 2, 3, 1, 4, 5]:
 		var l := Layer.new()
 		l.host = self
 		l.role = role
-		if role == 1:
+		if role == 1 or role == 5:
 			var m := CanvasItemMaterial.new()
 			m.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
 			l.material = m
-		elif role >= 2:
+		elif role == 6 or role == 7:
+			var flm := ShaderMaterial.new()
+			flm.shader = _shader(FLOW_SHADER % ("blend_add" if additive else "blend_mix"))
+			l.material = flm
+		elif role == 2 or role == 3:
 			var fm := ShaderMaterial.new()
 			fm.shader = _shader(FIELD_SHADER % ("blend_mix" if role == 2 else "blend_add"))
 			_setup_field(fm)
@@ -877,6 +1076,9 @@ func _process(delta: float) -> void:
 		_disp.region_rect = Rect2(0, 0, ceilf(float(fb[0]) * _vs), ceilf(float(fb[1]) * _vs))
 		_disp.transform = (fb[3] as Transform2D) * Transform2D(0.0, Vector2(1.0 / _vs, 1.0 / _vs), 0.0, Vector2.ZERO)
 		_disp_mat.set_shader_parameter("bloom", bloom)
+		_disp_mat.set_shader_parameter("round_clip", kind == 12)
+		_disp_mat.set_shader_parameter("span", _disp.region_rect.size / Vector2(_vp.size))
+		_disp_mat.set_shader_parameter("box", Vector2(float(fb[0]), float(fb[1])))
 	var key := _key_now()
 	if key == -2:
 		_cur = -2
@@ -902,14 +1104,15 @@ func _draw_layer(cv: CanvasItem, role: int) -> void:
 	_cv = cv
 	_role = role
 	_pass_light = role == 1
-	if role >= 2 and not _has_field():
+	var field := role == 2 or role == 3
+	if field and not _has_field():
 		return  # 只有噪声画的特效用这两层
 	_px = 1.0 / maxf(0.0001, absf(cv.get_global_transform_with_canvas().get_scale().x))
 	if _draw_key == -1:
 		return
 	var fb := _box_for(_draw_key)
 	_base = Transform2D.IDENTITY
-	if role >= 2:
+	if field:
 		_draw_effect(float(fb[0]), float(fb[1]), float(fb[2]))
 		cv.draw_set_transform_matrix(Transform2D.IDENTITY)
 		return
@@ -922,22 +1125,77 @@ func _draw_layer(cv: CanvasItem, role: int) -> void:
 		_ai = PackedInt32Array()
 		_ap = PackedVector2Array()
 		_ac = PackedColorArray()
+		_t4i = PackedInt32Array()
+		_t4p = PackedVector2Array()
+		_t4c = PackedColorArray()
+		_t5i = PackedInt32Array()
+		_t5p = PackedVector2Array()
+		_t5c = PackedColorArray()
+		_t8i = PackedInt32Array()
+		_t8p = PackedVector2Array()
+		_t8c = PackedColorArray()
+		_fm = [{}, {}]
+		_core_on = false
 		_role = 0
 		_draw_effect(float(fb[0]), float(fb[1]), float(fb[2]))
 		cv.draw_set_transform_matrix(Transform2D.IDENTITY)
+	# 箭矢的核心：图盖上去，它身上的光叠加上去（点缀在它上面，后画）
+	if _core_on and (role == 4 or role == 5):
+		var tex := _core_tex(role == 5)
+		if tex:
+			cv.draw_set_transform_matrix(_core_xf)
+			cv.draw_texture_rect(tex, _core_box, false)
+			cv.draw_set_transform_matrix(Transform2D.IDENTITY)
 	if role == 1 and not _ai.is_empty():
 		RenderingServer.canvas_item_add_triangle_array(cv.get_canvas_item(), _ai, _ap, _ac)
 	elif role == 0 and not _bi.is_empty():
 		RenderingServer.canvas_item_add_triangle_array(cv.get_canvas_item(), _bi, _bp, _bc)
+	elif role == 4 and not _t4i.is_empty():
+		RenderingServer.canvas_item_add_triangle_array(cv.get_canvas_item(), _t4i, _t4p, _t4c)
+	elif role == 5 and not _t5i.is_empty():
+		RenderingServer.canvas_item_add_triangle_array(cv.get_canvas_item(), _t5i, _t5p, _t5c)
+	elif role == 8 and not _t8i.is_empty():
+		RenderingServer.canvas_item_add_triangle_array(cv.get_canvas_item(), _t8i, _t8p, _t8c)
+	elif role == 6 or role == 7:
+		var f: Dictionary = _fm[role - 6]
+		if not f.is_empty():
+			var m := cv.material as ShaderMaterial
+			for k in f["par"]:
+				m.set_shader_parameter(k, f["par"][k])
+			RenderingServer.canvas_item_add_triangle_array(cv.get_canvas_item(), f["idx"], f["pts"], f["cols"], f["uvs"])
 
 
 # 噪声层有没有东西：噪声画的特效、云朵，和魔法阵的能量爆发、幽魂光环
 func _has_field() -> bool:
-	return kind >= 7 or (kind == 6 and (pattern == 4 or pattern == 8))
+	return (kind >= 7 and kind <= 11) or (kind == 6 and (pattern == 4 or pattern == 8))
 
 
 # 攒起来的三角形（点按当前的变换算好）
 func _tri(idx: PackedInt32Array, pts: PackedVector2Array, cols: PackedColorArray) -> void:
+	if _over or _under:
+		# 箭矢：最上面（箭身盖上去 / 叠加的光）或最下面那一层
+		var dst := 8 if _under else (5 if _add else 4)
+		var n0 := _t8p.size() if dst == 8 else (_t5p.size() if dst == 5 else _t4p.size())
+		var ii := PackedInt32Array()
+		for i in idx:
+			ii.append(n0 + i)
+		var pp := PackedVector2Array()
+		for p in pts:
+			pp.append(_xf * p)
+		var cc := cols if cols.size() == pts.size() else _fill_cols(pts.size(), cols[0])
+		if dst == 8:
+			_t8i.append_array(ii)
+			_t8p.append_array(pp)
+			_t8c.append_array(cc)
+		elif dst == 5:
+			_t5i.append_array(ii)
+			_t5p.append_array(pp)
+			_t5c.append_array(cc)
+		else:
+			_t4i.append_array(ii)
+			_t4p.append_array(pp)
+			_t4c.append_array(cc)
+		return
 	if _add:
 		var base := _ap.size()
 		for i in idx:
@@ -1021,8 +1279,12 @@ func _draw_effect(w: float, h: float, t: float) -> void:
 		9: _k_explosion()
 		10: _k_dust()
 		11: pass  # 云朵：整个在噪声层里画
+		12: _k_arrow()
 	_gmul = 1.0
+	# 箭矢的点缀盖在箭身上面（和编辑器一样）
+	_over = kind == 12
 	_accents()
+	_over = false
 
 
 # ---------- 各种特效（与编辑器 vfx/kinds/*.js 相同的画法） ----------
@@ -2065,7 +2327,9 @@ func _cloud_field(m: ShaderMaterial) -> void:
 		var big := 1.0 if n == 1 else P.next()
 		var H := maxf(6.0, Hmax * (0.3 + 0.7 * pow(big, 1.5)))
 		var W := minf(w * (0.95 if n == 1 else 0.75), H * (1.8 + 2.4 * P.next()))
-		var dn := 0.35 + 0.65 * P.next()
+		# 大多是实心的；有时一朵小的薄云透出天空（大的、只有一朵时：实心）
+		var roll := P.next()
+		var dn := 0.3 + roll if n > 1 and big < 0.55 and roll < 0.3 else 0.85 + 0.15 * roll
 		# 在哪：沿宽度分散开，云底在放得下的任意高度
 		var x0 := 0.5 if n == 1 else (i + 0.15 + 0.7 * P.next()) / n
 		var by := (h + H) / 2.0 if n == 1 else H + 2.0 + (h - 4.0 - H) * P.next()
@@ -2143,10 +2407,10 @@ func _cloud_field(m: ShaderMaterial) -> void:
 	m.set_shader_parameter("nb", nd)
 	m.set_shader_parameter("blobs", PackedVector4Array(draws.slice(0, 64)))
 	m.set_shader_parameter("ea", PackedVector4Array(pf.slice(0, 240)))
-	m.set_shader_parameter("c_light", Color.WHITE.lerp(core_color, 0.08))
-	m.set_shader_parameter("c_body", Color8(236, 242, 252).lerp(rim_color, 0.12))
-	m.set_shader_parameter("c_shade", Color8(176, 196, 228).lerp(rim_color, 0.25))
-	m.set_shader_parameter("c_deep", Color8(132, 158, 204).lerp(c0, 0.25))
+	m.set_shader_parameter("c_light", Color.WHITE.lerp(core_color, 0.05))
+	m.set_shader_parameter("c_body", Color8(241, 244, 249).lerp(rim_color, 0.08))
+	m.set_shader_parameter("c_shade", Color8(203, 212, 226).lerp(rim_color, 0.14))
+	m.set_shader_parameter("c_deep", Color8(150, 164, 188).lerp(c0, 0.14))
 	_field_quad(lo.x, lo.y, hi.x, hi.y)
 
 
@@ -2679,6 +2943,871 @@ func _across(v: float) -> Color:
 	var t := clampf(v, 0.0, 1.0) * (n - 1)
 	var i := mini(n - 2, int(floor(t)))
 	return colors[i].lerp(colors[i + 1], t - i)
+
+
+# 箭矢：飞出去的东西包在拖尾的光效里，光往后拖成彗星（与编辑器 vfx/kinds/arrow.js 相同）。光分两半，各自的亮边贴着
+# 飞行线，合起来在前头收成圆头（圆的、会转的：包住整个核心）；每一半照拖尾的光效画（_tg_glow）。核心是导出时画好的图
+# （箭、匕首、长枪……或自定义的图片），盖在光上面，外面再薄薄叠一层光。
+# 大小都按画幅的内切圆算，显示时只留内切圆里的，所以怎么转都不出框。
+func _k_arrow() -> void:
+	var t := _t
+	var R := _R
+	var cx := _cx
+	var cy := _cy
+	var P := Rand.new(random_seed * 113 + 7)
+	var L := core_length * R
+	var ro := core_radius * R
+	var H := maxf(R * 0.24, ro * 1.35) if core_round else R * 0.24
+	var nose := H * 0.45
+	var fly := 0.0 if loop else clampf(t / 0.72, 0.0, 1.0)
+	var xt := cx + R * 0.84 - nose if loop else cx - R + L * 0.5 + (2.0 * R + L * 0.5 + nose) * fly
+	var x0 := maxf(cx - R * 1.05, xt - R * 1.9)
+	var xn := xt + nose
+	var xw := xt - ro if core_round else xt - L * 0.2
+	# 不循环时箭飞过去之后，拖尾散去
+	var life := 1.0 if loop else 1.0 - _smooth(0.55, 1.0, t)
+	_aw = {"t": t, "H": H, "x0": x0, "xn": xn, "xw": xw, "Wd": H / 0.75}
+	# 第几帧（火舌、闪电每帧换一个样子）
+	var nf := float(_follow["frames"]) if mode == 0 and not _follow.is_empty() else float(maxi(1, frames))
+	var fi := int(round(t * nf)) if loop else int(floor(t * nf))
+	_tg_loop_n = nf if loop else 0.0
+	var M := 48
+	var glows := []
+	if xn - x0 > 2.0 and life > 0.01:
+		for k in 2:
+			var dir := 1.0 if k == 0 else -1.0
+			var r := []
+			for i in M + 1:
+				var u := float(i) / M
+				var x := x0 + (xn - x0) * u
+				var W := _aw_width(x)
+				var y := cy + _aw_sway(u)
+				r.append({"a": Vector2(x, y + dir * 0.75 * W), "b": Vector2(x, y - dir * 0.25 * W), "u": u})
+			glows.append([r, random_seed * 2 + k, k])
+	# 两半在箭杆上重叠：各少一点
+	for gl in glows:
+		_tg_glow(gl[0], gl[1], fi, life, 0.85 if additive else 1.0, false, gl[2])
+
+	# 从箭上往后冲的光：光里的几道光线（前头最亮），和往后、往外飘的光点
+	_add = true
+	var lw := maxf(0.6, H * 0.06)
+	var back := xt - L * 0.3 - x0
+	for k in int(round(9.0 * amount)):
+		var v := P.next() * 2.0 - 1.0
+		var ph := P.next()
+		var sp := 1.0 + floorf(P.next() * 2.0)
+		var ln := R * (0.12 + 0.18 * P.next())
+		var p := fposmod(ph + t * sp, 1.0)
+		var x := xt - L * 0.3 - back * p
+		var y := cy + _aw_sway(clampf((x - x0) / maxf(1e-6, xn - x0), 0.0, 1.0)) + v * 0.5 * _aw_width(x) * 0.75
+		var a := sin(PI * p) * life * (0.4 + 0.4 * P.next())
+		if a > 0.02:
+			_streak(Vector2(x - ln, y), Vector2(x, y), rim_color, core_color, a, lw)
+	for k in int(round(12.0 * amount)):
+		var side := -1.0 if P.next() < 0.5 else 1.0
+		var ph := P.next()
+		var sp := 1.0 + floorf(P.next() * 2.0)
+		var out := 0.4 + 0.8 * P.next()
+		var sz := 0.6 + 0.8 * P.next()
+		var x1 := xt - L * 0.5 * P.next()
+		var p := fposmod(ph + t * sp, 1.0)
+		var a := sin(PI * p) * (1.0 - 0.5 * p) * life
+		if a > 0.02:
+			_blob(Vector2(x1 - p * R * 1.1, cy + side * H * (0.15 + out * p)), maxf(0.9, H * 0.08 * sz), [[0.0, core_color, a], [0.45, rim_color, 0.6 * a], [1.0, rim_color, 0.0]])
+
+	# 核心（导出时画好的图）盖在光上面；圆的、会转的在光头的正中，转着（循环时整数圈）
+	var sh := core_shift * R
+	if xt + sh - L > cx + R + 2.0:
+		return
+	_core_on = true
+	var th := TAU * t * (1.0 if loop else 2.0) if core_spin else 0.0
+	_core_xf = _xf * Transform2D(th, Vector2(xt - ro + sh, cy) if core_round else Vector2(xt + sh, cy))
+	_core_box = Rect2(core_rect.position * R, core_rect.size * R)
+	# 包在光里：光再薄薄地盖一层在核心上
+	if additive:
+		for gl in glows:
+			_tg_glow(gl[0], gl[1], fi, life, 0.15, true, gl[2])
+
+
+# 核心的图：core_texture，没有就用内嵌的 PNG（light：它身上和周围的光，叠加上去）
+func _core_tex(light: bool) -> Texture2D:
+	if not light and core_texture:
+		return core_texture
+	var src := core_light_png if light else core_png
+	if src.is_empty():
+		return null
+	var k := 1 if light else 0
+	if _core_src[k] != src:
+		_core_src[k] = src
+		var img := Image.new()
+		_core_img[k] = ImageTexture.create_from_image(img) if img.load_png_from_buffer(Marshalls.base64_to_raw(src)) == OK else null
+	return _core_img[k]
+
+
+# 光的轮廓：尾巴细，箭头一圈最宽，过了箭尖收成一个尖
+func _aw_width(x: float) -> float:
+	var Wd: float = _aw["Wd"]
+	var x0: float = _aw["x0"]
+	var xn: float = _aw["xn"]
+	var xw: float = _aw["xw"]
+	if x >= xw:
+		var q := (x - xw) / maxf(1e-6, xn - xw)
+		return Wd * maxf(0.03, sqrt(maxf(0.0, 1.0 - q * q)))
+	return Wd * (0.18 + 0.82 * pow(clampf((x - x0) / maxf(1.0, xw - x0), 0.0, 1.0), 0.7))
+
+
+# 尾巴轻轻摆动：一道波沿着它往后走（循环时整数圈）
+func _aw_sway(u: float) -> float:
+	return float(_aw["H"]) * 0.14 * pow(1.0 - u, 1.5) * sin(TAU * (u * 1.3 + 2.0 * float(_aw["t"])))
+
+
+# ---------- 箭矢的光（与编辑器 trails/glow.js renderGlow 相同的各层，画法照拖尾纯代码 attack_trail_code.gd） ----------
+# 没有搬过来的：水纹、撕裂、尾部变色、侵蚀；光效自己的那层辉光由整个特效的辉光代替。
+# r：一半光的截面（a 内侧 → b 外侧，u 从尾到头）；gain：这一遍的浓度；top：盖在箭身上面的那一薄层（只画形状，都叠加）；
+# slot：流动的刀身画进哪一层
+func _tg_glow(r: Array, seed: int, frame: int, alpha: float, gain: float, top: bool, slot: int) -> void:
+	if r.size() < 2:
+		return
+	var L := {}
+	for i in TG_KEYS.size():
+		L[TG_KEYS[i]] = trail_look[i] if i < trail_look.size() else 0.0
+	var cols: Array = Array(trail_colors) if trail_colors.size() >= 2 else Array(colors)
+	var core := core_color
+	var rim := rim_color
+	var tail := 0.75
+	var maxW := 1.0
+	for q in r:
+		maxW = maxf(maxW, _tg_wd(q))
+	_gmul = gain
+	_tg_top = top
+	if not top:
+		# ---- 光晕：宽宽的几道颜色（编辑器里重重地模糊，这里画成两边化开的带子）
+		if L["haze"] > 0.0:
+			_tg_haze_lanes(r, cols, L["haze"], alpha, tail, maxW)
+		# ---- 流动的刀身（shader，画在截面的网格上）
+		if L["flow"] > 0.0:
+			_tg_mesh(r, slot, seed, frame, alpha * gain, tail, L["flow"], cols)
+	# ---- 刀身里的岩石
+	if L["rocks"] > 0.0:
+		_tg_light = false
+		_tg_rock_body(r, cols, seed, alpha, tail, L["rocks"])
+	# ---- 风刃
+	if L["curls"] > 0.0:
+		_tg_light = true
+		_tg_curls(r, core, rim, seed, frame, alpha, maxW, L["curls"])
+	# ---- 火舌
+	if L["flames"] > 0.0:
+		_tg_flames(r, cols, core, rim, seed, frame, alpha, tail, maxW, L["flames"], trail_dark)
+	# ---- 光丝（叠加）：位置每段光固定，只有亮度每帧闪一点
+	_tg_light = true
+	var N := clampi(int(L["strands"]), 0, 160)
+	var Rr := Rand.new(seed)
+	var shimmer := Rand.new(seed * 31 + frame * 977)
+	var dim := minf(1.0, sqrt(24.0 / maxf(1.0, N)))
+	for s in N:
+		var v := 0.03 + 0.94 * Rr.next()
+		var reach := sin(PI * v)
+		var u0 := maxf(0.0, (1.0 - reach) * tail * 0.9 + Rr.next() * tail * 0.7 - 0.05)
+		var bright := pow(Rr.next(), 1.6) * (0.85 + 0.3 * shimmer.next())
+		var thick := (0.3 + 0.9 * Rr.next()) * maxf(0.7, maxW / 28.0)
+		var col := _tg_across(cols, v + (Rr.next() - 0.5) * 0.1)
+		var drift := (Rr.next() - 0.5) * 0.06
+		var phase := Rr.next() * 6.28
+		_tg_filament(r, u0, v, drift, phase, thick, _tg_rgba(col, (0.25 + 0.75 * bright) * dim * alpha), tail)
+	if N > 0:
+		_tg_filament(r, 0.0, 0.975, 0.0, 0.0, maxf(0.8, maxW / 40.0), _tg_rgba(rim, 0.9 * alpha), tail)
+	# ---- 刃芯：外侧一道锐利的月牙，边上是亮边色，中间白热（这里就贴着箭杆）
+	if L["core"] > 0.0:
+		_tg_light = false
+		var cr: float = L["core"]
+		var ca := alpha * alpha
+		var u0 := maxf(0.0, 1.0 - (0.35 + 0.6 * cr))
+		if L["shadow"] > 0.0:
+			var dsum := Vector2.ZERO
+			for q in r:
+				dsum += (q["a"] as Vector2) - (q["b"] as Vector2)
+			var dl := dsum.length()
+			var off := dsum / (dl if dl > 0.0 else 1.0) * maxW * 0.14 * float(L["shadow"])
+			var cz: Color = cols[0]
+			_tg_crescent(r, u0, cr, 1.2, 0.74, 1.0, off, _tg_rgba(Color(cz.r * 0.75, cz.g * 0.75, cz.b * 0.75), ca * 0.9))
+		_tg_crescent(r, u0, cr, 1.2, 0.74, 1.0, Vector2.ZERO, _tg_rgba(rim, ca))
+		_tg_crescent(r, u0, cr, 1.5, 0.76, 0.6, Vector2.ZERO, _tg_rgba(core, ca))
+	# ---- 头部的热光
+	var hd: Dictionary = r[r.size() - 1]
+	_tg_light = true
+	_tg_flags()
+	var hr := _tg_wd(hd) * 0.6 + 1.0
+	_radial(_tg_at(hd, 0.7), [[0.0, Color(core, clampf(0.45 * alpha * alpha, 0.0, 1.0))], [hr * 0.45, Color(rim, clampf(0.22 * alpha, 0.0, 1.0))], [hr, Color(rim, 0.0)]])
+	_over = false
+	_under = false
+	# ---- 闪电、冰晶、速度线、锯齿、光芒
+	if L["bolts"] > 0.0:
+		_tg_light = true
+		_tg_bolts(r, core, rim, seed, frame, alpha, maxW, L["bolts"])
+	if L["crystal"] > 0.0:
+		_tg_light = false
+		_tg_crystals(r, cols, core, seed, alpha, tail, maxW, L["crystal"])
+	if L["speedLines"] > 0.0:
+		_tg_light = true
+		_tg_speed_lines(r, core, rim, seed, frame, alpha, maxW, L["speedLines"])
+	if L["serrate"] > 0.0:
+		_tg_light = false
+		_tg_serrate(r, cols, core, seed, alpha, tail, L["serrate"])
+	if L["rays"] > 0.0:
+		_tg_light = true
+		_tg_rays(r, core, rim, seed, frame, alpha, maxW, L["rays"])
+	_gmul = 1.0
+	_tg_top = false
+	_tg_light = true
+
+
+# 这一块画进哪一层：盖在箭身上面的那层都叠加；配色亮的时候整片光叠加上去（编辑器里光是 lighter 叠上去的），
+# 深色配色（黑炎）时按拖尾里各层自己的画法，光晕垫在最下面
+func _tg_flags() -> void:
+	if _tg_top:
+		_over = true
+		_under = false
+		_add = true
+	else:
+		_over = false
+		_under = _tg_haze and not additive
+		_add = _tg_light or additive
+
+
+func _tg_emit(idx: PackedInt32Array, pts: PackedVector2Array, cols: PackedColorArray) -> void:
+	if idx.is_empty() or pts.is_empty():
+		return
+	_tg_flags()
+	_tri(idx, pts, cols)
+	_over = false
+	_under = false
+
+
+# 颜色（乘上这一遍的浓度）
+func _tg_rgba(c: Color, a: float) -> Color:
+	return Color(c.r, c.g, c.b, clampf(a, 0.0, 1.0) * _gmul)
+
+
+func _tg_haze_lanes(r: Array, cols: Array, haze: float, alpha: float, tail: float, maxW: float) -> void:
+	_tg_haze = true
+	var sg := maxf(1.5, maxW / 6.0)
+	for l in 6:
+		var v := (l + 0.5) / 6.0
+		var col := _tg_across(cols, v)
+		var lo := PackedVector2Array()
+		var md := PackedVector2Array()
+		var hi := PackedVector2Array()
+		var cm := PackedColorArray()
+		var ce := PackedColorArray()
+		for q in r:
+			var lw := maxf(0.35, _tg_wd(q) / 6.0 * 1.7)
+			var spread := lw / 2.0 + sg * 1.5
+			# 模糊开来：同样多的颜色铺到更宽的地方
+			var a: float = haze * 0.38 * _smooth(0.0, tail, q["u"]) * (0.5 + 0.5 * sin(PI * v)) * alpha * minf(1.0, lw / spread)
+			var c := _tg_at(q, v)
+			var nv: Vector2 = ((q["b"] as Vector2) - (q["a"] as Vector2)).normalized() * spread
+			lo.append(c - nv)
+			md.append(c)
+			hi.append(c + nv)
+			cm.append(_tg_rgba(col, a))
+			ce.append(_tg_rgba(col, 0.0))
+		_tg_strip(lo, md, ce, cm)
+		_tg_strip(md, hi, cm, ce)
+	_tg_haze = false
+
+
+# 流动的刀身：截面之间的网格，UV = (u, v)，由 FLOW_SHADER 一个像素一个像素地画
+func _tg_mesh(r: Array, slot: int, seed: int, frame: int, alpha: float, tail: float, amount: float, cols: Array) -> void:
+	var pts := PackedVector2Array()
+	var uvs := PackedVector2Array()
+	var cl := PackedColorArray()
+	var idx := PackedInt32Array()
+	for i in range(1, r.size()):
+		var p: Dictionary = r[i - 1]
+		var q: Dictionary = r[i]
+		var b := pts.size()
+		for v in [p["a"], p["b"], q["b"], q["a"]]:
+			pts.append(_xf * (v as Vector2))
+		uvs.append_array(PackedVector2Array([Vector2(p["u"], 0.0), Vector2(p["u"], 1.0), Vector2(q["u"], 1.0), Vector2(q["u"], 0.0)]))
+		for j in 4:
+			cl.append(Color.WHITE)
+		idx.append_array(PackedInt32Array([b, b + 1, b + 2, b, b + 2, b + 3]))
+	var c3 := PackedVector3Array()
+	for i in 8:
+		var c: Color = cols[mini(i, cols.size() - 1)]
+		c3.append(Vector3(c.r, c.g, c.b))
+	_fm[slot] = {"idx": idx, "pts": pts, "uvs": uvs, "cols": cl, "par": {"seed": seed * 13 + 7, "frame": float(frame), "alpha": alpha, "tail": tail, "amount": amount, "cols": c3, "ncols": mini(8, cols.size()), "loop_n": _tg_loop_n, "core": Vector3(core_color.r, core_color.g, core_color.b)}}
+
+
+func _tg_strip(lo: PackedVector2Array, hi: PackedVector2Array, clo: PackedColorArray, chi: PackedColorArray) -> void:
+	var n := lo.size()
+	if n < 2:
+		return
+	var pts := PackedVector2Array()
+	var cols := PackedColorArray()
+	var idx := PackedInt32Array()
+	for i in n:
+		pts.append(lo[i])
+		pts.append(hi[i])
+		cols.append(clo[i] if clo.size() == n else clo[0])
+		cols.append(chi[i] if chi.size() == n else chi[0])
+	for i in n - 1:
+		var b := i * 2
+		idx.append_array(PackedInt32Array([b, b + 1, b + 3, b, b + 3, b + 2]))
+	_tg_emit(idx, pts, cols)
+
+
+func _tg_poly(pts: PackedVector2Array, cols: PackedColorArray) -> void:
+	if pts.size() < 3:
+		return
+	var idx := Geometry2D.triangulate_polygon(pts)
+	if idx.is_empty():
+		for i in range(1, pts.size() - 1):
+			idx.append_array(PackedInt32Array([0, i, i + 1]))
+	_tg_emit(idx, pts, cols)
+
+
+func _tg_grad(stops: Array, t: float) -> Color:
+	if t <= float(stops[0][0]):
+		return stops[0][1]
+	for i in range(1, stops.size()):
+		var b: float = stops[i][0]
+		if t <= b:
+			var a: float = stops[i - 1][0]
+			return (stops[i - 1][1] as Color).lerp(stops[i][1], (t - a) / maxf(b - a, 1e-6))
+	return stops[stops.size() - 1][1]
+
+
+# 多边形，从 p0 到 p1 的线性渐变：拆成三角形，在色标处切开，每块里按顶点插值正好是渐变
+func _tg_gfill(pts: PackedVector2Array, p0: Vector2, p1: Vector2, stops: Array) -> void:
+	if pts.size() < 3:
+		return
+	var d := p1 - p0
+	var dd := d.length_squared()
+	if dd < 1e-8:
+		_tg_poly(pts, PackedColorArray([stops[0][1]]))
+		return
+	var tri := Geometry2D.triangulate_polygon(pts)
+	if tri.is_empty():
+		for i in range(1, pts.size() - 1):
+			tri.append_array(PackedInt32Array([0, i, i + 1]))
+	var cuts: Array = []
+	for i in range(1, stops.size() - 1):
+		cuts.append(float(stops[i][0]))
+	var op := PackedVector2Array()
+	var oc := PackedColorArray()
+	var oi := PackedInt32Array()
+	for k in range(0, tri.size(), 3):
+		var poly: Array = [pts[tri[k]], pts[tri[k + 1]], pts[tri[k + 2]]]
+		var lo := -INF
+		for j in cuts.size() + 1:
+			var hi: float = cuts[j] if j < cuts.size() else INF
+			var piece := _tg_clip_band(poly, p0, d, dd, lo, hi)
+			if piece.size() >= 3:
+				var base := op.size()
+				for v in piece:
+					op.append(v)
+					oc.append(_tg_grad(stops, clampf(((v as Vector2) - p0).dot(d) / dd, 0.0, 1.0)))
+				for m in range(1, piece.size() - 1):
+					oi.append_array(PackedInt32Array([base, base + m, base + m + 1]))
+			lo = hi
+	_tg_emit(oi, op, oc)
+
+
+func _tg_clip_band(poly: Array, p0: Vector2, d: Vector2, dd: float, lo: float, hi: float) -> Array:
+	var cur := poly
+	for side in 2:
+		var lim := lo if side == 0 else hi
+		if is_inf(lim):
+			continue
+		var nxt := []
+		var n := cur.size()
+		for i in n:
+			var a: Vector2 = cur[i]
+			var b: Vector2 = cur[(i + 1) % n]
+			var ta := (a - p0).dot(d) / dd
+			var tb := (b - p0).dot(d) / dd
+			var ia := ta >= lim if side == 0 else ta <= lim
+			var ib := tb >= lim if side == 0 else tb <= lim
+			if ia:
+				nxt.append(a)
+			if ia != ib:
+				nxt.append(a.lerp(b, (lim - ta) / (tb - ta)))
+		cur = nxt
+		if cur.size() < 3:
+			return []
+	return cur
+
+
+# 一笔直线 p → q，沿线的渐变，线宽 lw，round_cap = 圆头
+func _tg_gline(p: Vector2, q: Vector2, stops: Array, lw: float, round_cap: bool) -> void:
+	var d := q - p
+	var ln := d.length()
+	if ln < 1e-5:
+		return
+	var u := d / ln
+	var nv := Vector2(-u.y, u.x) * lw / 2.0
+	var pts := PackedVector2Array()
+	var cols := PackedColorArray()
+	var idx := PackedInt32Array()
+	for i in stops.size():
+		var c := p + d * clampf(float(stops[i][0]), 0.0, 1.0)
+		pts.append(c - nv)
+		pts.append(c + nv)
+		cols.append(stops[i][1])
+		cols.append(stops[i][1])
+		if i > 0:
+			var b := (i - 1) * 2
+			idx.append_array(PackedInt32Array([b, b + 1, b + 3, b, b + 3, b + 2]))
+	_tg_emit(idx, pts, cols)
+	if round_cap:
+		_tg_cap(p, -u, lw / 2.0, stops[0][1])
+		_tg_cap(q, u, lw / 2.0, stops[stops.size() - 1][1])
+
+
+func _tg_cap(c: Vector2, dir: Vector2, r: float, col: Color) -> void:
+	if col.a <= 0.0 or r <= 0.0:
+		return
+	var pts := PackedVector2Array([c])
+	var a0 := dir.angle() - PI / 2.0
+	for i in 7:
+		var a := a0 + PI * i / 6.0
+		pts.append(c + Vector2(cos(a), sin(a)) * r)
+	var idx := PackedInt32Array()
+	for i in 6:
+		idx.append_array(PackedInt32Array([0, i + 1, i + 2]))
+	_tg_emit(idx, pts, PackedColorArray([col]))
+
+
+func _tg_seg(p: Vector2, q: Vector2, col: Color, lw: float, round_cap: bool) -> void:
+	_tg_gline(p, q, [[0.0, col], [1.0, col]], lw, round_cap)
+
+
+func _tg_pline(pts: PackedVector2Array, col: Color, lw: float, closed: bool) -> void:
+	var n := pts.size()
+	for i in (n if closed else n - 1):
+		_tg_seg(pts[i], pts[(i + 1) % n], col, lw, false)
+
+
+func _tg_disc(c: Vector2, r: float, col: Color) -> void:
+	if r <= 0.0 or col.a <= 0.0:
+		return
+	var n := clampi(int(r * 3.0) + 10, 10, 64)
+	var pts := PackedVector2Array([c])
+	var idx := PackedInt32Array()
+	for i in n:
+		var a := TAU * i / n
+		pts.append(c + Vector2(cos(a), sin(a)) * r)
+		idx.append_array(PackedInt32Array([0, 1 + i, 1 + (i + 1) % n]))
+	_tg_emit(idx, pts, PackedColorArray([col]))
+
+
+# 配色上从暗到亮的位置 v 的颜色（编辑器 colorAcross，取整到 0..255）
+func _tg_across(cols: Array, v: float) -> Color:
+	var t := clampf(v, 0.0, 1.0) * (cols.size() - 1)
+	var i := mini(cols.size() - 2, int(floor(t)))
+	var f := t - i
+	var a: Color = cols[i]
+	var b: Color = cols[i + 1]
+	return Color(roundf((a.r + (b.r - a.r) * f) * 255.0) / 255.0, roundf((a.g + (b.g - a.g) * f) * 255.0) / 255.0, roundf((a.b + (b.b - a.b) * f) * 255.0) / 255.0)
+
+
+# 截面 q 上横向 v 处
+func _tg_at(q: Dictionary, v: float) -> Vector2:
+	return (q["a"] as Vector2).lerp(q["b"], v)
+
+
+func _tg_wd(q: Dictionary) -> float:
+	return (q["a"] as Vector2).distance_to(q["b"])
+
+
+# 光上 (u, v) 处的点（截面之间插值）、横向单位向量、横向向量
+func _tg_on_run(r: Array, u: float, v: float) -> Array:
+	var i := 1
+	while i < r.size() - 1 and float(r[i]["u"]) < u:
+		i += 1
+	var p: Dictionary = r[i - 1]
+	var q: Dictionary = r[i]
+	var den: float = float(q["u"]) - float(p["u"])
+	var t := clampf((u - float(p["u"])) / (den if den != 0.0 else 1.0), 0.0, 1.0)
+	var ax: Vector2 = (q["b"] as Vector2) - (q["a"] as Vector2)
+	var al := ax.length()
+	return [_tg_at(p, v).lerp(_tg_at(q, v), t), ax / (al if al > 0.0 else 1.0), ax]
+
+
+func _tg_ext(r: Array, u: float, v: float) -> Vector2:
+	var i: Vector2 = _tg_on_run(r, u, 0.0)[0]
+	var o: Vector2 = _tg_on_run(r, u, 1.0)[0]
+	return i.lerp(o, v)
+
+
+func _tg_width(r: Array, u: float) -> float:
+	return (_tg_on_run(r, u, 0.0)[0] as Vector2).distance_to(_tg_on_run(r, u, 1.0)[0])
+
+
+# 光丝：从 u0 开始由尖变粗，横向位置 v 随 u 轻轻摆动；越靠近尾部越淡
+func _tg_filament(r: Array, u0: float, v: float, drift: float, phase: float, width: float, col: Color, tail: float) -> void:
+	var lo := PackedVector2Array()
+	var hi := PackedVector2Array()
+	var cl := PackedColorArray()
+	for q in r:
+		var u: float = q["u"]
+		if u < u0:
+			continue
+		var t := (u - u0) / maxf(1e-3, 1.0 - u0)
+		var c := _tg_at(q, v + drift * sin(phase + u * 5.0))
+		var nv: Vector2 = (q["b"] as Vector2) - (q["a"] as Vector2)
+		var nl := nv.length()
+		nv = nv / (nl if nl > 0.0 else 1.0) * (width / 2.0 * pow(t, 0.8))
+		lo.append(c - nv)
+		hi.append(c + nv)
+		cl.append(Color(col, clampf(col.a * _smooth(0.0, tail, u) * (0.45 + 0.55 * u), 0.0, 1.0)))
+	_tg_strip(lo, hi, cl, cl)
+
+
+# 刃芯的月牙：外侧 vc 处、从 u0 到头越来越宽
+func _tg_crescent(r: Array, u0: float, core: float, ex: float, vc: float, k: float, off: Vector2, col: Color) -> void:
+	var lo := PackedVector2Array()
+	var hi := PackedVector2Array()
+	for q in r:
+		var u: float = q["u"]
+		if u < u0:
+			continue
+		var t := (u - u0) / maxf(1e-3, 1.0 - u0)
+		var half := (0.04 + 0.26 * core) * pow(t, ex) * k
+		lo.append(_tg_at(q, vc - half) + off)
+		hi.append(_tg_at(q, vc + half) + off)
+	_tg_strip(lo, hi, PackedColorArray([col]), PackedColorArray([col]))
+
+
+func _tg_rock_body(r: Array, cols: Array, seed: int, alpha: float, tail: float, amount: float) -> void:
+	var N := roundi(amount * 36.0)
+	var S := Rand.new(seed * 223 + 1)
+	for k in N:
+		var u := 0.05 + 0.83 * pow(S.next(), 0.8)
+		var v := 0.05 + 0.92 * S.next()
+		var c: Vector2 = _tg_on_run(r, u, v)[0]
+		var size := _tg_width(r, u) * (0.05 + 0.2 * pow(S.next(), 3.0)) * (0.5 + 0.5 * u)
+		var a := alpha * _smooth(0.0, tail, u)
+		if a <= 0.03 or size < 0.8:
+			S.next()
+			S.next()
+			continue
+		_tg_rock(c, size, S.next() * 6.28, S, cols, a)
+	var GN := roundi(amount * 90.0)
+	for k in GN:
+		var u := 0.08 + 0.82 * pow(S.next(), 0.7)
+		var v := -0.25 + 1.4 * S.next()
+		var c: Vector2 = _tg_on_run(r, u, clampf(v, 0.0, 1.0))[0]
+		var ac: Vector2 = _tg_on_run(r, u, 1.0)[0]
+		var ai: Vector2 = _tg_on_run(r, u, 0.0)[0]
+		var off := v if v < 0.0 else (v - 1.0 if v > 1.0 else 0.0)
+		var pt := c + (ac - ai) * off
+		var size := maxf(0.6, _tg_width(r, u) * (0.01 + 0.02 * S.next()))
+		var a := alpha * _smooth(0.0, tail, u) * (0.5 + 0.5 * S.next())
+		_tg_disc(pt, size, _tg_rgba(cols[1] if S.next() < 0.5 else cols[mini(2, cols.size() - 1)], a))
+
+
+func _tg_rock(c: Vector2, size: float, spin: float, rnd: Rand, cols: Array, a: float) -> void:
+	var nc := cols.size() - 1
+	var n := 6 + int(floor(rnd.next() * 3.0))
+	var pts := PackedVector2Array()
+	for i in n:
+		var th := spin + float(i) / n * TAU + (rnd.next() - 0.5) * 0.5
+		var rr := size * (0.62 + 0.45 * rnd.next())
+		pts.append(c + Vector2(cos(th), sin(th)) * rr)
+	_tg_gfill(pts, c - Vector2(size, size), c + Vector2(size, size), [[0.0, _tg_rgba(cols[mini(2, nc)], a)], [0.55, _tg_rgba(cols[mini(1, nc)], a)], [1.0, _tg_rgba(cols[0], a)]])
+	_tg_pline(pts, _tg_rgba(cols[0], 0.9 * a), maxf(0.5, size / 8.0), true)
+	var lit := PackedVector2Array()
+	var dk := PackedVector2Array()
+	for v in pts:
+		if (v.x - c.x) + (v.y - c.y) < size * 0.2:
+			lit.append(v)
+		if (v.x - c.x) + (v.y - c.y) > size * 0.35:
+			dk.append(v)
+	if lit.size() >= 2:
+		lit.append(c + Vector2(size, size) * 0.05)
+		_tg_poly(lit, PackedColorArray([_tg_rgba(cols[mini(3, nc)], 0.75 * a)]))
+	if dk.size() >= 2:
+		dk.append(c + Vector2(size, size) * 0.15)
+		_tg_poly(dk, PackedColorArray([_tg_rgba(cols[0], 0.55 * a)]))
+
+
+# 风刃：一条条软软的风，像绳子一样绕着光转
+func _tg_curls(r: Array, core: Color, rim: Color, seed: int, frame: int, alpha: float, maxW: float, amount: float) -> void:
+	var N := 2 + roundi(amount * 2.0)
+	var S := Rand.new(seed * 191 + 3)
+	var bandW := maxf(3.0, maxW / 6.0)
+	var coreW := maxf(0.8, maxW / 45.0)
+	for k in N:
+		var u0 := 0.02 + 0.3 * S.next()
+		var u1 := minf(1.0, u0 + 0.6 + 0.4 * S.next())
+		var turns := 0.6 + 0.4 * S.next()
+		var amp := 0.75 + 0.2 * S.next()
+		var phase := S.next() * 6.28
+		var rate := 0.45 + 0.25 * S.next()
+		# 循环时每圈正好转整数圈
+		phase += frame * (maxf(1.0, roundf(rate * _tg_loop_n / 6.28)) * 6.28 / _tg_loop_n if _tg_loop_n > 0.0 else rate)
+		var fat := 0.7 + 0.5 * S.next()
+		var n := 48
+		var pts := PackedVector2Array()
+		var ws := PackedFloat32Array()
+		var fr := []
+		for i in n + 1:
+			var t := float(i) / n
+			var u := u0 + (u1 - u0) * t
+			var ang := phase + t * turns * TAU
+			pts.append(_tg_ext(r, u, 0.5 + amp * sin(ang)))
+			var z := cos(ang)
+			fr.append(z >= 0.0)
+			ws.append(fat * pow(maxf(0.0, sin(PI * t)), 0.8) * (0.55 + 0.45 * maxf(0.0, z)))
+		var a := alpha * (0.55 + 0.45 * u1)
+		var i0 := 0
+		for i in range(1, n + 1):
+			if i < n and fr[i] == fr[i0]:
+				continue
+			if fr[i0]:
+				_tg_band(pts, ws, i0, i, bandW, _tg_rgba(rim, 0.32 * a))
+				_tg_band(pts, ws, i0, i, coreW, _tg_rgba(core, 0.6 * a))
+			else:
+				_tg_band(pts, ws, i0, i, bandW * 0.8, _tg_rgba(rim, 0.28 * a))
+			i0 = i
+
+
+func _tg_band(pts: PackedVector2Array, ws: PackedFloat32Array, i0: int, i1: int, scale: float, col: Color) -> void:
+	var n := pts.size() - 1
+	var lo := PackedVector2Array()
+	var hi := PackedVector2Array()
+	for i in range(i0, i1 + 1):
+		var d := pts[mini(n, i + 1)] - pts[maxi(0, i - 1)]
+		var l := d.length()
+		d = d / (l if l > 0.0 else 1.0)
+		var hw := ws[i] * scale / 2.0
+		lo.append(pts[i] + Vector2(-d.y, d.x) * hw)
+		hi.append(pts[i] + Vector2(d.y, -d.x) * hw)
+	_tg_strip(lo, hi, PackedColorArray([col]), PackedColorArray([col]))
+
+
+# 火舌：从光里长出来、往后飘的火；黑炎用深色画，外面垫一圈亮边色
+func _tg_flames(r: Array, cols: Array, core: Color, rim: Color, seed: int, frame: int, alpha: float, tail: float, maxW: float, amount: float, dark: bool) -> void:
+	var N := roundi(amount * 26.0)
+	var S := Rand.new(seed * 71 + 1)
+	var P := Rand.new(seed * 71 + frame * 733 + 2)
+	var nc := cols.size() - 1
+	for k in N:
+		var u := 0.15 + 0.85 * pow(S.next(), 0.7)
+		var outer := (not dark) and S.next() < 0.2
+		var vb := (0.9 + 0.06 * S.next()) if outer else (0.3 + 0.4 * S.next())
+		var o := _tg_on_run(r, u, vb)
+		var B: Vector2 = o[0]
+		var across: Vector2 = o[1]
+		var bd: Vector2 = (_tg_on_run(r, maxf(0.0, u - 0.04), vb)[0] as Vector2) - B
+		var bl := bd.length()
+		bd = bd / (bl if bl > 0.0 else 1.0)
+		var nv := across if outer else -across
+		var ln := maxW * (0.2 + 0.4 * S.next()) * (0.75 + 0.45 * P.next()) * (0.5 + 0.5 * u)
+		var wid := ln * (0.3 + 0.2 * S.next())
+		var lean := 0.15 + 0.2 * P.next()
+		var tip := B + bd * ln + nv * ln * lean
+		var b1 := B - bd * wid * 0.6 + nv * wid * 0.3
+		var b2 := B - bd * wid * 0.2 - nv * wid * 0.5
+		var pv := Vector2(-(tip.y - B.y), tip.x - B.x)
+		var pl := pv.length()
+		pv = pv / (pl if pl > 0.0 else 1.0)
+		var whip := (P.next() - 0.5) * wid * 1.4
+		var c1 := (b1 + tip) / 2.0 + pv * (wid * 0.5 + whip)
+		var c2 := (b2 + tip) / 2.0 - pv * (wid * 0.35 - whip)
+		var a := alpha * _smooth(0.0, tail, u) * (0.55 + 0.45 * u)
+		if a <= 0.02:
+			continue
+		var shape := _tg_lick(b1, c1, tip, c2, b2)
+		var i0 := mini(1, nc) if dark else mini(3, nc)
+		var i1 := 0 if dark else mini(2, nc)
+		var i2 := 0 if dark else mini(1, nc)
+		if dark:
+			# 编辑器里是模糊过的一层亮边色垫在下面：这里放大一圈垫着
+			var halo := PackedVector2Array()
+			for q in shape:
+				halo.append(B + (q - B) * 1.25)
+			_tg_light = false
+			_tg_gfill(halo, B, tip, [[0.0, _tg_rgba(rim, 0.7 * a)], [1.0, _tg_rgba(rim, 0.0)]])
+		_tg_light = not dark
+		_tg_gfill(shape, B, tip, [[0.0, _tg_rgba(cols[i0], 0.85 * a)], [0.55, _tg_rgba(cols[i1], 0.5 * a)], [1.0, _tg_rgba(cols[i2], 0.0)]])
+		if not dark and S.next() < 0.5:
+			_tg_poly(_tg_lick(B.lerp(b1, 0.5), B.lerp(c1, 0.5), B.lerp(tip, 0.55), B.lerp(c2, 0.5), B.lerp(b2, 0.5)), PackedColorArray([_tg_rgba(core, 0.45 * a)]))
+
+
+func _tg_lick(b1: Vector2, c1: Vector2, tip: Vector2, c2: Vector2, b2: Vector2) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for i in 11:
+		out.append(_quad(b1, c1, tip, i / 10.0))
+	for i in range(1, 11):
+		out.append(_quad(tip, c2, b2, i / 10.0))
+	return out
+
+
+# 闪电：沿着光的几道锯齿（中点位移），带往外的分叉；每帧都是新的
+func _tg_bolts(r: Array, core: Color, rim: Color, seed: int, frame: int, alpha: float, maxW: float, amount: float) -> void:
+	if alpha <= 0.01:
+		return
+	var P := Rand.new(seed * 61 + frame * 1297 + 5)
+	var paths := []
+	var count := 1 + roundi(amount * 3.0)
+	for k in count:
+		var u0 := 0.12 + 0.45 * P.next()
+		var v0 := 0.45 + 0.5 * P.next()
+		var pts := []
+		for s in 7:
+			var uu := u0 + (1.0 - u0) * s / 6.0
+			pts.append(_tg_on_run(r, uu, clampf(v0 + (P.next() - 0.5) * 0.4, 0.1, 1.05))[0])
+		var main := _tg_jag(pts, 0.5, 4, P)
+		var mw := _tg_widths(main.size(), 1.0, 0.25, true, P)
+		paths.append([main, mw])
+		var forks := 1 + int(floor(P.next() * 3.0 * amount + 0.5))
+		for f in forks:
+			var at := int(floor(main.size() * (0.2 + 0.7 * P.next())))
+			var start: Vector2 = main[mini(main.size() - 1, at)]
+			var out: Vector2 = _tg_on_run(r, u0 + (1.0 - u0) * float(at) / main.size(), 1.0)[2]
+			var ol := out.length()
+			var side := 1.0 if P.next() < 0.75 else -1.0
+			var turn := (P.next() - 0.5) * 1.4
+			var d := (out / (ol if ol > 0.0 else 1.0) * side).rotated(turn)
+			var ln := maxW * (0.25 + 0.55 * P.next())
+			var fork := _tg_jag([start, start + d * ln], 0.6, 3, P)
+			paths.append([fork, _tg_widths(fork.size(), mw[mini(mw.size() - 1, at)] * 0.7, 0.06, false, P)])
+	var flick := alpha * (0.75 + 0.25 * P.next())
+	var glowW := maxf(3.0, maxW / 6.0)
+	var coreW := maxf(1.4, maxW / 22.0)
+	for pw in paths:
+		_tg_wband(pw[0], pw[1], glowW, _tg_rgba(rim, 0.4 * flick))
+	for pw in paths:
+		_tg_wband(pw[0], pw[1], coreW, _tg_rgba(core, 0.95 * flick))
+
+
+func _tg_jag(pts: Array, rough: float, depth: int, P: Rand) -> Array:
+	var cur: Array = pts
+	for d in depth:
+		var nxt := [cur[0]]
+		for i in range(1, cur.size()):
+			var a: Vector2 = cur[i - 1]
+			var b: Vector2 = cur[i]
+			var dd := b - a
+			var ln := dd.length()
+			if ln == 0.0:
+				ln = 1.0
+			var off := (P.next() - 0.5) * ln * rough
+			nxt.append((a + b) / 2.0 + Vector2(-dd.y / ln * off, dd.x / ln * off))
+			nxt.append(b)
+		cur = nxt
+		rough *= 0.55
+	return cur
+
+
+func _tg_widths(n: int, w0: float, w1: float, root: bool, P: Rand) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	var rr := 1.0
+	for i in n:
+		var t := float(i) / (n - 1) if n > 1 else 0.0
+		rr = 0.6 * rr + 0.4 * (0.5 + P.next())
+		var start := 0.35 + 0.65 * _smooth(0.0, 0.1, t) if root else 1.0
+		out.append(maxf(0.04, (w0 + (w1 - w0) * t) * rr * start))
+	return out
+
+
+func _tg_wband(pts: Array, ws: PackedFloat32Array, scale: float, col: Color) -> void:
+	var n := pts.size()
+	var lo := PackedVector2Array()
+	var hi := PackedVector2Array()
+	for i in n:
+		var p: Vector2 = pts[i]
+		var d: Vector2 = (pts[mini(n - 1, i + 1)] as Vector2) - (pts[maxi(0, i - 1)] as Vector2)
+		var l := d.length()
+		d = d / (l if l > 0.0 else 1.0)
+		var half := ws[i] * scale / 2.0
+		lo.append(p + Vector2(-d.y, d.x) * half)
+		hi.append(p + Vector2(d.y, -d.x) * half)
+	_tg_strip(lo, hi, PackedColorArray([col]), PackedColorArray([col]))
+
+
+# 冰晶：贴着亮边一片片的冰
+func _tg_crystals(r: Array, cols: Array, core: Color, seed: int, alpha: float, tail: float, maxW: float, amount: float) -> void:
+	var N := roundi(amount * 46.0)
+	var S := Rand.new(seed * 113 + 9)
+	var light := _tg_across(cols, 0.9)
+	var dark := _tg_across(cols, 0.45)
+	for k in N:
+		var u := 0.35 + 0.65 * pow(S.next(), 0.6)
+		var v := 0.5 + 0.5 * pow(S.next(), 0.7)
+		var o := _tg_on_run(r, u, v)
+		var pt: Vector2 = o[0]
+		var behind: Vector2 = _tg_on_run(r, maxf(0.0, u - 0.03), v)[0]
+		var td := pt - behind
+		var tl := td.length()
+		td = td / (tl if tl > 0.0 else 1.0)
+		var along := td.rotated((S.next() - 0.5) * 0.5)
+		var Lw := maxW * (0.5 + 0.5 * u)
+		var ln := Lw * (0.18 + 0.3 * S.next())
+		var wid := ln * (0.25 + 0.2 * S.next())
+		var a := alpha * _smooth(0.0, tail, u) * (0.5 + 0.5 * u)
+		if a <= 0.03:
+			continue
+		var f := pt + along * ln * 0.62
+		var bk := pt - along * ln * 0.38
+		var s1 := pt + (o[1] as Vector2) * wid * 0.5 + along * ln * 0.06
+		var s2 := pt - (o[1] as Vector2) * wid * 0.42 - along * ln * 0.04
+		_tg_poly(PackedVector2Array([f, s1, bk]), PackedColorArray([_tg_rgba(light, 0.8 * a)]))
+		_tg_poly(PackedVector2Array([f, bk, s2]), PackedColorArray([_tg_rgba(dark, 0.7 * a)]))
+		_tg_seg(f, bk, _tg_rgba(core, 0.9 * a), maxf(0.5, wid / 9.0), false)
+
+
+func _tg_speed_lines(r: Array, core: Color, rim: Color, seed: int, frame: int, alpha: float, maxW: float, amount: float) -> void:
+	var N := roundi(amount * 22.0)
+	var S := Rand.new(seed * 131 + 3)
+	var P := Rand.new(seed * 131 + frame * 557 + 1)
+	for k in N:
+		var u := 0.55 + 0.45 * pow(S.next(), 0.5)
+		var v := 0.15 + 0.9 * S.next()
+		var pt: Vector2 = _tg_on_run(r, u, v)[0]
+		var bd: Vector2 = (_tg_on_run(r, maxf(0.0, u - 0.04), v)[0] as Vector2) - pt
+		var bl := bd.length()
+		bd = bd / (bl if bl > 0.0 else 1.0)
+		var ln := maxW * (0.8 + 2.2 * pow(S.next(), 1.5)) * (0.6 + 0.6 * P.next())
+		var a := alpha * (0.35 + 0.5 * P.next()) * u
+		var lw := maxf(0.6, maxW / (30.0 + 50.0 * S.next()))
+		_tg_gline(pt, pt + bd * ln, [[0.0, _tg_rgba(core, 0.85 * a)], [0.3, _tg_rgba(rim, 0.5 * a)], [1.0, _tg_rgba(rim, 0.0)]], lw, true)
+
+
+func _tg_serrate(r: Array, cols: Array, core: Color, seed: int, alpha: float, tail: float, amount: float) -> void:
+	var N := maxi(1, roundi(amount * 11.0))
+	var S := Rand.new(seed * 229 + 7)
+	var nc := cols.size() - 1
+	for k in N:
+		var u := 0.3 + 0.55 * (k + 0.2 + S.next() * 0.6) / N
+		var du := 0.045 + 0.04 * S.next()
+		var b1: Vector2 = _tg_on_run(r, minf(1.0, u + du * 0.4), 0.62)[0]
+		var b2: Vector2 = _tg_on_run(r, maxf(0.0, u - du * 0.6), 0.52)[0]
+		var tu := maxf(0.0, u - du * (3.0 + 1.5 * S.next()))
+		var tip: Vector2 = _tg_on_run(r, tu, 0.04 + 0.14 * S.next())[0]
+		var a := alpha * _smooth(0.0, tail, u) * (0.65 + 0.35 * u)
+		if a <= 0.03:
+			continue
+		_tg_gfill(PackedVector2Array([b1, tip, b2]), b1, tip, [[0.0, _tg_rgba(cols[mini(2, nc)], 0.95 * a)], [0.7, _tg_rgba(cols[mini(1, nc)], 0.75 * a)], [1.0, _tg_rgba(cols[mini(1, nc)], 0.2 * a)]])
+		_tg_gline(b1, tip, [[0.0, _tg_rgba(core, 0.85 * a)], [1.0, _tg_rgba(core, 0.0)]], 1.2, false)
+
+
+func _tg_rays(r: Array, core: Color, rim: Color, seed: int, frame: int, alpha: float, maxW: float, amount: float) -> void:
+	var N := roundi(amount * 40.0)
+	var S := Rand.new(seed * 97 + 4)
+	var P := Rand.new(seed * 97 + frame * 571 + 6)
+	for k in N:
+		var u := 0.25 + 0.75 * pow(S.next(), 0.6)
+		var o := _tg_on_run(r, u, 0.95)
+		var B: Vector2 = o[0]
+		var d: Vector2 = (o[1] as Vector2).rotated((S.next() - 0.5) * 0.6)
+		var ln := maxW * (0.4 + 1.4 * pow(S.next(), 2.0)) * (0.7 + 0.5 * P.next()) * (0.4 + 0.6 * u)
+		var a := alpha * (0.35 + 0.65 * P.next())
+		var lw := maxf(0.8, maxW / (35.0 + 60.0 * S.next()))
+		_tg_gline(B, B + d * ln, [[0.0, _tg_rgba(core, 0.75 * a)], [0.35, _tg_rgba(rim, 0.35 * a)], [1.0, _tg_rgba(rim, 0.0)]], lw, true)
 
 
 # ---------- 光效点缀（与编辑器 vfx/accents.js 相同） ----------

@@ -11,7 +11,8 @@
 //   · following a layer (follow: layer id): that layer's outline on each
 //     frame, grown by pad % — an aura that goes where the character goes
 import { createCanvas } from "../core/util.js";
-import { renderVfx, VFX_DEFAULTS, VFX_KINDS } from "./effects.js";
+import { renderVfx, VFX_DEFAULTS, VFX_KINDS, coreSource } from "./effects.js";
+import { coreImage, loadCoreImage, onCoreReady } from "./coreimg.js";
 
 export const VFX_LAYER_DEFAULTS = {
   ...VFX_DEFAULTS,
@@ -94,7 +95,15 @@ const cache = new Map();
 const CACHE_MAX = 400, CACHE_PIXELS = 16e6; // ~64 MB
 let cachePixels = 0;
 const lookOf = (s) => { const { x, y, start, length, perFrame, keys, follow, pad, box, ...look } = s; return look; };
-const keyOf = (look, i, w, h, draft) => JSON.stringify(look) + "#" + i + "#" + w + "x" + h + (draft ? "#draft" : "");
+// 箭矢's picture goes in by its key (the workers decode it before they draw)
+const keyOf = (look, i, w, h, draft) => JSON.stringify(look, (k, v) => (k === "coreImg" ? undefined : v)) + "#" + i + "#" + w + "x" + h + (draft ? "#draft" : "");
+// is 箭矢's picture not decoded here yet? (decoding starts now)
+function coreMissing(look) {
+  const src = coreSource(look);
+  if (!src || coreImage(src.key)) return false;
+  loadCoreImage(src.key, src.url);
+  return true;
+}
 function remember(key, v) {
   // the same frame again (rendered here while the background had it too)
   const old = cache.get(key);
@@ -117,7 +126,8 @@ export function vfxCanvas(s, i, w, h, draft = false) {
   const v = draft
     ? renderVfx({ ...look, style: "hd", w: Math.max(8, Math.ceil(w / 2)), h: Math.max(8, Math.ceil(h / 2)) }, i)
     : renderVfx({ ...look, w, h }, i);
-  remember(key, v);
+  // without its picture yet: shown for now, drawn again once it is decoded
+  if (!coreMissing(look)) remember(key, v);
   return v;
 }
 
@@ -168,8 +178,10 @@ function getWorker() {
   return worker || null;
 }
 
-// call fn whenever a frame comes back from the background
+// call fn whenever a frame comes back from the background (or a picture a
+// frame needs is ready)
 export function onVfxReady(fn) { readyFns.add(fn); return () => readyFns.delete(fn); }
+onCoreReady(() => { for (const fn of readyFns) fn(null); });
 
 // is this frame of the effect at this size there to draw already?
 export function vfxReady(s, i, w, h) {

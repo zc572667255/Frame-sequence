@@ -246,6 +246,9 @@
 .trail-thumb.px { image-rendering: pixelated; }
 .trail-preset:hover { background: var(--panel-3); color: var(--text); }
 .trail-preset.on { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+/* 箭矢's ready-made looks */
+.proj-group { font-size: 11px; color: var(--text-dim); margin: 6px 0 3px; }
+.proj-thumb { display: block; width: 100%; height: 28px; object-fit: contain; border-radius: 5px; background: #0d0f16; padding: 2px; box-sizing: border-box; }
 .trail-sw { width: 26px; height: 9px; border-radius: 5px; flex: none; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.3); }
 .trail-kind { display: flex; padding: 2px; gap: 2px; border-radius: 7px; background: var(--panel-2); border: 1px solid var(--line); margin-bottom: 6px; }
 .trail-kind button { flex: 1; min-width: 0; padding: 4px 0; font-size: 12px; border: 0; border-radius: 5px; background: transparent; color: var(--text-dim); cursor: pointer; }
@@ -345,6 +348,7 @@
 .sc-bar.still { background: #3fc1b0; }
 .sc-bar.off { opacity: 0.3; }
 .sc-bar.missing { background: #6b6e78; }
+.sc-bar.ghost { opacity: 0.45; pointer-events: none; }
 .sc-empty { padding: 6px 10px; }
 
 /* 预设素材 (scene/presets.js) */
