@@ -23,6 +23,7 @@ import { trailData, trailGodot, attachStrips } from "./trail.js";
 import { trailCodeData, strokeCodeData, trailCodeGodot } from "./trailcode.js";
 import { vfxData, vfxGodot, attachVfxSheet } from "./vfx.js";
 import { codeSupported, codeParams, codeGodot } from "./code.js";
+import { prepareVfxCore } from "../vfx/effects.js";
 import { godotScene, layeredScript, nodeNames } from "./scene.js";
 
 const safe = (s) => String(s || "layer").replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").trim() || "layer";
@@ -59,7 +60,7 @@ export async function renderLayers(app, cardId, opts = {}) {
   const bbox = (id, j) => layerBBox(n.layers, id, j, w, h, drawCel);
   const shown = n.layers.filter((l) => l.visible !== false);
   await Promise.all([
-    ...shown.filter((l) => l.vfx).map((l) => prefetchVfxLayer(l, frameIds, { bbox })),
+    ...shown.filter((l) => l.vfx).map((l) => prefetchVfxLayer(l, frameIds, { w, h, bbox })),
     ...shown.filter((l) => l.stroke).map((l) => prefetchStrokeLayer(l, frameIds, w, h)),
   ]);
   const byId = new Map(n.trails.map((t) => [t.id, t]));
@@ -88,7 +89,7 @@ export async function renderLayers(app, cardId, opts = {}) {
       g.globalAlpha = op;
       if (e.kind === "trail") drawTrail(g, byId.get(l.trail), frameIds, i, e.part, w, h);
       else if (e.kind === "stroke") drawStrokeLayer(g, l, frameIds, i, w, h, 0, 0, 1, "sync", e.part);
-      else if (e.kind === "vfx") drawVfxLayer(g, l, frameIds, i, 0, 0, 1, { bbox });
+      else if (e.kind === "vfx") drawVfxLayer(g, l, frameIds, i, 0, 0, 1, { w, h, bbox });
       else if (e.kind === "ghost") {
         const gc = renderGhost(l, n.layers, frameIds, i, w, h, drawCel);
         if (gc) {
@@ -145,6 +146,7 @@ export async function layeredFiles(app, cardId, name, opts, dir) {
   for (const e of r.entries) {
     if (e.runtime && e.kind === "vfx" && opts.vfx === "code" && codeSupported(e.layer)) {
       // an effect drawn by the game itself: no pictures
+      await prepareVfxCore(e.layer.vfx);
       const p = codeParams(e.layer, r.frameIds, r.w, r.h, r.fps, { bbox: r.bbox }, e.name);
       if (!p.follow.timeline.some(Boolean)) continue;
       layers.push({ name: e.name, kind: "code", params: p });

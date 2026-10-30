@@ -11,6 +11,8 @@
 //   · following a layer (follow: layer id): that layer's outline on each
 //     frame, grown by pad % — an aura that goes where the character goes
 import { createCanvas } from "../core/util.js";
+import { remoteSettings } from "./remote.js";
+import { isRemoteKind } from "./catalog.js";
 import { renderVfx, VFX_DEFAULTS, VFX_KINDS, coreSource } from "./effects.js";
 import { coreImage, loadCoreImage, onCoreReady } from "./coreimg.js";
 
@@ -30,7 +32,8 @@ export const VFX_LAYER_DEFAULTS = {
 export function vfxSettings(l) {
   const v = { ...VFX_LAYER_DEFAULTS, ...((l && l.vfx) || {}) };
   if (l && l.vfx && l.vfx.box && l.vfx.w == null) v.w = v.h = l.vfx.box; // square boxes of the first version
-  return v;
+  if (isRemoteKind(v.kind)) { v.follow = null; v.perFrame = false; v.keys = null; }
+  return remoteSettings(v);
 }
 
 // the effect frame shown on animation frame fi, or -1
@@ -47,6 +50,7 @@ export function vfxFrame(s, frameIds, fi) {
 // the region on frame fi: { x, y, w, h }. ctx.bbox(layerId, fi) gives a
 // layer's outline { x0, y0, x1, y1 } (or null) for following.
 export function vfxRegion(s, frameIds, fi, ctx) {
+  if (isRemoteKind(s.kind) && ctx?.w > 0 && ctx?.h > 0) return { x: ctx.w / 2, y: ctx.h / 2, w: ctx.w, h: ctx.h, canvas: true };
   if (s.follow && ctx && ctx.bbox) {
     const b = ctx.bbox(s.follow, fi);
     if (b) {
@@ -81,7 +85,8 @@ export function vfxRegion(s, frameIds, fi, ctx) {
 
 // where a region's canvas goes: whole pixels, so pixel art stays on the grid
 export function vfxRect(r) {
-  const w = Math.max(4, Math.min(2048, Math.round(r.w))), h = Math.max(4, Math.min(1024, Math.round(r.h)));
+  const w = r.canvas ? Math.max(1, Math.round(r.w)) : Math.max(4, Math.min(2048, Math.round(r.w)));
+  const h = r.canvas ? Math.max(1, Math.round(r.h)) : Math.max(4, Math.min(1024, Math.round(r.h)));
   return { x: Math.round(r.x - w / 2), y: Math.round(r.y - h / 2), w, h };
 }
 
@@ -248,7 +253,8 @@ export function drawVfxLayer(g, l, frameIds, fi, ox = 0, oy = 0, z = 1, ctx = nu
   const s = vfxSettings(l);
   const i = vfxFrame(s, frameIds, fi);
   if (i < 0) return;
-  const r = vfxRect(vfxRegion(s, frameIds, fi, ctx));
+  const regionCtx = ctx?.w > 0 && ctx?.h > 0 ? ctx : { ...ctx, w: g.canvas.width / z, h: g.canvas.height / z };
+  const r = vfxRect(vfxRegion(s, frameIds, fi, regionCtx));
   if (ctx && ctx.onlyReady && !cache.has(keyOf(lookOf(s), i, r.w, r.h, false))) return;
   g.drawImage(vfxCanvas(s, i, r.w, r.h, !!(ctx && ctx.draft)), ox + r.x * z, oy + r.y * z, r.w * z, r.h * z);
 }

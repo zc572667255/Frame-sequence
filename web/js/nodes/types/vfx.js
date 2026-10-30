@@ -5,7 +5,7 @@ import { defineNode } from "../registry.js";
 import { makeStage, makePlayer } from "../view.js";
 import { framesValue } from "../data.js";
 import { el } from "../../core/util.js";
-import { VFX_KINDS, VFX_DEFAULTS, VFX_PALETTES, VFX_EDGES as EDGES, hasSide } from "../../vfx/effects.js";
+import { VFX_KINDS, VFX_DEFAULTS, VFX_PALETTES, VFX_EDGES as EDGES, hasSide, effectKinds } from "../../vfx/effects.js";
 import { renderVfxAsync } from "../../vfx/layer.js";
 import { ACCENTS, ACC_MODES, autoAccents } from "../../vfx/accents.js";
 import { GLOW_PRESETS } from "../../trails/glow.js";
@@ -13,24 +13,28 @@ import { GROUND_AURAS } from "../../vfx/kinds/auras.js";
 import { PROJECTILES, SPINS } from "../../vfx/kinds/arrow.js";
 import { pickCoreImage } from "../../vfx/coreimg.js";
 import { spriteOf } from "../../vfx/projectiles.js";
+import { remoteSettings, hasFlight, FLIGHT_FIELDS, flightFieldVisible } from "../../vfx/remote.js";
 
 const GROUND = new Set(["shock", "dust", "circle", "heal"]);
 
-defineNode({
-  type: "vfx",
-  title: "特效",
+function registerEffectNode(remote) {
+  const kinds = effectKinds(remote);
+  return defineNode({
+  type: remote ? "remote" : "vfx",
+  title: remote ? "远程特效" : "特效",
   category: "素材",
-  icon: "✦",
-  help: "生成一段独立的特效序列帧：命中火花、爆炸、冲击波、烟尘、蓄力、魔法阵、治疗光圈、环绕光（斗气）、燃烧、流光、翅膀、箭矢（还有匕首、长枪、棍棒、飞斧、手里剑、球、透明核心）。"
-    + "选类型和配色（与拖尾光效同一套），可出高清或像素风；右键「烘焙为动画卡片」后能在像素编辑器里继续修改。",
+  icon: remote ? "➶" : "✦",
+  help: remote
+    ? "生成远程攻击序列帧：火球、箭、匕首、长枪、飞斧、手里剑和自定义核心。火球有独立的燃烧主体、火尾、烟与余烬；投掷物可选实体外观和拖尾光效。支持高清、像素与 Godot 导出。"
+    : "生成命中火花、爆炸、冲击波、烟尘、蓄力、魔法阵、治疗光圈、斗气、燃烧、云朵、流光和翅膀。远程攻击请使用「远程特效」。可出高清或像素风，烘焙成动画后可继续手绘。",
   outputs: [{ name: "out", label: "序列帧", kind: "frames" }],
   size: { w: 260, h: 300 },
-  defaults: () => ({ ...VFX_DEFAULTS }),
+  defaults: () => ({ ...VFX_DEFAULTS, ...(remote ? { ...kinds[0].defaults, kind: kinds[0].id } : {}) }),
   persist: ["paused"],
 
   // the frames rendered in the background, all at once
   async evaluate(p) {
-    const s = { ...VFX_DEFAULTS, ...p };
+    const s = remoteSettings({ ...VFX_DEFAULTS, ...p });
     const n = Math.max(1, Math.min(64, s.frames | 0));
     const canvases = await Promise.all(Array.from({ length: n }, (_, i) => renderVfxAsync(s, i)));
     const frames = canvases.map((canvas, i) => ({ canvas, index: i, duration: null }));
@@ -62,9 +66,9 @@ defineNode({
   },
 
   inspector(ctx, f) {
-    const p = () => ({ ...VFX_DEFAULTS, ...ctx.params() });
+    const p = () => remoteSettings({ ...VFX_DEFAULTS, ...ctx.params() });
     // a new kind starts from its own colours, length and looping
-    f.select("类型", "kind", VFX_KINDS.map((k) => [k.id, k.name]), {
+    f.select("类型", "kind", kinds.map((k) => [k.id, k.name]), {
       wide: true,
       onChange: (id) => { const k = VFX_KINDS.find((x) => x.id === id); if (k) ctx.set({ ...k.defaults, ...(k.side ? {} : { view: "front" }) }); },
     });
@@ -75,14 +79,21 @@ defineNode({
       (s) => s.select("像素大小", "pxSize", [[1, "1 px"], [2, "2 px"], [3, "3 px"], [4, "4 px"]]),
       (s) => s.select("透明", "pxAlpha", [["steps", "4 级透明"], ["dither", "抖动（全实心）"], ["hard", "硬边"]]),
     );
-    f.pair(
+    if (remote) f.hint("远程特效使用整个画幅；在像素编辑器里会自动跟随画布尺寸，无需单独设置宽高。");
+    else f.pair(
       (s) => s.number("宽", "w", { min: 16, max: 2048 }),
       (s) => s.number("高", "h", { min: 16, max: 1024 }),
     );
-    f.pair(
-      (s) => s.number("帧数", "frames", { min: 2, max: 64 }),
-      (s) => s.number("帧率", "fps", { min: 1, max: 60 }),
-    );
+    const frameCount = f.number("帧数", "frames", { min: 2, max: 64 });
+    f.number("帧率", "fps", { min: 1, max: 60 });
+    if (remote) {
+      f.readout(() => hasFlight(p()) ? [["发射总长", p().frames + " 帧"], ["阶段", "蓄力 → 飞行 → 命中"]] : [["原地动画", "由游戏控制位置"]]);
+      const fields = FLIGHT_FIELDS.map((d) => [d, d.options ? f.select(d.label, d.key, d.options, { wide: true, onChange: (v) => ctx.set(remoteSettings({ ...p(), [d.key]: v })) }) : f.slider(d.label, d.key, { min: d.min, max: d.max, unit: d.unit, fallback: VFX_DEFAULTS[d.key] })]);
+      f.custom(el("span"), () => { for (const [d, e] of fields) e.style.display = flightFieldVisible(d, p()) ? "" : "none"; });
+      f.hint("起点、终点和控制点按画幅百分比设置。循环会重复整次发射；拖尾保留设为 0 可关闭拖尾。像素编辑器里可直接拖动路径点。连发总长最多 64 帧，发射间隔会按剩余帧数限制。");
+      f.hint(() => p().kind === "arrow" ? "箭身包裹光随实体大小适配。头部宽度独立于拖尾宽度；头部弧度：0 为尖头，100 为圆钝头。拖尾保留为 0 仍保留箭身包裹光。" : "");
+    }
+    f.custom(el("span"), () => { frameCount.style.display = hasFlight(p()) ? "none" : ""; });
     f.check("循环（最后一帧接回第一帧）", "loop");
     f.slider("大小", "size", { min: 20, max: 100, unit: "%" });
     f.slider("粒子", "amount", { min: 0, max: 200, unit: "%" });
@@ -133,3 +144,7 @@ defineNode({
     f.hint("「地面倾斜」：0° 是从正上方看，越大越扁，像放在地上（冲击波为 0° 时是空中的圆环）；侧面视角时 0° 是正对着，越大越侧过去。「视角」（翅膀、冲击波、魔法阵）侧面：翅膀向后展开，冲击波和魔法阵竖起来侧对；「旋转」整体绕中心转动。想手修就右键卡片「烘焙为动画卡片」。");
   },
 });
+}
+
+registerEffectNode(false);
+registerEffectNode(true);

@@ -23,7 +23,7 @@ export function vfxData(l, frameIds, w, h, fps, ctx, title) {
   const timeline = frameIds.map((_, fi) => {
     const i = vfxFrame(s, frameIds, fi);
     if (i < 0) return null;
-    const r = vfxRect(vfxRegion(s, frameIds, fi, ctx));
+    const r = vfxRect(vfxRegion(s, frameIds, fi, { ...ctx, w, h }));
     return [i, r.x, r.y, r.w, r.h];
   });
   return {

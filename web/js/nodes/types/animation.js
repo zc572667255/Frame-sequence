@@ -32,7 +32,7 @@ defineNode({
     // effect layers' frames rendered in the background first, all at once, so
     // putting the frames together below only draws them
     const drawCel = (l, j, into) => { const aid = n.frames[j].cels[l.id]; if (aid) into.drawImage(loaded.get(aid), 0, 0); };
-    const vfxCtx = { bbox: (id, j) => layerBBox(n.layers, id, j, n.w, n.h, drawCel) };
+    const vfxCtx = { w: n.w, h: n.h, bbox: (id, j) => layerBBox(n.layers, id, j, n.w, n.h, drawCel) };
     await Promise.all([
       ...n.layers.filter((l) => l.vfx && l.visible !== false).map((l) => prefetchVfxLayer(l, frameIds, vfxCtx)),
       ...n.layers.filter((l) => l.stroke && l.visible !== false).map((l) => prefetchStrokeLayer(l, frameIds, n.w, n.h)),

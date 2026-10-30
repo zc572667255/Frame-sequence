@@ -31,12 +31,21 @@ import { wings } from "./kinds/wings.js";
 import { burn } from "./kinds/burn.js";
 import { cloud, cloudColors } from "./kinds/cloud.js";
 import { arrow } from "./kinds/arrow.js";
+import { fireball } from "./kinds/fireball.js";
+import { isRemoteKind } from "./catalog.js";
+import { REMOTE_DEFAULTS, remoteSettings, hasFlight } from "./remote.js";
+import { remote } from "./kinds/remote.js";
 import { coreImage, loadCoreImage } from "./coreimg.js";
 import { spriteOf, spriteUrl } from "./projectiles.js";
 
 // kinds: name, what it is for, and the settings it starts with
 export const VFX_KINDS = [
+  { id: "thunder", name: "雷电", help: "蓝白电核与分叉电弧；命中时短促闪光、多次放电、飞散电火花和逐渐冷却的放射电纹", defaults: { palette: "animebolt", loop: true, size: 90, glow: 40, acc: "none" }, round: true },
+  { id: "ice", name: "冰矛", help: "单尖冰锥，带碎裂断口、纵向冰纹与透光切面，使用拖尾特效的「冰晶」拖尾；命中时冰块翻滚碎裂，留下冰裂纹", defaults: { palette: "frost", loop: true, size: 90, glow: 30, acc: "none", flightPath: "straight" }, round: true },
+  { id: "wind", name: "风刃", help: "白色翻滚气团、两端渐隐的细长流线与逐渐扩散的空气尾迹，命中时扩散", defaults: { palette: "air", loop: true, size: 90, glow: 20, acc: "none" }, round: true },
+  { id: "sand", name: "沙流", help: "流动的沙粒与金色细丝，沿路径飞行，命中时扬起散沙", defaults: { palette: "sand", loop: true, size: 90, glow: 20, acc: "none", flightPath: "wave" }, round: true },
   { id: "hit", name: "命中火花", help: "打中的一瞬间：白热闪光、尖刺和飞溅的火花", defaults: { palette: "radiant", frames: 7, loop: false, size: 80 } },
+  { id: "fireball", name: "火球", help: "翻滚燃烧的火球：明亮火核、不规则火舌、向后撕开的火尾、烟和冷却的余烬。循环时原地燃烧供游戏移动；不循环时飞过画幅后消散。用旋转改变飞行方向", defaults: { palette: "blaze", frames: 24, loop: true, size: 90, glow: 35, acc: "none" }, round: true },
   { id: "explosion", name: "爆炸", help: "火球膨胀、冷却成烟往上飘，带飞散的火星", defaults: { palette: "inferno", frames: 12, loop: false, size: 80 } },
   { id: "shock", name: "冲击波", help: "向外扩散的环，可以压扁成地面上的冲击波；侧面是竖起来侧对着的环", defaults: { palette: "frost", frames: 8, loop: false, size: 80 }, side: true },
   { id: "dust", name: "烟尘", help: "落地、急停、冲刺扬起的烟尘，向两侧散开", defaults: { palette: "quake", frames: 10, loop: false, size: 80 } },
@@ -51,6 +60,12 @@ export const VFX_KINDS = [
   { id: "arrow", name: "箭矢", help: "远程攻击的飞行道具，外面包着拖尾的光效，光往后拖成彗星的样子；「外观」有现成的图（箭、刀、枪、斧、锤棍、飞镖、球与炸弹）、随配色变色的简笔画、透明核心（没有实体，像放出去的法术）和自定义核心（自己的图片）；斧、锤棍、飞镖、炸弹默认边飞边转（「自转」可改）。光效和同名拖尾一样（烈焰斩是火焰、冰晶是冰晶、雷光是闪电、疾风是风刃……）。朝右飞，用「旋转」改方向：都在画幅的内切圆里，转到任何角度都不会出框；循环时停在原地、光在流动（游戏里移动它），不循环时从左飞过画幅、拖尾随后散去", defaults: { palette: "blaze", frames: 8, loop: true, size: 95, shape: "s:arrow1" }, round: true },
 ];
 
+for (const kind of VFX_KINDS) if (isRemoteKind(kind.id)) {
+  kind.defaults = remoteSettings({ ...REMOTE_DEFAULTS, ...kind.defaults, kind: kind.id });
+  if (kind.id === "fireball") kind.help = "翻滚的火焰主体、破碎火尾、烟和余烬；可沿路径移动，终点爆炸。原地模式可保留循环精灵，由游戏控制移动。";
+  if (kind.id === "arrow") kind.help = "箭、刀、枪、飞斧、飞镖、球与炸弹，支持透明核心、自定义图片和自转；沿路径飞行，拖尾跟随轨迹，终点播放命中效果。原地模式保留原有循环精灵。";
+}
+
 // is this kind kept inside the circle that fits its box (so 旋转 never takes it
 // past the box's edge)?
 const isRound = (kind) => !!(VFX_KINDS.find((k) => k.id === kind) || {}).round;
@@ -60,6 +75,7 @@ const isRound = (kind) => !!(VFX_KINDS.find((k) => k.id === kind) || {}).round;
 export const hasSide = (kind) => !!(VFX_KINDS.find((k) => k.id === kind) || {}).side;
 
 export const VFX_DEFAULTS = {
+  ...REMOTE_DEFAULTS, flightPath: "sprite",
   kind: "hit", palette: "radiant", w: 128, h: 128, frames: 7, fps: 12, loop: false,
   size: 80,      // % of the canvas the effect reaches
   amount: 100,   // particles, %
@@ -91,14 +107,19 @@ export const VFX_PALETTES = GLOW_PRESETS.map((p) => [p.id, p.name]);
 // 魔法阵: what can play round its rim (circleEdge); "auto" takes the palette's element
 export const VFX_EDGES = [["auto", "自动（按配色）"], ["none", "无"], ["fire", "火焰"], ["earth", "岩石"], ["wind", "风刃"], ["water", "水波"], ["bolt", "闪电"]];
 
-const EFFECTS = { hit, explosion, shock, dust, charge, circle, heal, aura, ribbon, wings, burn, cloud, arrow };
+export const effectKinds = (remote = false) => {
+  const kinds = VFX_KINDS.filter((k) => isRemoteKind(k.id) === remote);
+  return remote ? kinds.sort((a, b) => ["fireball", "thunder", "ice", "wind", "sand", "arrow"].indexOf(a.id) - ["fireball", "thunder", "ice", "wind", "sand", "arrow"].indexOf(b.id)) : kinds;
+};
+
+const EFFECTS = { hit, explosion, shock, dust, charge, circle, heal, aura, ribbon, wings, burn, cloud, arrow, fireball };
 
 // how much bloom each kind gets on top of what it draws itself
-const BLOOM = { hit: 1, shock: 0.8, charge: 1, heal: 0.7, circle: 0, explosion: 0.7, dust: 0, aura: 0.9, burn: 0.9, ribbon: 1, wings: 1, cloud: 0, arrow: 0.4 };
+const BLOOM = { hit: 1, shock: 0.8, charge: 1, heal: 0.7, circle: 0, explosion: 0.7, dust: 0, aura: 0.9, burn: 0.9, ribbon: 1, wings: 1, cloud: 0, arrow: 0.4, fireball: 0.45, ice: 0.28 };
 
 // one frame: a w×h canvas
 export function renderVfx(p, i) {
-  const s = { ...VFX_DEFAULTS, ...p };
+  const s = remoteSettings({ ...VFX_DEFAULTS, ...p });
   const w = Math.max(8, Math.min(2048, s.w | 0)), h = Math.max(8, Math.min(1024, s.h | 0));
   const n = Math.max(1, Math.min(64, s.frames | 0));
   // a loop runs 0 → (n − 1) / n so the last frame leads into the first; a
@@ -119,6 +140,7 @@ export function renderVfx(p, i) {
     amount: Math.max(0, s.amount / 100), glow: Math.max(0, s.glow / 100), loop: !!s.loop, pattern: s.pattern, edge: s.edge || "auto",
     root: Math.max(0.1, Math.min(1, (s.root ?? 100) / 100)), drift: !!s.drift, shape: s.shape || "arrow", spin: s.spin || "auto", core: coreOf(s), coreShift: Math.max(-1, Math.min(1, (+s.coreShift || 0) / 100)),
     pixel: s.style === "pixel", px: Math.max(1, Math.min(8, s.pxSize | 0 || 1)), bolts: !!s.bolts, view: hasSide(s.kind) ? s.view : "front",
+    headWidth: Math.max(20, Math.min(250, s.headWidth ?? 100)), headCurve: Math.max(0, Math.min(100, s.headCurve ?? 35)),
     top: null,     // a canvas a kind wants over the finished frame in 像素 (箭矢's arrow)
   };
   // what stands on the ground sits low, its ring just inside the bottom edge
@@ -126,12 +148,13 @@ export function renderVfx(p, i) {
   const draw = EFFECTS[s.kind] || EFFECTS.hit;
   let base = createCanvas(w, h);
   const bg = base.getContext("2d");
-  draw(bg, c);
+  if (hasFlight(s) || ["thunder", "ice", "wind", "sand"].includes(s.kind)) remote(bg, c, s);
+  else draw(bg, c);
   // the trails' accents over it (光效点缀)
-  drawAccents(bg, c, accentAmounts(s, pal.preset));
+  if (!hasFlight(s)) drawAccents(bg, c, accentAmounts(s, pal.preset));
   bg.globalCompositeOperation = "source-over";
   bg.globalAlpha = 1;
-  if (isRound(s.kind)) { roundOff(base); if (c.top) roundOff(c.top); }
+  if (isRound(s.kind) && !hasFlight(s)) { roundOff(base); if (c.top) roundOff(c.top); }
   // 旋转, for every kind: the whole picture turns about its centre — before
   // the bloom and the pixels, so both follow it. (视角 is drawn by the kinds
   // that have a side view; squashing the finished picture would only stretch
@@ -219,6 +242,12 @@ export function coreSource(s) {
   return s.shape === "custom" && s.coreKey && s.coreImg ? { key: s.coreKey, url: s.coreImg } : null;
 }
 
+// Code exports need the decoded image on the main thread as well as in workers.
+export async function prepareVfxCore(s) {
+  const source = coreSource(s);
+  if (source && !await loadCoreImage(source.key, source.url)) throw new Error("无法读取投掷物核心图片，请重新导入或选择其他外观。");
+}
+
 // fade a canvas out towards the circle that fits it, gone at its edge: then no
 // turn takes anything past the box
 function roundOff(cv) {
@@ -254,6 +283,7 @@ function fadeEdges(cv) {
 }
 
 export function renderVfxFrames(p) {
+  p = remoteSettings({ ...VFX_DEFAULTS, ...p });
   const n = Math.max(1, Math.min(64, (p.frames ?? VFX_DEFAULTS.frames) | 0));
   return Array.from({ length: n }, (_, i) => renderVfx(p, i));
 }

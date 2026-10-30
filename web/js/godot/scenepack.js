@@ -32,7 +32,8 @@ import { normalizeScene, sources, sceneLength } from "../scene/model.js";
 import { layeredFiles, alphaBox } from "./layers.js";
 import { nodeNames } from "./scene.js";
 import { codeSupported, codeParamsFrom, codeProps, codeGodot } from "./code.js";
-import { VFX_DEFAULTS } from "../vfx/effects.js";
+import { VFX_DEFAULTS, prepareVfxCore } from "../vfx/effects.js";
+import { isEffectCard } from "../vfx/catalog.js";
 
 const safe = (s) => String(s || "scene").replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").trim() || "scene";
 // ASCII folder and file names: some unzip tools still garble UTF-8 ones
@@ -69,9 +70,10 @@ export async function exportSceneZip(app, cardId, opts) {
       parts.set(it.card, { kind: "actor", name, scene: r.scene.slice(root.length + 1), w: r.w, h: r.h, seconds: r.durations.length / scene.fps, n: r.durations.length });
       continue;
     }
-    if (c.type === "vfx" && opts.fx === "code" && codeSupported({ vfx: c.params })) {
+    if (isEffectCard(c.type) && opts.fx === "code" && codeSupported({ vfx: c.params })) {
       // drawn by vfx_code.gd, from the card's settings
       const v = { ...VFX_DEFAULTS, ...c.params };
+      await prepareVfxCore(v);
       parts.set(it.card, { kind: "code", name, w: src.w, h: src.h, params: codeParamsFrom(v, src.w, src.h, scene.fps, name), seconds: src.frames.length / scene.fps, n: src.frames.length });
       continue;
     }

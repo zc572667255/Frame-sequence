@@ -2,7 +2,10 @@
 // the right in place of the colours while an effect layer is the current layer.
 // Where and how big it is can also be set on the canvas (drag it, or a corner).
 import { el, downloadBlob } from "../core/util.js";
-import { VFX_KINDS, VFX_DEFAULTS, VFX_PALETTES, VFX_EDGES as EDGES, hasSide } from "../vfx/effects.js";
+import { VFX_KINDS, VFX_DEFAULTS, VFX_PALETTES, VFX_EDGES as EDGES, hasSide, effectKinds } from "../vfx/effects.js";
+import { isRemoteKind } from "../vfx/catalog.js";
+import { remoteSettings, hasFlight, FLIGHT_FIELDS, flightFieldVisible } from "../vfx/remote.js";
+import { prepareVfxCore } from "../vfx/effects.js";
 import { PROJECTILES, SPINS } from "../vfx/kinds/arrow.js";
 import { pickCoreImage } from "../vfx/coreimg.js";
 import { SPRITE_GROUPS, spriteOf, spriteThumb } from "../vfx/projectiles.js";
@@ -26,7 +29,7 @@ function vfxThumb(kind, palette, style) {
   let got = thumbs.get(key);
   if (!got) {
     const tall = kind.id === "aura" || kind.id === "burn";
-    got = renderVfxAsync({ ...VFX_DEFAULTS, ...kind.defaults, kind: kind.id, palette, style, pxSize: 1, w: tall ? 36 : 48, h: 48, size: 90 }, THUMB_FRAME[kind.id] || 0)
+    got = renderVfxAsync({ ...VFX_DEFAULTS, ...kind.defaults, kind: kind.id, flightPath: "sprite", bodySize: 16, palette, style, pxSize: 1, w: tall ? 36 : 48, h: 48, size: 90 }, THUMB_FRAME[kind.id] || 0)
       .then((src) => { thumbs.set(key, src); return src; });
     thumbs.set(key, got);
   }
@@ -57,7 +60,7 @@ export class VfxPanel {
   // the next new effect starts like this one
   remember() {
     const s = vfxSettings(this.layer());
-    Object.assign(this.ed.vfxTool, { kind: s.kind, palette: s.palette, style: s.style });
+    Object.assign(this.ed.effectTool(isRemoteKind(s.kind) ? "remote" : "vfx"), { kind: s.kind, palette: s.palette, style: s.style });
     this.ed.saveVfxTool();
   }
 
@@ -91,14 +94,14 @@ export class VfxPanel {
     this.ed.commitFloat();
     this.doc.checkpoint();
     const l = this.layer();
-    l.vfx = { ...l.vfx, ...(typeof patch === "function" ? patch(vfxSettings(l)) : patch) };
+    l.vfx = remoteSettings({ ...l.vfx, ...(typeof patch === "function" ? patch(vfxSettings(l)) : patch) });
     this.ed.afterChange(structural);
   }
 
   liveEdit(patch) {
     if (!this.live) { this.ed.commitFloat(); this.doc.checkpoint(); this.live = true; }
     const l = this.layer();
-    l.vfx = { ...l.vfx, ...patch };
+    l.vfx = remoteSettings({ ...l.vfx, ...patch });
     this.ed.markDirty();
     this.ed.requestRender();
   }
@@ -132,6 +135,7 @@ export class VfxPanel {
     P.replaceChildren();
     if (!l) return;
     const s = vfxSettings(l);
+    const remote = isRemoteKind(s.kind), name = remote ? "远程特效" : "特效";
     const ids = this.doc.frames.map((f) => f.id);
     const row = (label, ...kids) => { const r = el("div", { class: "tm-row" }, el("span", { class: "tm-label" }, label), ...kids); P.append(r); return r; };
     const slider = (label, key, min, max, unit, title, fmt) => {
@@ -152,16 +156,16 @@ export class VfxPanel {
     };
     const btn = (label, title, fn, primary) => el("button", { class: "btn small" + (primary ? " primary" : ""), title, onclick: fn }, label);
 
-    P.append(el("div", { class: "ed-panel-title" }, "特效 · " + l.name,
+    P.append(el("div", { class: "ed-panel-title" }, name + " · " + l.name,
       el("span", { class: "spacer" }),
-      el("button", { class: "tool-btn", title: "在当前帧再加一个特效图层", onclick: () => this.ed.newVfx() }, "＋ 新特效")));
+      el("button", { class: "tool-btn", title: "在当前帧再加一个" + name + "图层", onclick: () => this.ed.newVfx(remote ? "remote" : "vfx") }, "＋ 新" + name)));
     // 像素 / 高清, then the kinds as small pictures
     const setStyle = (v) => { if (s.style !== v) { this.edit({ style: v }); this.remember(); } };
     P.append(el("div", { class: "trail-kind" },
       el("button", { class: s.style === "hd" ? "on" : "", title: "平滑发光的高清特效", onclick: () => setStyle("hd") }, "高清"),
       el("button", { class: s.style === "pixel" ? "on" : "", title: "像素画：颜色吸附到配色的色板", onclick: () => setStyle("pixel") }, "像素")));
     const grid = el("div", { class: "trail-presets" });
-    for (const k of VFX_KINDS) {
+    for (const k of effectKinds(remote)) {
       grid.append(el("button", { class: "trail-preset" + (s.kind === k.id ? " on" : ""), title: k.help,
         onclick: () => { if (s.kind !== k.id) this.pickKind(k); } },
         vfxThumb(k, s.kind === k.id ? s.palette : k.defaults.palette, s.style), el("span", null, k.name)));
@@ -173,6 +177,10 @@ export class VfxPanel {
       choose("透明", "pxAlpha", [["steps", "4 级透明"], ["dither", "抖动（全实心）"], ["hard", "硬边"]]);
     }
 
+    const here = this.ed.fi;
+    if (remote) {
+      P.append(el("p", { class: "ed-hint" }, "使用整个画幅（" + this.doc.w + " × " + this.doc.h + "），自动跟随画布尺寸。用起点、终点和控制点调整路径。"));
+    } else {
     // where and how big: following a layer, keyed frame by frame, or fixed
     P.append(el("div", { class: "ed-panel-title" }, "画幅框（位置与大小）"));
     // past the canvas, what is out there isn't shown (or exported)
@@ -184,7 +192,6 @@ export class VfxPanel {
     }
     const pixelLayers = this.doc.layers.filter((o) => !o.trail && !o.ghost && !o.vfx && !o.stroke);
     choose("跟随图层", "follow", [["", "不跟随"], ...pixelLayers.map((o) => [o.id, o.name])], (v) => ({ follow: v || null }));
-    const here = this.ed.fi;
     if (s.follow) {
       slider("外扩", "pad", 0, 150, "%", "特效区域比图层的轮廓大多少（按轮廓较长的一边算）");
       P.append(el("p", { class: "ed-hint" }, "特效每一帧都套住「" + ((pixelLayers.find((o) => o.id === s.follow) || {}).name || "?") + "」的轮廓，角色走到哪、变多大，特效就跟到哪。"));
@@ -220,25 +227,44 @@ export class VfxPanel {
       row("", el("div", { class: "tm-colors" },
         btn("居中", "放到画布正中", () => this.editRegion({ x: this.doc.w / 2, y: this.doc.h / 2 }))), el("span"));
     }
+    }
 
     // when
     P.append(el("div", { class: "ed-panel-title" }, "时间"));
     const st = Math.max(0, ids.indexOf(s.start));
     row("开始", el("span", { class: "mono" }, "第 " + (st + 1) + " 帧"),
       btn("从本帧开始", "让特效从当前帧开始", () => this.edit({ start: ids[here] }), st !== here));
-    slider("特效帧数", "frames", 2, 64, " 帧", "特效本身有几帧：越多播得越慢、越细");
+    if (!hasFlight(s)) slider("特效帧数", "frames", 2, 64, " 帧", "特效本身有几帧：越多播得越慢、越细");
+    else row("总长", el("span", { class: "mono" }, s.frames + " 帧 · 蓄力 → 飞行 → 命中"), el("span"));
     const loop = el("input", { type: "checkbox", checked: !!s.loop, onchange: () => this.edit({ loop: loop.checked }) });
-    P.append(el("label", { class: "ed-check" }, loop, "循环播放（蓄力、魔法阵、治疗光圈这类持续的特效）"));
+    P.append(el("label", { class: "ed-check" }, loop, remote
+      ? hasFlight(s) ? "循环播放整次发射（蓄力 → 飞行 → 命中）" : "循环播放（原地燃烧、拖尾流动，供游戏移动）"
+      : "循环播放（蓄力、魔法阵、治疗光圈这类持续的特效）"));
     slider("持续", "length", 0, Math.max(1, ids.length - st), " 帧", "特效在动画里出现几帧；0 = 自动（不循环：播完为止；循环：到最后一帧）",
       (v) => (v ? v + " 帧" : "自动"));
 
+    if (remote) {
+      P.append(el("div", { class: "ed-panel-title" }, "路径 · 拖尾 · 命中"));
+      for (const d of FLIGHT_FIELDS) if (flightFieldVisible(d, s)) {
+        if (d.options) choose(d.label, d.key, d.options);
+        else slider(d.label, d.key, d.min, d.max, d.unit);
+      }
+      if (s.kind === "arrow") P.append(el("p", { class: "ed-hint" }, "包裹光覆盖整个箭身，并随核心大小自动适配。头部宽度独立于拖尾宽度；头部弧度从 0 的尖头逐渐变为 100 的圆钝头。拖尾保留为 0 时仍保留箭身包裹光。"));
+      P.append(el("p", { class: "ed-hint" }, hasFlight(s)
+        ? "画布上的绿点是起点，红点是命中点；自定义曲线还有蓝色控制点，都可以直接拖动。拖尾沿实际轨迹生成，命中后继续消散。起终点按特效画幅百分比定位；连发总长最多 64 帧。"
+        : "原地模式保留循环精灵。选择移动路径后可设置蓄力、飞行、拖尾、连发和命中效果。"));
+      if (hasFlight(s) && st + s.frames > ids.length) row("", btn("补足动画帧", "在动画末尾补空帧，让这次发射可以完整播放", () => this.ed.change(() => {
+        while (this.doc.frames.length < st + s.frames) this.doc.addFrame(this.doc.frames.length);
+      })), el("span"));
+    }
+
     // look
     P.append(el("div", { class: "ed-panel-title" }, "效果"));
-    slider("特效大小", "size", 20, 100, "%", "特效在画幅框里占多大：画幅框不变，只缩放特效（超出画幅框的部分会被裁掉）");
+    slider("特效大小", "size", 20, 100, "%", remote ? "调整画布内的特效大小，绘制范围固定为整个画幅" : "特效在画幅框里占多大：画幅框不变，只缩放特效（超出画幅框的部分会被裁掉）");
     slider("粒子", "amount", 0, 200, "%");
     slider("辉光", "glow", 0, 150, "%");
     if (hasSide(s.kind)) choose("视角", "view", [["front", "正面"], ["side", "侧面"]]);
-    slider("旋转", "rotate", -180, 180, "°", "整个特效绕中心转动（转出画幅框的部分会被裁掉，可以把画幅框拉大）");
+    slider("旋转", "rotate", -180, 180, "°", remote ? "整个特效绕画布中心转动，超出画布的部分会被裁掉" : "整个特效绕中心转动（转出画幅框的部分会被裁掉，可以把画幅框拉大）");
     if (GROUND.has(s.kind)) slider("地面倾斜", "tilt", 0, 80, "°", "0° 是从正上方看，越大越扁，像放在地上；侧面视角时 0° 是正对着，越大越侧过去");
     if (s.kind === "circle") {
       choose("法阵图案", "pattern", [["hex", "六芒星"], ["penta", "五芒星"], ["square", "双方形（八角）"], ["taiji", "太极八卦"], ...GROUND_AURAS]);
@@ -294,7 +320,7 @@ export class VfxPanel {
     row("", el("div", { class: "tm-colors" },
       btn("换一个随机样子", "同样的设置，换一组随机细节", () => this.edit({ seed: (s.seed % 9973) + 1 + Math.floor(Math.random() * 500) })),
       btn("转为像素图层", "把每一帧的特效画进一个普通图层，之后可以用画笔手修（不再能调特效设置）", () => this.ed.rasterizeVfx())), el("span"));
-    P.append(el("p", { class: "ed-hint" }, "在画布上拖动特效移动位置；拖画幅框的边或角改变大小（对边不动，Shift 保持比例，Alt 以中心缩放）。特效图层可以用 ↑ ↓ 移到角色前面或后面。"));
+    P.append(el("p", { class: "ed-hint" }, (remote ? "在画布上拖动路径点调整位置；绘制范围自动使用整个画幅。" : "在画布上拖动特效移动位置；拖画幅框的边或角改变大小（对边不动，Shift 保持比例，Alt 以中心缩放）。") + "特效图层可以用 ↑ ↓ 移到角色前面或后面。"));
 
     // the same effect played by the game (godot/vfx.js)
     P.append(el("div", { class: "ed-panel-title" }, "导出给程序"));
@@ -303,6 +329,7 @@ export class VfxPanel {
       btn("JSON 参数", "通用 JSON：特效序列图（内嵌）、每帧显示哪一帧、放在哪 + 说明，Unity / Cocos / 自研引擎照着实现", () => this.exportFor("json"))), el("span"));
     // the effect as pure code: no pictures, drawn by the game (godot/code.js)
     if (codeSupported(l)) {
+      if (hasFlight(s)) P.append(el("p", { class: "ed-hint" }, "纯代码版可在 Godot 中修改路径、连发、拖尾和命中参数；发光与火焰采样有细微差异，需要逐像素一致时使用烘焙导出。"));
       row("纯代码", el("div", { class: "tm-colors" },
         btn("Godot 纯代码", "不带任何图片：Godot 脚本每一帧自己把这个特效画出来（形状、随机细节、光效点缀都和这里一样），任意放大都清晰，类型、颜色、大小、速度都能在 Godot 里改；编辑器里也会动", () => this.exportCode())), el("span"));
       P.append(el("p", { class: "ed-hint" }, "纯代码版画风是平滑的（不做像素化）；魔法阵的边缘特效目前只有火焰。"
@@ -310,9 +337,10 @@ export class VfxPanel {
     }
   }
 
-  exportCode() {
+  async exportCode() {
     const l = this.layer();
     if (!l) return;
+    try { await prepareVfxCore(vfxSettings(l)); } catch (err) { this.ed.app.toast(err.message, "warn"); return; }
     const p = codeParams(l, this.doc.frames.map((f) => f.id), this.doc.w, this.doc.h, this.doc.fps, this.ed.vfxCtx(), l.name);
     downloadBlob(new Blob([codeGodot(p)], { type: "text/plain" }), "vfx_code.gd");
     this.ed.app.toast("已导出 vfx_code.gd：新建 Node2D 挂上它，节点位置就是特效画幅的中心；默认单独播放，mode 改成「跟着动画」并放到角色精灵下面就跟着动画显示。");

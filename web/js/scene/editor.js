@@ -581,7 +581,7 @@ class SceneEditor {
       el("button", { class: "btn danger", title: "从场景里删掉（Delete），原卡片不受影响", onclick: () => this.removeItem(id) }, "删除")));
     // a 特效 card: its own settings right here, below (the card's own inspector),
     // for this layer alone
-    if (card && card.type === "vfx" && def.inspector) {
+    if (card && (card.type === "vfx" || card.type === "remote") && def.inspector) {
       const fctx = this.fxCtx(it.id);
       if (fctx) {
         const body = section("特效参数", "每个图层的特效单独调整：改这里只影响这个图层。和别的图层共用同一张特效卡片时，第一次修改会自动给这个图层复制一张（画布上多一张特效卡片），其他图层不变。");

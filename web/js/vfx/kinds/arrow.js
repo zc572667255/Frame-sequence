@@ -3,6 +3,7 @@ import { renderGlow, glowStyle } from "../../trails/glow.js";
 import { rng, rgba, clamp01, smooth } from "../../trails/glow/util.js";
 import { TAU, frac, mixRgb, blob, streak } from "../common.js";
 import { SPRITES, spriteOf } from "../projectiles.js";
+import { headProfile } from "../arrowhead.js";
 
 // 箭矢: something thrown or shot, wrapped in the glow of an attack trail. The
 // light round it and streaming off behind it is drawn by the trails' own
@@ -266,9 +267,20 @@ function boundsOf(parts, pivot, d) {
   return { bx: Math.floor(x0 - pivot[0]), by: Math.floor(y0 - pivot[1]), w: Math.ceil(x1 - x0) + 2, h: Math.ceil(y1 - y0) + 2 };
 }
 
+export function projectileBounds(obj) {
+  if (obj.round) return [-obj.ro, -obj.ro, obj.ro * 2, obj.ro * 2];
+  let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+  for (const q of obj.parts.filter(q => q.l !== "glow")) for (const [x, y] of q.pts || []) {
+    const pad = q.k === "line" ? (q.w || 0) / 2 : 0;
+    left = Math.min(left, x - obj.pivot[0] - pad); right = Math.max(right, x - obj.pivot[0] + pad);
+    top = Math.min(top, y - obj.pivot[1] - pad); bottom = Math.max(bottom, y - obj.pivot[1] + pad);
+  }
+  return Number.isFinite(left) ? [left, top, right - left, bottom - top] : [-obj.L / 2, -1, obj.L, 2];
+}
+
 export function projectileSprite(shape, spin, pal, R, core) {
   const R2 = Math.min(600, Math.max(96, R * 2)), obj = projectile(shape, spin, pal, R2, core), d = nudge(R2);
-  const base = { L: obj.L / R2, ro: obj.ro / R2, round: obj.round, spin: obj.spin, rect: [0, 0, 0, 0], png: "", light: "" };
+  const base = { L: obj.L / R2, ro: obj.ro / R2, round: obj.round, spin: obj.spin, bounds: projectileBounds(obj).map(v => v / R2), rect: [0, 0, 0, 0], png: "", light: "" };
   const b = boundsOf(obj.parts, obj.pivot, d);
   if (!b) return base;
   const { bx, by, w, h } = b;
@@ -305,15 +317,15 @@ export function arrow(g, c) {
   const H = obj.round ? Math.max(R * 0.24, ro * 1.35) : R * 0.24;   // how far the glow reaches either side
   const nose = H * 0.45;                                              // the glow past its point
   const fly = c.loop ? 0 : clamp01(t / 0.72);
-  const xt = c.loop ? cx + R * 0.84 - nose : cx - R + L * 0.5 + (2 * R + L * 0.5 + nose) * fly;
+  const xt = c.bodyOnly ? cx + (obj.round ? ro : L * 0.5) : c.loop ? cx + R * 0.84 - nose : cx - R + L * 0.5 + (2 * R + L * 0.5 + nose) * fly;
   const x0 = Math.max(cx - R * 1.05, xt - R * 1.9), xn = xt + nose, xw = obj.round ? xt - ro : xt - L * 0.2;
   // a one-shot's trail dissolves once it is through
   const life = c.loop ? 1 : 1 - smooth(0.55, 1, t);
   // the outline of the glow along the flight: thin at the tail, widest round
   // the head, closing to a point just past it
-  const Wd = H / 0.75;
+  const Wd = H / 0.75 * (c.headWidth ?? 100) / 100;
   const width = (x) => {
-    if (x >= xw) { const q = (x - xw) / (xn - xw); return Wd * Math.max(0.03, Math.sqrt(Math.max(0, 1 - q * q))); }
+    if (x >= xw) { const q = (x - xw) / (xn - xw); return Wd * Math.max(0.001, headProfile(q, c.headCurve)); }
     return Wd * (0.18 + 0.82 * Math.pow(clamp01((x - x0) / Math.max(1, xw - x0)), 0.7));
   };
   // the tail sways a little, a wave running back along it (whole cycles per loop)
@@ -326,7 +338,7 @@ export function arrow(g, c) {
   });
   const lit = pal.dark ? "source-over" : "lighter";
   const glows = [];
-  if (xn - x0 > 2 && life > 0.01) {
+  if (!c.bodyOnly && xn - x0 > 2 && life > 0.01) {
     const style = glowStyle(pal.preset);
     for (const [dir, k] of [[1, 0], [-1, 1]]) {
       const G = renderGlow([half(dir)], style, c.w, c.h, { seed: c.seed * 2 + k, frame: c.i, alpha: life, fade: 0.75, fx: false, loop: c.loop ? c.n : 0 });

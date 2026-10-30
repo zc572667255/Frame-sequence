@@ -158,7 +158,7 @@ export function drawFrameStack(g, layers, trails, frameIds, fi, w, h, drawCel, c
     if (l.trail) drawTrail(g, byId.get(l.trail), frameIds, fi, "front", w, h);
     else if (l.ghost) drawGhostCanvas(g, l, renderGhost(l, layers, frameIds, fi, w, h, drawCel, celKey));
     else if (l.stroke) drawStrokeLayer(g, l, frameIds, fi, w, h, 0, 0, 1, opts.onlyReady ? "ready" : "sync", "front");
-    else if (l.vfx) drawVfxLayer(g, l, frameIds, fi, 0, 0, 1, { onlyReady: !!opts.onlyReady, bbox: (id, j) => layerBBox(layers, id, j, w, h, drawCel, celKey, opts.celImage) });
+    else if (l.vfx) drawVfxLayer(g, l, frameIds, fi, 0, 0, 1, { w, h, onlyReady: !!opts.onlyReady, bbox: (id, j) => layerBBox(layers, id, j, w, h, drawCel, celKey, opts.celImage) });
     else drawCel(l, fi, g);
   }
   g.globalAlpha = 1;

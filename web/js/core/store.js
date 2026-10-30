@@ -5,6 +5,7 @@
 // History is whole-document JSON snapshots: documents hold parameters and asset
 // ids, never pixels, so a snapshot is small and undo can't drift out of sync.
 import { Emitter } from "./events.js";
+import { isRemoteKind } from "../vfx/catalog.js";
 import { api } from "./api.js";
 import { debounce } from "./util.js";
 
@@ -162,6 +163,9 @@ export function migrate(doc) {
     const c = doc.board.cards[id];
     c.id = id;
     c.params = c.params || {};
+    // Keep card IDs, connections and authored settings when splitting projectiles.
+    if (c.type === "vfx" && isRemoteKind(c.params.kind)) c.type = "remote";
+    if (c.type === "remote" && c.params.flightPath == null) c.params.flightPath = "sprite";
     c.ui = c.ui || {};
   }
   return doc;

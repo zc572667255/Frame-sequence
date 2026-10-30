@@ -23,7 +23,10 @@ import { GhostPanel } from "./ghostpanel.js";
 import { dockSplit } from "../ui/dock.js";
 import { strokePath, strokeMid, bendAt, strokeLen, strokePlane, strokeCircle, slideOnCircle, strokeEllipsePath, strokeEllipseHandles, scaleKey, replaneKeys, keyWidth, strokeWraps, clipStrokePart, fitStroke, strokeAt, strokeShows, drawStrokeLayer, drawStrokeDraft, strokePreview, warmStrokePreview, onStrokeBrush, onStrokeReady, prefetchStrokeLayer, strokeFrameReady } from "../trails/stroke.js";
 import { VfxPanel } from "./vfxpanel.js";
-import { VFX_KINDS } from "../vfx/effects.js";
+import { effectKinds } from "../vfx/effects.js";
+import { isRemoteKind } from "../vfx/catalog.js";
+import { hasFlight } from "../vfx/remote.js";
+import { pathHandle, pathPatch, drawRemotePath } from "./remotepath.js";
 import { VFX_LAYER_DEFAULTS, vfxSettings, vfxFrame, vfxRegion, vfxRect, drawVfxLayer, layerBBox, prefetchVfxLayer, onVfxReady, vfxFrameReady } from "../vfx/layer.js";
 
 const TOOLS = [
@@ -38,12 +41,16 @@ const TOOLS = [
   { id: "move", label: "移动", key: "V", icon: "✥" },
   { id: "trail", label: "拖尾", key: "T", icon: "☄" },
   { id: "vfx", label: "特效", key: "F", icon: "✦" },
+  { id: "remote", label: "远程特效", key: "R", icon: "➶" },
 ];
-const KEY_TOOL = { b: "pencil", e: "eraser", g: "fill", i: "picker", l: "line", u: "rect", m: "select", v: "move", t: "trail", f: "vfx" };
+const KEY_TOOL = { b: "pencil", e: "eraser", g: "fill", i: "picker", l: "line", u: "rect", m: "select", v: "move", t: "trail", f: "vfx", r: "remote" };
 const FX_LAYER = "特效";
 const TRAIL_KEY = "gt.trailBrush";
 const LOCK_BEND_KEY = "gt.strokeLockBend";
 const VFX_KEY = "gt.vfxTool.2"; // .2: 高清 became the default (the first key saved 像素 as the old default)
+const REMOTE_KEY = "gt.remoteTool.1";
+const BACKGROUND_KEY = "gt.editorBackground";
+const BACKGROUNDS = { checker: null, black: "#000000", white: "#ffffff", gray: "#303038", custom: null };
 const ZOOMS = [0.25, 0.5, 1, 2, 3, 4, 6, 8, 12, 16, 20, 24, 32, 40, 48, 64];
 const BRUSH_TOOLS = new Set(["pencil", "eraser", "line", "rect", "ellipse"]);
 
@@ -54,6 +61,7 @@ export const EDITOR_SHORTCUTS = [
   ["Alt + 点击", "临时吸管"],
   ["T", "拖尾笔：按住拖出一道刀光，画成可调整的笔触；拖头、尾、弧度的点调整，下一帧接着调；样式在右侧"],
   ["F", "特效：在当前帧新建一个特效图层，参数在右侧；选中特效图层时在画布上拖动移动、拖四角改大小"],
+  ["R", "远程特效：火球、箭矢、投掷物与自定义核心，参数在右侧"],
   ["Shift + 点击（铅笔）", "从上一点画直线"],
   ["右键", "用副色画"],
   ["X", "交换主色 / 副色"],
@@ -177,7 +185,19 @@ class Editor {
     let vsaved = {};
     try { vsaved = JSON.parse(localStorage.getItem(VFX_KEY) || "{}"); } catch { /* none */ }
     this.vfxTool = { kind: "hit", palette: "radiant", style: "hd", box: 0, ...vsaved };
+    let rsaved = isRemoteKind(vsaved.kind) ? vsaved : {};
+    try { rsaved = { ...rsaved, ...JSON.parse(localStorage.getItem(REMOTE_KEY) || "{}") }; } catch { /* none */ }
+    this.remoteTool = { kind: "fireball", palette: "blaze", style: "hd", box: 0, ...rsaved };
+    if (isRemoteKind(this.vfxTool.kind)) this.vfxTool = { kind: "hit", palette: "radiant", style: "hd", box: 0 };
+    if (!isRemoteKind(this.remoteTool.kind)) this.remoteTool.kind = "fireball";
     this.zoom = 8; this.panX = 0; this.panY = 0;
+    // View preferences stay outside the document and its exported pixels.
+    this.viewBackground = { mode: "checker", color: "#182431" };
+    try {
+      const bg = JSON.parse(localStorage.getItem(BACKGROUND_KEY));
+      if (bg && Object.hasOwn(BACKGROUNDS, bg.mode)) this.viewBackground.mode = bg.mode;
+      if (bg && /^#[\da-f]{6}$/i.test(bg.color)) this.viewBackground.color = bg.color;
+    } catch { /* keep the default checkerboard */ }
     this.sel = null;       // { x, y, w, h }
     this.float = null;     // { img, x, y, whole }
     this.preview = null;   // { pts, color }
@@ -318,8 +338,18 @@ class Editor {
 
     // stage
     this.canvas = el("canvas", { class: "ed-canvas" });
-    this.statusEl = el("div", { class: "ed-status mono" });
-    this.stage = el("div", { class: "ed-stage" }, this.canvas, this.statusEl, this.tm.toggles);
+    this.statusEl = el("span", { class: "ed-status-text mono" });
+    this.backgroundSelect = el("select", { class: "ed-background-select", "aria-label": "画幅背景", title: "画幅预览背景，不影响导出的透明度" },
+      ...[["checker", "透明棋盘"], ["black", "黑色"], ["white", "白色"], ["gray", "深灰"], ["custom", "自定义"]]
+        .map(([value, label]) => el("option", { value }, label)));
+    this.backgroundSelect.value = this.viewBackground.mode;
+    this.backgroundColor = el("input", { type: "color", class: "ed-background-color", value: this.viewBackground.color, "aria-label": "自定义画幅背景颜色", title: "自定义画幅背景颜色", hidden: this.viewBackground.mode !== "custom" });
+    this.backgroundSelect.addEventListener("change", () => this.setViewBackground());
+    this.backgroundColor.addEventListener("input", () => this.setViewBackground());
+    const status = el("div", { class: "ed-status" }, this.statusEl,
+      el("label", { class: "ed-background" }, "背景", this.backgroundSelect), this.backgroundColor);
+    status.addEventListener("wheel", (e) => e.stopPropagation());
+    this.stage = el("div", { class: "ed-stage" }, this.canvas, status, this.tm.toggles);
     this.g = this.canvas.getContext("2d");
     this.bindStage();
 
@@ -403,7 +433,7 @@ class Editor {
     // 特效, like 攻击拖尾: a new effect layer on this frame straight away, its
     // settings on the right (unless an effect layer is already the current one)
     const cur = this.doc.layers[this.li];
-    if (t === "vfx" && !(cur && cur.vfx)) this.newVfx();
+    if ((t === "vfx" || t === "remote") && !(cur && cur.vfx && isRemoteKind(cur.vfx.kind) === (t === "remote"))) this.newVfx(t);
     if (t === "trail") warmStrokePreview(); // ready before the first drag
   }
 
@@ -429,7 +459,7 @@ class Editor {
       this.buildTrailPanel();
     } else if (this.trailPanel) { this.trailPanel.replaceChildren(); this.trailPanelFor = null; }
     this.syncToolPanel();
-    if (this.tool === "vfx") this.vfxOptions(o);
+    if (this.tool === "vfx" || this.tool === "remote") this.vfxOptions(o);
     if (this.tool === "select" || this.tool === "move") {
       const b = (label, fn, title) => o.append(el("button", { class: "btn small block", title: title || "", onclick: fn }, label));
       b("全选", () => this.selectAll(), "Ctrl+A");
@@ -1343,6 +1373,10 @@ class Editor {
       if (!this.tm.active) this.tm.toggle(true); else this.tm.refresh();
     } else if (this.tm.active) this.tm.toggle(false);
     if (l && l.stroke && this.tool !== "trail") this.setTool("trail");
+    if (l && l.vfx) {
+      const tool = isRemoteKind(l.vfx.kind) ? "remote" : "vfx";
+      if (this.tool !== tool) { this.tool = tool; this.syncToolUI(); }
+    }
     this.syncSide(); // a ghost layer shows its settings on the right
     this.requestRender();
   }
@@ -1377,28 +1411,38 @@ class Editor {
 
   // ---------- 特效 tool ----------
   saveVfxTool() {
-    try { localStorage.setItem(VFX_KEY, JSON.stringify(this.vfxTool)); } catch { /* private mode */ }
+    try {
+      localStorage.setItem(VFX_KEY, JSON.stringify(this.vfxTool));
+      localStorage.setItem(REMOTE_KEY, JSON.stringify(this.remoteTool));
+    } catch { /* private mode */ }
   }
+
+  effectTool(tool = this.tool) { return tool === "remote" ? this.remoteTool : this.vfxTool; }
 
   // the left side under the tool: what to do (the settings are on the right)
   vfxOptions(o) {
-    o.append(el("button", { class: "btn small block", title: "在当前帧再加一个特效图层", onclick: () => this.newVfx() }, "＋ 新建特效"));
-    o.append(el("p", { class: "ed-hint" }, "特效从当前帧开始，参数在右侧：类型、配色、持续帧数等。在画布上拖动特效移动，拖方框四角改大小。"));
+    const name = this.tool === "remote" ? "远程特效" : "特效";
+    o.append(el("button", { class: "btn small block", title: "在当前帧再加一个" + name + "图层", onclick: () => this.newVfx() }, "＋ 新建"));
+    o.append(el("p", { class: "ed-hint" }, this.tool === "remote"
+      ? "使用整个画幅绘制火、雷、冰、风、沙和投掷物。右侧设置路径、蓄力、拖尾、连发与命中；画布上拖起点和终点。"
+      : "特效从当前帧开始，参数在右侧：类型、配色、持续帧数等。在画布上拖动特效移动，拖方框四角改大小。"));
   }
 
   // a new effect on this frame in the middle of the canvas, of the kind and
   // colours used last
-  newVfx() {
+  newVfx(tool = this.tool) {
+    this.tool = tool === "remote" ? "remote" : "vfx";
+    this.syncToolUI();
     const s = Math.max(8, Math.round(Math.min(this.doc.w, this.doc.h) * 0.75));
-    this.placeVfx(this.doc.w / 2, this.doc.h / 2, s, s);
+    this.placeVfx(this.doc.w / 2, this.doc.h / 2, this.tool === "remote" ? this.doc.w : s, this.tool === "remote" ? this.doc.h : s);
   }
 
   // a new effect layer above the current layer, centred at (x, y), starting on
   // this frame. An aura (环绕光) goes behind the current layer and follows it
   // when that layer has something on this frame.
   placeVfx(x, y, w, h) {
-    const v = this.vfxTool;
-    const k = VFX_KINDS.find((q) => q.id === v.kind) || VFX_KINDS[0];
+    const v = this.effectTool(), kinds = effectKinds(this.tool === "remote");
+    const k = kinds.find((q) => q.id === v.kind) || kinds[0];
     const cur = this.doc.layers[this.li];
     const follow = k.around && cur && !cur.trail && !cur.ghost && !cur.vfx && !cur.stroke && this.hasContent(this.fi, this.li) ? cur.id : null;
     const vfx = {
@@ -1406,23 +1450,28 @@ class Editor {
       w: Math.round(w), h: Math.round(h), x: Math.round(x), y: Math.round(y), start: this.doc.frames[this.fi].id,
       follow, seed: 1 + Math.floor(Math.random() * 9973),
     };
+    if (isRemoteKind(k.id)) for (const key of ["w", "h", "x", "y", "box", "follow", "pad", "perFrame", "keys"]) delete vfx[key];
     if (this.tm.active) this.tm.toggle(false);
-    this.change(() => { this.li = this.doc.addVfxLayer(this.li, vfx, k.name, !!follow); });
+    this.change(() => {
+      if (hasFlight(vfx)) while (this.doc.frames.length < this.fi + vfx.frames) this.doc.addFrame(this.doc.frames.length);
+      this.li = this.doc.addVfxLayer(this.li, vfx, k.name, !!follow);
+    });
     this.goLayer(this.li);
     const n = vfx.loop ? this.doc.frames.length - this.fi : vfx.frames;
     if (!vfx.loop && this.fi + vfx.frames > this.doc.frames.length) {
       this.app.toast("「" + k.name + "」有 " + vfx.frames + " 帧，从第 " + (this.fi + 1) + " 帧开始会超出动画末尾：可以在右侧减少「特效帧数」，或给动画加帧。", "warn");
-    } else this.app.toast("已在第 " + (this.fi + 1) + " 帧新建「" + k.name + "」，持续 " + n + " 帧。参数在右侧；在画布上拖动移动，拖四角改大小。");
+    } else this.app.toast("已在第 " + (this.fi + 1) + " 帧新建「" + k.name + "」，持续 " + n + " 帧。" + (isRemoteKind(k.id) ? "使用整个画幅；在画布上拖动起点和终点调整路径。" : "参数在右侧；在画布上拖动移动，拖四角改大小。"));
   }
 
   // what an effect layer needs to follow another layer: its outline per frame
   vfxCtx(draft = false) {
-    return { draft, bbox: (id, j) => layerBBox(this.doc.layers, id, j, this.doc.w, this.doc.h, this.drawCelAt, this.celKey, this.celImage) };
+    return { w: this.doc.w, h: this.doc.h, draft, bbox: (id, j) => layerBBox(this.doc.layers, id, j, this.doc.w, this.doc.h, this.drawCelAt, this.celKey, this.celImage) };
   }
 
   // the handle of an effect's box under a canvas point: { x, y } with -1 / 1 for
   // the side that moves and 0 for one that doesn't (corners move both), or null
   vfxHandle(l, q) {
+    if (isRemoteKind(l.vfx.kind)) return null;
     const r = this.vfxRegionNow(l);
     if (r.followed) return null;
     const b = vfxRect(r), z = this.zoom;
@@ -1444,7 +1493,8 @@ class Editor {
   // its size, may change with every step of the stroke)
   vfxDrafting(l, li) {
     const d = this.drag;
-    if (li === this.li) return this.vp.live || !!(d && d.type === "vfx-size");
+    if (li === this.li) return this.vp.live || !!(d && (d.type === "vfx-size" || d.type === "remote-path"));
+    if (isRemoteKind(l.vfx.kind)) return false;
     const cur = this.doc.layers[this.li];
     return !!(d && (d.type === "paint" || d.type === "move") && l.vfx.follow && cur && l.vfx.follow === cur.id);
   }
@@ -1458,6 +1508,7 @@ class Editor {
   // else the fixed one. Inside a checkpoint; the settings are replaced, never
   // edited in place (history snapshots share them).
   setVfxRegion(l, r) {
+    if (isRemoteKind(l.vfx.kind)) return;
     // whole-pixel edges (the centre may fall on a half pixel), so dragging one
     // side never nudges the other
     const x0 = Math.round(r.x - r.w / 2), y0 = Math.round(r.y - r.h / 2);
@@ -1626,16 +1677,23 @@ class Editor {
     // anywhere else moves it, whatever the tool. With the 特效 tool on another
     // layer, pressing places a new effect there (a drag sets its size).
     const curL = this.doc.layers[this.li];
-    if (e.button === 0 && !e.altKey && (this.tool === "vfx" || (curL && curL.vfx))) {
+    if (e.button === 0 && !e.altKey && (this.tool === "vfx" || this.tool === "remote" || (curL && curL.vfx))) {
       this.commitFloat();
       const q = this.toFloat(e);
       if (curL && curL.vfx) {
         const r0 = this.vfxRegionNow(curL), hd = this.vfxHandle(curL, q);
+        const ph = pathHandle(vfxSettings(curL), r0, q, this.zoom);
+        if (ph) {
+          this.drag = { type: "remote-path", key: ph.key, r0, moved: false };
+          return;
+        }
+        if (isRemoteKind(curL.vfx.kind)) return;
         // following a layer, the region is that layer's: nothing to drag
         if (r0.followed) { this.app.toast("这个特效正在跟随图层，位置和大小自动跟着它；想手动调，先在右侧把「跟随图层」改成「不跟随」。", "warn"); return; }
         this.drag = { type: hd ? "vfx-size" : "vfx-move", hd, sx: q.x, sy: q.y, r0, moved: false };
         return;
       }
+      if (this.tool === "remote") { this.newVfx("remote"); return; }
       this.drag = { type: "vfx-new", x: q.x, y: q.y, r: 0 };
       this.requestRender();
       return;
@@ -1718,7 +1776,8 @@ class Editor {
       let cur = "";
       if (l && l.vfx && !this.tm.active) {
         const hd = this.vfxHandle(l, this.toFloat(e));
-        cur = hd ? HANDLE_CURSOR[hd.x + "," + hd.y] : "move";
+        const ph = pathHandle(vfxSettings(l), this.vfxRegionNow(l), this.toFloat(e), this.zoom);
+        cur = ph ? "grab" : hd ? HANDLE_CURSOR[hd.x + "," + hd.y] : isRemoteKind(l.vfx.kind) ? "" : "move";
       } else if (l && l.stroke && this.tool === "trail" && !this.trail.toPixels && !this.tm.active) {
         const hit = this.strokeHit(l, this.toFloat(e));
         cur = hit === "all" ? "move" : hit ? "grab" : "";
@@ -1756,6 +1815,11 @@ class Editor {
       } else if (d.type === "vfx-new") {
         const q = this.toFloat(e);
         d.r = Math.hypot(q.x - d.x, q.y - d.y);
+      } else if (d.type === "remote-path") {
+        const l = this.doc.layers[this.li];
+        if (!d.moved) { this.doc.checkpoint(); d.moved = true; }
+        l.vfx = { ...l.vfx, ...pathPatch(vfxSettings(l), d.r0, d.key, this.toFloat(e)) };
+        this.markDirty();
       } else if (d.type === "vfx-move" || d.type === "vfx-size") {
         const q = this.toFloat(e), l = this.doc.layers[this.li];
         if (!d.moved) { this.doc.checkpoint(); d.moved = true; }
@@ -1805,8 +1869,12 @@ class Editor {
     }
     if (d.type === "vfx-new") {
       // a click: the tool's size; a drag: from the centre out to a corner
-      const box = d.r * this.zoom > 6 ? d.r * 2 : this.vfxTool.box || Math.min(this.doc.w, this.doc.h) * 0.75;
+      const box = d.r * this.zoom > 6 ? d.r * 2 : this.effectTool().box || Math.min(this.doc.w, this.doc.h) * 0.75;
       this.placeVfx(d.x, d.y, Math.max(8, box), Math.max(8, box));
+      return;
+    }
+    if (d.type === "remote-path") {
+      if (d.moved) this.afterChange();
       return;
     }
     if (d.type === "vfx-move" || d.type === "vfx-size") {
@@ -2019,6 +2087,13 @@ class Editor {
     return c;
   }
 
+  setViewBackground() {
+    this.viewBackground = { mode: this.backgroundSelect.value, color: this.backgroundColor.value };
+    this.backgroundColor.hidden = this.viewBackground.mode !== "custom";
+    try { localStorage.setItem(BACKGROUND_KEY, JSON.stringify(this.viewBackground)); } catch { /* storage unavailable */ }
+    this.requestRender();
+  }
+
   checker(g) {
     if (!this.checkerPat) {
       const t = createCanvas(16, 16);
@@ -2049,7 +2124,8 @@ class Editor {
     g.beginPath();
     g.rect(ox, oy, iw, ih);
     g.clip();
-    g.fillStyle = this.checker(g);
+    const bg = this.viewBackground;
+    g.fillStyle = bg.mode === "checker" ? this.checker(g) : bg.mode === "custom" ? bg.color : BACKGROUNDS[bg.mode];
     g.fillRect(ox, oy, iw, ih);
 
     if (this.onion.on && !this.playing && doc.frames.length > 1) {
@@ -2177,7 +2253,8 @@ class Editor {
     const curL = doc.layers[this.li];
     if (curL && curL.vfx && !this.playing) {
       const s = vfxSettings(curL), r = this.vfxRegionNow(curL), b = vfxRect(r);
-      box(b.x, b.y, b.w, b.h, vfxFrame(s, frameIds, this.fi) >= 0, !s.perFrame || r.key !== false, !r.followed);
+      if (!isRemoteKind(s.kind)) box(b.x, b.y, b.w, b.h, vfxFrame(s, frameIds, this.fi) >= 0, !s.perFrame || r.key !== false, !r.followed);
+      drawRemotePath(g, s, r, ox, oy, z);
     }
     if (this.drag && this.drag.type === "vfx-new" && this.drag.r * z > 6) {
       const d = this.drag;
@@ -2320,7 +2397,7 @@ class Editor {
       });
       g.append(head);
       doc.frames.forEach((f, fi) => {
-        const keyed = (l.vfx && l.vfx.perFrame && l.vfx.keys && l.vfx.keys[f.id]) || (l.stroke && l.stroke.keys && l.stroke.keys[f.id]);
+        const keyed = (l.vfx && !isRemoteKind(l.vfx.kind) && l.vfx.perFrame && l.vfx.keys && l.vfx.keys[f.id]) || (l.stroke && l.stroke.keys && l.stroke.keys[f.id]);
         const cell = el("div", { class: "tl-cel" + (this.hasContent(fi, li) ? " has" : "") + (kind ? " " + kind : "") + (keyed ? " key" : ""), dataset: { fi, li } }, el("i"));
         cell.addEventListener("click", () => { this.goLayer(li); this.goFrame(fi); });
         g.append(cell);

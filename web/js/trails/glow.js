@@ -104,6 +104,10 @@ export const GLOW_PRESETS = [
     look: { strands: 40, core: 30, haze: 25, glow: 75, sparkles: 26, sparkleSize: 9, flash: 0, splatter: 0, erode: 25, dust: 90 } },
   { id: "crimson", name: "血刃", colors: ["#6b0014", "#d0162a", "#ff6a6f", "#ffe0e0"], core: "#fff0f0", rim: "#e8283c", splat: "#a0101e",
     look: { strands: 16, core: 85, haze: 55, glow: 45, sparkles: 0, sparkleSize: 6, flash: 50, splatter: 90, erode: 35, flow: 30, impact: 60 } },
+  { id: "sand", name: "沙金", colors: ["#6b3917", "#ac6a28", "#dca947", "#ffe19a"], core: "#fff4cf", rim: "#e6ba62", splat: "#bd843e",
+    look: { strands: 26, core: 35, haze: 30, glow: 25, flow: 25, dust: 75, speedLines: 30 } },
+  { id: "air", name: "白风", colors: ["#566875", "#a8bdc8", "#e1edf2", "#ffffff"], core: "#ffffff", rim: "#e1edf2", splat: "#d9e7ed",
+    look: { strands: 24, core: 35, haze: 18, glow: 20, flow: 35, curls: 65, speedLines: 35, dust: 8, erode: 35 } },
 ];
 
 // the style fields a glow preset sets (trail.style / the 拖尾笔's options). Every

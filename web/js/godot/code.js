@@ -28,30 +28,37 @@ import { isGroundAura } from "../vfx/kinds/auras.js";
 import { glowStyle } from "../trails/glow.js";
 import { hexToRgb } from "../core/util.js";
 import { projectileSprite } from "../vfx/kinds/arrow.js";
+import { FIREBALL_FIELD, FIREBALL_GD } from "./fireball.js";
+import { remoteSettings } from "../vfx/remote.js";
+import { remoteParams, remoteProps, remoteExports, REMOTE_FIELD, REMOTE_GD } from "./remote.js";
+import { REMOTE_TRAIL_SHADER, REMOTE_TRAIL_GD } from "./remotetrail.js";
+import { ICE_GD } from "./ice.js";
+import { ICE_HIT_GD } from "./icehit.js";
+import { THUNDER_HIT_GD } from "./thunderhit.js";
 
-export const CODE_KINDS = ["hit", "shock", "charge", "heal", "ribbon", "wings", "circle", "aura", "burn", "explosion", "dust", "cloud", "arrow"];
+export const CODE_KINDS = ["hit", "shock", "charge", "heal", "ribbon", "wings", "circle", "aura", "burn", "explosion", "dust", "cloud", "arrow", "fireball", "thunder", "ice", "wind", "sand"];
 const PATTERNS = { hex: 0, penta: 1, square: 2, taiji: 3, burst: 4, holy: 5, whirl: 6, stars: 7, wisp: 8, arrows: 9 };
 // how much bloom each kind gets (vfx/effects.js BLOOM); 箭矢 more, standing in
 // for the bloom its trail glow adds to itself in the editor
-const BLOOM = { hit: 1, shock: 0.8, charge: 1, heal: 0.7, circle: 0, ribbon: 1, wings: 1, aura: 0.9, burn: 0.9, explosion: 0.7, dust: 0, cloud: 0, arrow: 1 };
+const BLOOM = { hit: 1, shock: 0.8, charge: 1, heal: 0.7, circle: 0, ribbon: 1, wings: 1, aura: 0.9, burn: 0.9, explosion: 0.7, dust: 0, cloud: 0, arrow: 1, fireball: 0.45, ice: 0.28 };
 // 箭矢's glow: the trail look's amounts the script reads, in this order
 // (strands is a count, the rest 0..1) — GDScript TG_KEYS
-const TG_KEYS = ["strands", "core", "haze", "glow", "flow", "flames", "bolts", "crystal", "speedLines", "curls", "rays", "serrate", "rocks", "shadow"];
+const TG_KEYS = ["strands", "core", "haze", "glow", "flow", "flames", "bolts", "crystal", "speedLines", "curls", "rays", "serrate", "rocks", "shadow", "snow", "dust", "sparkles", "sparkleSize"];
 
 // 箭矢's core as a picture (kinds/arrow.js projectileSprite) and how it flies;
 // R: the effect's radius at the size it is exported
 function arrowCore(s, pal, R) {
-  const none = { coreRect: [0, 0, 0, 0], coreLength: 0.8, coreRound: false, coreRadius: 0, coreSpin: false, coreShift: 0, corePng: "", coreLight: "" };
+  const none = { coreRect: [0, 0, 0, 0], coreEnvelope: [-0.8, -0.1, 0.8, 0.2], coreLength: 0.8, coreRound: false, coreRadius: 0, coreSpin: false, coreShift: 0, corePng: "", coreLight: "" };
   if (s.kind !== "arrow" || typeof document === "undefined") return none;
   const o = projectileSprite(s.shape || "arrow", s.spin || "auto", pal, Math.max(8, R), coreOf(s));
-  return { coreRect: o.rect, coreLength: o.L, coreRound: o.round, coreRadius: o.ro, coreSpin: o.spin, coreShift: Math.max(-1, Math.min(1, (+s.coreShift || 0) / 100)), corePng: o.png, coreLight: o.light };
+  return { coreRect: o.rect, coreEnvelope: o.bounds, coreLength: o.L, coreRound: o.round, coreRadius: o.ro, coreSpin: o.spin, coreShift: Math.max(-1, Math.min(1, (+s.coreShift || 0) / 100)), corePng: o.png, coreLight: o.light };
 }
 
 // the glow of the trail preset a palette comes from, as 箭矢 draws it: its
 // colours in the trail's order, its layers' amounts, and whether it is dark
 // (painted rather than added: 黑炎, 岩崩) — trails/glow.js renderGlow
-function trailGlow(pal) {
-  const st = glowStyle(pal.preset);
+function trailGlow(pal, frost = false) {
+  const st = { ...glowStyle(frost ? paletteOf("frost").preset : pal.preset), glowColors: pal.preset.colors };
   const cols = st.glowColors.map(hexToRgb);
   const lum = (c) => (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]) / 255;
   return {
@@ -75,6 +82,7 @@ const tscnColors = (cs) => "PackedColorArray(" + cs.map((c) => [...c.map((v) => 
 // an effect's settings (a 特效 layer's vfx, or VFX_DEFAULTS + a kind's own) and
 // the box it is drawn in → what the script needs
 export function codeParamsFrom(s, w, h, fps, name) {
+  s = remoteSettings(s);
   const pal = paletteOf(s.palette);
   const glow = Math.max(0, s.glow / 100), pixel = s.style === "pixel";
   return {
@@ -94,8 +102,9 @@ export function codeParamsFrom(s, w, h, fps, name) {
     cols: pal.cols, core: pal.core, rim: pal.rim, splat: pal.splat,
     // 光效点缀, in ACCENTS order: the palette's own mix (按配色), none, or the effect's own
     accents: (() => { const a = accentAmounts(s, pal.preset) || {}; return ACCENTS.map((x) => +(a[x.id] || 0)); })(),
-    ...trailGlow(pal),
+    ...trailGlow(pal, s.kind === "ice"),
     ...arrowCore(s, pal, Math.min(w, h) / 2 * Math.max(0.05, Math.min(1, s.size / 100))),
+    remote: remoteParams(s),
   };
 }
 
@@ -104,8 +113,9 @@ export function codeParamsFrom(s, w, h, fps, name) {
 export function codeParams(l, frameIds, w, h, fps, ctx, title) {
   const s = vfxSettings(l);
   const data = vfxData(l, frameIds, w, h, fps, ctx, title);
-  let rw = s.w, rh = s.h;
+  let rw = 0, rh = 0;
   for (const e of data.timeline) if (e && e[3] * e[4] > rw * rh) { rw = e[3]; rh = e[4]; }
+  if (!rw) { rw = w; rh = h; }
   return { ...codeParamsFrom(s, rw, rh, fps, data.name), follow: { canvas: data.canvas, frames: data.effect.frames, timeline: data.timeline } };
 }
 
@@ -118,13 +128,14 @@ export function kindSettings(kind, patch = {}) {
 // the tscn property lines that set a node's look (the layered scene)
 export function codeProps(p) {
   return [
+    ...remoteProps(p.remote),
     `kind = ${p.kind}`, `box_size = Vector2(${num(p.w)}, ${num(p.h)})`, `size = ${num(p.size)}`,
     `squash = ${num(p.squash)}`, `side_view = ${p.side}`, `bolts = ${p.bolts}`, `root_width = ${num(p.root ?? 1)}`, `cloud_drift = ${!!p.drift}`, `pattern = ${p.pattern}`, `edge_effect = ${p.edge}`,
     `loop = ${p.loop}`, `frames = ${p.frames}`, `fps = ${num(p.fps)}`, `glow = ${num(p.glow)}`, `amount = ${num(p.amount)}`,
     `random_seed = ${p.seed}`, `rotate_degrees = ${num(p.rotate)}`, `soft_light = ${p.soft}`, `bloom = ${num(p.bloom)}`, `additive = ${p.additive}`,
     `colors = ${tscnColors(p.cols)}`, `accents = PackedFloat32Array(${p.accents.map(num).join(", ")})`, `core_color = ${color(p.core)}`, `rim_color = ${color(p.rim)}`, `splat_color = ${color(p.splat)}`,
     `trail_colors = ${tscnColors(p.trailCols)}`, `trail_look = PackedFloat32Array(${p.trailLook.map(num).join(", ")})`, `trail_dark = ${p.trailDark}`,
-    `core_rect = Rect2(${p.coreRect.map(num).join(", ")})`, `core_length = ${num(p.coreLength)}`, `core_round = ${p.coreRound}`, `core_radius = ${num(p.coreRadius)}`, `core_spin = ${p.coreSpin}`, `core_shift = ${num(p.coreShift)}`,
+    `core_rect = Rect2(${p.coreRect.map(num).join(", ")})`, `core_envelope = Rect2(${p.coreEnvelope.map(num).join(", ")})`, `core_length = ${num(p.coreLength)}`, `core_round = ${p.coreRound}`, `core_radius = ${num(p.coreRadius)}`, `core_spin = ${p.coreSpin}`, `core_shift = ${num(p.coreShift)}`,
     p.corePng ? `core_png = "${p.corePng}"` : null, p.coreLight ? `core_light_png = "${p.coreLight}"` : null,
     p.follow ? `data_json = ${JSON.stringify(JSON.stringify(p.follow))}` : null,
   ].filter(Boolean);
@@ -166,7 +177,7 @@ signal finished
 ## 空闲时把还没画过的帧提前一帧一帧画好（第一遍播放也不卡）
 @export var prewarm := true
 @export_group("特效")
-@export_enum("命中火花", "冲击波", "蓄力", "治疗光圈", "流光", "翅膀", "魔法阵", "环绕光", "燃烧", "爆炸", "烟尘", "云朵", "箭矢") var kind := ${d.kind}
+@export_enum("命中火花", "冲击波", "蓄力", "治疗光圈", "流光", "翅膀", "魔法阵", "环绕光", "燃烧", "爆炸", "烟尘", "云朵", "箭矢", "火球", "雷电", "冰矛", "风刃", "沙流") var kind := ${d.kind}
 ## 画幅大小（编辑器里特效的画幅框）
 @export var box_size := Vector2(${num(d.w)}, ${num(d.h)})
 ## 特效大小：占画幅的比例
@@ -194,6 +205,7 @@ signal finished
 ## 随机细节（同一个值和编辑器里画出来一样）
 @export var random_seed := ${d.seed}
 @export var rotate_degrees := ${num(d.rotate)}
+${remoteExports(d.remote)}
 ## 柔光：大片的淡光、宽一些的辉光（编辑器里像素风格时关掉）
 @export var soft_light := ${d.soft}
 ## 辉光：整个特效模糊后叠加上去的量
@@ -221,6 +233,8 @@ signal finished
 @export var core_texture: Texture2D
 ## 核心的图放在哪：从它的尖（圆的、会转的：从它的正中）量，x、y、宽、高，单位是特效半径 R
 @export var core_rect := Rect2(${d.coreRect.map(num).join(", ")})
+## 实体轮廓：包裹光从箭尾延伸到箭尖前，不包含外围光晕
+@export var core_envelope := Rect2(${d.coreEnvelope.map(num).join(", ")})
 ## 核心的长度（R）：光从它的尖往后包多长
 @export var core_length := ${num(d.coreLength)}
 ## 圆的或会转的：光包住整个核心，这是它转的半径（R）
@@ -279,6 +293,7 @@ uniform int ncols = 2;
 uniform vec3 core = vec3(1.0);
 // 循环时一圈的帧数（0 = 不循环）：流到最后一帧正好接回第一帧
 uniform float loop_n = 0.0;
+uniform bool flight = false;
 float lh(int x, int y, int s) {
 	uint v = (uint(x) * 374761393u) ^ (uint(y) * 668265263u) ^ uint(s);
 	v = (v ^ (v >> 13u)) * 1274126177u;
@@ -305,21 +320,23 @@ vec3 across(float v) {
 	int i = min(ncols - 2, int(floor(t)));
 	return mix(cols[i], cols[i + 1], t - float(i));
 }
-float flow_at(float u, float v, float f) {
+float flow_at(float u, float v, float f, int s) {
 	float t = f * 0.35;
-	float wx = fbm(vec2(u * 4.0 - t * 0.4, v * 3.0), seed);
-	float wy = fbm(vec2(u * 4.0 + 9.1, v * 3.0 + 4.7 - t * 0.3), seed);
-	return fbm(vec2(u * 13.0 + (wx - 0.5) * 3.0 - t, v * 5.0 + (wy - 0.5) * 2.4), seed);
+	float wx = fbm(vec2(u * 4.0 - t * 0.4, v * 3.0), s);
+	float wy = fbm(vec2(u * 4.0 + 9.1, v * 3.0 + 4.7 - t * 0.3), s);
+	return fbm(vec2(u * 13.0 + (wx - 0.5) * 3.0 - t, v * 5.0 + (wy - 0.5) * 2.4), s);
 }
 void fragment() {
 	float u = UV.x;
 	float v = UV.y;
-	float n = flow_at(u, v, frame);
+	int s = flight ? seed + int(round(COLOR.r * 8.0)) * 31 * 13 : seed;
+	float vertex_alpha = flight ? COLOR.a : 1.0;
+	float n = flow_at(u, v, frame, s);
 	// 循环：这一帧和往回一整圈的那一帧交叉淡化（和编辑器一样）
 	if (loop_n > 0.0) {
 		float p = mod(frame, loop_n) / loop_n;
 		float keep = 1.0 / length(vec2(1.0 - p, p));
-		n = clamp(0.5 + ((n - 0.5) * (1.0 - p) + (flow_at(u, v, frame - loop_n) - 0.5) * p) * keep, 0.0, 1.0);
+		n = clamp(0.5 + ((n - 0.5) * (1.0 - p) + (flow_at(u, v, frame - loop_n, s) - 0.5) * p) * keep, 0.0, 1.0);
 	}
 	float body = v * 1.25 + (n - 0.5) * 1.8 * amount;
 	float m = sm(0.42, 0.58, body) * sm(0.0, tail, u);
@@ -328,11 +345,12 @@ void fragment() {
 	float heat = clamp(v * 0.7 + (lum - 0.5) * 0.8 + 0.15, 0.0, 1.0);
 	vec3 c = across(heat);
 	if (heat > 0.85) { c = mix(c, core, (heat - 0.85) / 0.15); }
-	COLOR = vec4(c, clamp(m * (0.3 + 0.7 * lum) * alpha * (0.5 + 0.5 * amount), 0.0, 1.0));
+	COLOR = vec4(c, clamp(m * (0.3 + 0.7 * lum) * alpha * vertex_alpha * (0.5 + 0.5 * amount), 0.0, 1.0));
 }
 """
+const REMOTE_TRAIL_SHADER := """${REMOTE_TRAIL_SHADER}"""
 # 箭矢的光读的各层的量（trail_look 的顺序）
-const TG_KEYS := ["strands", "core", "haze", "glow", "flow", "flames", "bolts", "crystal", "speedLines", "curls", "rays", "serrate", "rocks", "shadow"]
+const TG_KEYS := ["strands", "core", "haze", "glow", "flow", "flames", "bolts", "crystal", "speedLines", "curls", "rays", "serrate", "rocks", "shadow", "snow", "dust", "sparkles", "sparkleSize"]
 const BLUR_SHADER := """
 shader_type canvas_item;
 render_mode blend_disabled;
@@ -558,6 +576,8 @@ void fragment() {
 		float heat = clamp((d * 1.2 + (b - 0.5) * 0.55) * cool + flash * body, 0.0, 1.0);
 		a = body * sm(0.04, 0.35, heat) + tongue * cool;
 		col = texture(ramp_flame, vec2(heat, 0.5)).rgb;
+${FIREBALL_FIELD}
+${REMOTE_FIELD}
 	} else if (mode == 5) {
 		// 能量爆发：一团团能量云从中心沿地面滚出去，噪声翻卷，按热度着色（ea = 每团的位置和半径，eb = 浓度、热度）
 		float D = 0.0;
@@ -896,14 +916,18 @@ func _build() -> void:
 	_canvas = Node2D.new()
 	_canvas.scale = Vector2(_vs, _vs)
 	_vp.add_child(_canvas)
-	for role in [8, 6, 7, 0, 2, 3, 1, 4, 5]:
+	for role in [8, 10, 6, 7, 9, 0, 2, 11, 3, 1, 4, 5]:
 		var l := Layer.new()
 		l.host = self
 		l.role = role
-		if role == 1 or role == 5:
+		if role == 1 or role == 5 or (role == 8 and kind == 15 and additive):
 			var m := CanvasItemMaterial.new()
 			m.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
 			l.material = m
+		elif role >= 9:
+			var rm := ShaderMaterial.new()
+			rm.shader = _shader(REMOTE_TRAIL_SHADER)
+			l.material = rm
 		elif role == 6 or role == 7:
 			var flm := ShaderMaterial.new()
 			flm.shader = _shader(FLOW_SHADER % ("blend_add" if additive else "blend_mix"))
@@ -1041,6 +1065,7 @@ func _apply(img: Texture2D, blur: Texture2D) -> void:
 
 
 func _process(delta: float) -> void:
+	if _remote_active(): frames = _remote_duration()
 	if _vs == 0 or _want_scale() != _vs:
 		_build()  # 第一次、屏幕上放大倍数变了、或者重新进入场景树
 		_cache.clear()
@@ -1076,7 +1101,7 @@ func _process(delta: float) -> void:
 		_disp.region_rect = Rect2(0, 0, ceilf(float(fb[0]) * _vs), ceilf(float(fb[1]) * _vs))
 		_disp.transform = (fb[3] as Transform2D) * Transform2D(0.0, Vector2(1.0 / _vs, 1.0 / _vs), 0.0, Vector2.ZERO)
 		_disp_mat.set_shader_parameter("bloom", bloom)
-		_disp_mat.set_shader_parameter("round_clip", kind == 12)
+		_disp_mat.set_shader_parameter("round_clip", (kind == 12 or kind == 13) and not _remote_active())
 		_disp_mat.set_shader_parameter("span", _disp.region_rect.size / Vector2(_vp.size))
 		_disp_mat.set_shader_parameter("box", Vector2(float(fb[0]), float(fb[1])))
 	var key := _key_now()
@@ -1135,7 +1160,10 @@ func _draw_layer(cv: CanvasItem, role: int) -> void:
 		_t8p = PackedVector2Array()
 		_t8c = PackedColorArray()
 		_fm = [{}, {}]
+		_rm = [{}, {}, {}]
 		_core_on = false
+		_remote_cores.clear()
+		_remote_clip.clear()
 		_role = 0
 		_draw_effect(float(fb[0]), float(fb[1]), float(fb[2]))
 		cv.draw_set_transform_matrix(Transform2D.IDENTITY)
@@ -1143,8 +1171,13 @@ func _draw_layer(cv: CanvasItem, role: int) -> void:
 	if _core_on and (role == 4 or role == 5):
 		var tex := _core_tex(role == 5)
 		if tex:
-			cv.draw_set_transform_matrix(_core_xf)
-			cv.draw_texture_rect(tex, _core_box, false)
+			if _remote_active():
+				for core in _remote_cores:
+					cv.draw_set_transform_matrix(core[0])
+					cv.draw_texture_rect(tex, core[1], false)
+			else:
+				cv.draw_set_transform_matrix(_core_xf)
+				cv.draw_texture_rect(tex, _core_box, false)
 			cv.draw_set_transform_matrix(Transform2D.IDENTITY)
 	if role == 1 and not _ai.is_empty():
 		RenderingServer.canvas_item_add_triangle_array(cv.get_canvas_item(), _ai, _ap, _ac)
@@ -1156,6 +1189,8 @@ func _draw_layer(cv: CanvasItem, role: int) -> void:
 		RenderingServer.canvas_item_add_triangle_array(cv.get_canvas_item(), _t5i, _t5p, _t5c)
 	elif role == 8 and not _t8i.is_empty():
 		RenderingServer.canvas_item_add_triangle_array(cv.get_canvas_item(), _t8i, _t8p, _t8c)
+	elif role >= 9:
+		_remote_draw_mesh(cv, role - 9)
 	elif role == 6 or role == 7:
 		var f: Dictionary = _fm[role - 6]
 		if not f.is_empty():
@@ -1167,11 +1202,14 @@ func _draw_layer(cv: CanvasItem, role: int) -> void:
 
 # 噪声层有没有东西：噪声画的特效、云朵，和魔法阵的能量爆发、幽魂光环
 func _has_field() -> bool:
-	return (kind >= 7 and kind <= 11) or (kind == 6 and (pattern == 4 or pattern == 8))
+	return _remote_active() or (kind >= 7 and kind <= 11) or kind == 13 or (kind == 6 and (pattern == 4 or pattern == 8))
 
 
 # 攒起来的三角形（点按当前的变换算好）
 func _tri(idx: PackedInt32Array, pts: PackedVector2Array, cols: PackedColorArray) -> void:
+	if not _remote_clip.is_empty():
+		_remote_clip_tri(idx, pts, cols)
+		return
 	if _over or _under:
 		# 箭矢：最上面（箭身盖上去 / 叠加的光）或最下面那一层
 		var dst := 8 if _under else (5 if _add else 4)
@@ -1262,6 +1300,9 @@ func _draw_effect(w: float, h: float, t: float) -> void:
 	if _role >= 2:
 		_field_pass()
 		return
+	if _remote_active() or kind >= 14:
+		_k_remote()
+		return
 	match kind:
 		0: _k_hit()
 		1: _k_shock()
@@ -1280,6 +1321,7 @@ func _draw_effect(w: float, h: float, t: float) -> void:
 		10: _k_dust()
 		11: pass  # 云朵：整个在噪声层里画
 		12: _k_arrow()
+		13: _k_fireball()
 	_gmul = 1.0
 	# 箭矢的点缀盖在箭身上面（和编辑器一样）
 	_over = kind == 12
@@ -2115,10 +2157,16 @@ func _field_pass() -> void:
 	m.set_shader_parameter("seed", random_seed)
 	m.set_shader_parameter("gmul", 1.0)
 	m.set_shader_parameter("dark", not additive)
+	if _remote_active():
+		if mix_pass: _remote_field(m)
+		return
 	match kind:
 		6:  # 魔法阵的地面光环：能量爆发的能量云、幽魂光环的烟（叠加）
 			if not mix_pass:
 				_ground_field(m)
+		13:
+			if mix_pass:
+				_fireball_field(m)
 		11:  # 云朵（普通盖上去）
 			if mix_pass:
 				_cloud_field(m)
@@ -2424,6 +2472,13 @@ func _field_quad(x0: float, y0: float, x1: float, y1: float) -> void:
 	var pts := PackedVector2Array([Vector2(x0, y0), Vector2(x1, y0), Vector2(x1, y1), Vector2(x0, y1)])
 	RenderingServer.canvas_item_add_triangle_array(_cv.get_canvas_item(), PackedInt32Array([0, 1, 2, 0, 2, 3]), pts, _fill_cols(4, Color(1, 1, 1, _gmul)), pts)
 
+
+${FIREBALL_GD}
+${REMOTE_GD}
+${REMOTE_TRAIL_GD}
+${ICE_GD}
+${ICE_HIT_GD}
+${THUNDER_HIT_GD}
 
 # 环绕光的位置：火焰尖、光束、火花到中心以上 1.77 ry，底部到中心以下 1.22 ry，两侧 1.15 rx，全部在画幅里
 func _aura_layout() -> Dictionary:
@@ -2949,7 +3004,7 @@ func _across(v: float) -> Color:
 # 飞行线，合起来在前头收成圆头（圆的、会转的：包住整个核心）；每一半照拖尾的光效画（_tg_glow）。核心是导出时画好的图
 # （箭、匕首、长枪……或自定义的图片），盖在光上面，外面再薄薄叠一层光。
 # 大小都按画幅的内切圆算，显示时只留内切圆里的，所以怎么转都不出框。
-func _k_arrow() -> void:
+func _k_arrow(body_only := false) -> void:
 	var t := _t
 	var R := _R
 	var cx := _cx
@@ -2961,19 +3016,20 @@ func _k_arrow() -> void:
 	var nose := H * 0.45
 	var fly := 0.0 if loop else clampf(t / 0.72, 0.0, 1.0)
 	var xt := cx + R * 0.84 - nose if loop else cx - R + L * 0.5 + (2.0 * R + L * 0.5 + nose) * fly
+	if body_only: xt = cx + (ro if core_round else L * 0.5)
 	var x0 := maxf(cx - R * 1.05, xt - R * 1.9)
 	var xn := xt + nose
 	var xw := xt - ro if core_round else xt - L * 0.2
 	# 不循环时箭飞过去之后，拖尾散去
 	var life := 1.0 if loop else 1.0 - _smooth(0.55, 1.0, t)
-	_aw = {"t": t, "H": H, "x0": x0, "xn": xn, "xw": xw, "Wd": H / 0.75}
+	_aw = {"t": t, "H": H, "x0": x0, "xn": xn, "xw": xw, "Wd": H / 0.75 * head_width / 100.0}
 	# 第几帧（火舌、闪电每帧换一个样子）
 	var nf := float(_follow["frames"]) if mode == 0 and not _follow.is_empty() else float(maxi(1, frames))
 	var fi := int(round(t * nf)) if loop else int(floor(t * nf))
 	_tg_loop_n = nf if loop else 0.0
 	var M := 48
 	var glows := []
-	if xn - x0 > 2.0 and life > 0.01:
+	if not body_only and xn - x0 > 2.0 and life > 0.01:
 		for k in 2:
 			var dir := 1.0 if k == 0 else -1.0
 			var r := []
@@ -3052,7 +3108,7 @@ func _aw_width(x: float) -> float:
 	var xw: float = _aw["xw"]
 	if x >= xw:
 		var q := (x - xw) / maxf(1e-6, xn - xw)
-		return Wd * maxf(0.03, sqrt(maxf(0.0, 1.0 - q * q)))
+		return Wd * maxf(0.001, _remote_head_profile(q))
 	return Wd * (0.18 + 0.82 * pow(clampf((x - x0) / maxf(1.0, xw - x0), 0.0, 1.0), 0.7))
 
 
@@ -3065,7 +3121,7 @@ func _aw_sway(u: float) -> float:
 # 没有搬过来的：水纹、撕裂、尾部变色、侵蚀；光效自己的那层辉光由整个特效的辉光代替。
 # r：一半光的截面（a 内侧 → b 外侧，u 从尾到头）；gain：这一遍的浓度；top：盖在箭身上面的那一薄层（只画形状，都叠加）；
 # slot：流动的刀身画进哪一层
-func _tg_glow(r: Array, seed: int, frame: int, alpha: float, gain: float, top: bool, slot: int) -> void:
+func _tg_glow(r: Array, seed: int, frame: int, alpha: float, gain: float, top: bool, slot: int, full_preset := false) -> void:
 	if r.size() < 2:
 		return
 	var L := {}
@@ -3074,7 +3130,13 @@ func _tg_glow(r: Array, seed: int, frame: int, alpha: float, gain: float, top: b
 	var cols: Array = Array(trail_colors) if trail_colors.size() >= 2 else Array(colors)
 	var core := core_color
 	var rim := rim_color
-	var tail := 0.75
+	var tail := 0.6 if full_preset else (0.3 if _remote_active() else 0.75)
+	if _remote_active() and not full_preset:
+		L["core"] = 0.24
+		L["haze"] = 0.1
+		L["glow"] = 0.15
+		L["strands"] = minf(10.0, L["strands"])
+		L["flames"] = minf(0.4, L["flames"])
 	var maxW := 1.0
 	for q in r:
 		maxW = maxf(maxW, _tg_wd(q))
@@ -3156,6 +3218,8 @@ func _tg_glow(r: Array, seed: int, frame: int, alpha: float, gain: float, top: b
 	if L["rays"] > 0.0:
 		_tg_light = true
 		_tg_rays(r, core, rim, seed, frame, alpha, maxW, L["rays"])
+	if full_preset:
+		_remote_frost_fx(r, seed, frame, alpha, maxW, cols, L)
 	_gmul = 1.0
 	_tg_top = false
 	_tg_light = true
@@ -3230,13 +3294,19 @@ func _tg_mesh(r: Array, slot: int, seed: int, frame: int, alpha: float, tail: fl
 			pts.append(_xf * (v as Vector2))
 		uvs.append_array(PackedVector2Array([Vector2(p["u"], 0.0), Vector2(p["u"], 1.0), Vector2(q["u"], 1.0), Vector2(q["u"], 0.0)]))
 		for j in 4:
-			cl.append(Color.WHITE)
+			cl.append(Color(_remote_shot / 8.0, 1.0, 1.0, alpha) if _remote_active() else Color.WHITE)
 		idx.append_array(PackedInt32Array([b, b + 1, b + 2, b, b + 2, b + 3]))
 	var c3 := PackedVector3Array()
 	for i in 8:
 		var c: Color = cols[mini(i, cols.size() - 1)]
 		c3.append(Vector3(c.r, c.g, c.b))
-	_fm[slot] = {"idx": idx, "pts": pts, "uvs": uvs, "cols": cl, "par": {"seed": seed * 13 + 7, "frame": float(frame), "alpha": alpha, "tail": tail, "amount": amount, "cols": c3, "ncols": mini(8, cols.size()), "loop_n": _tg_loop_n, "core": Vector3(core_color.r, core_color.g, core_color.b)}}
+	if _remote_active() and not _fm[slot].is_empty():
+		var f: Dictionary = _fm[slot]
+		var base: int = f.pts.size()
+		for i in idx: f.idx.append(i + base)
+		f.pts.append_array(pts); f.uvs.append_array(uvs); f.cols.append_array(cl)
+	else:
+		_fm[slot] = {"idx": idx, "pts": pts, "uvs": uvs, "cols": cl, "par": {"seed": (random_seed if _remote_active() else seed) * 13 + 7, "frame": float(frame), "alpha": 1.0 if _remote_active() else alpha, "tail": tail, "amount": amount, "cols": c3, "ncols": mini(8, cols.size()), "loop_n": 0.0 if _remote_active() else _tg_loop_n, "flight": _remote_active(), "core": Vector3(core_color.r, core_color.g, core_color.b)}}
 
 
 func _tg_strip(lo: PackedVector2Array, hi: PackedVector2Array, clo: PackedColorArray, chi: PackedColorArray) -> void:
