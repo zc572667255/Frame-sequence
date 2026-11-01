@@ -165,74 +165,8 @@ func _ice_wake_half(r: float, u: float, width: float, strength: float) -> float:
 
 func _remote_ice_wake(pts: PackedVector2Array, r: float, strength: float, frame: float, index: int) -> void:
 	if pts.size() < 2 or strength <= 0.001: return
-	var clean := PackedVector2Array()
-	for p in pts:
-		if clean.is_empty() or clean[clean.size() - 1].distance_to(p) > 0.35: clean.append(p)
-	if clean.size() < 2: return
-	var lengths := PackedFloat32Array([0.0])
-	for i in range(1, clean.size()): lengths.append(lengths[i - 1] + clean[i - 1].distance_to(clean[i]))
-	var total := lengths[clean.size() - 1]
-	if total < 0.5: return
-	var window := _remote_window(frame, index)
-	var span := maxf(0.001, window.y - window.x)
-	_add = additive
-	var line := PackedVector2Array()
-	var cols := PackedColorArray()
-	var ws := PackedFloat32Array()
-	for i in clean.size():
-		var u := float(i) / float(clean.size() - 1)
-		line.append(clean[i])
-		cols.append(_col(rim_color, 0.12 * strength * _smooth(0.0, 0.22, u)))
-		ws.append(_ice_wake_half(r, u, trail_width, strength) * 2.0)
-	_line(line, cols, 1.0, ws)
 	_ice_magic_wake(pts, r, strength, frame, index)
-	_add = additive
-	var step := 0.85
-	var seed := random_seed + index * 31
-	var first := ceili(window.x / step)
-	var last := floori(window.y / step + 0.000001)
-	for n in range(first, last + 1):
-		var born := float(n) * step
-		var u := clampf((born - window.x) / span, 0.0, 1.0)
-		var dist := u * total
-		var i := 1
-		while i < clean.size() - 1 and lengths[i] < dist: i += 1
-		var seg := maxf(0.000001, lengths[i] - lengths[i - 1])
-		var f := clampf((dist - lengths[i - 1]) / seg, 0.0, 1.0)
-		var a := clean[i - 1]
-		var b := clean[i]
-		var d := b - a
-		var ln := maxf(0.000001, d.length())
-		var dir := d / ln
-		var nrm := Vector2(-dir.y, dir.x)
-		var P := Rand.new(seed * 503 + n * 97)
-		var side := (P.next() * 2.0 - 1.0) * _ice_wake_half(r, u, trail_width, strength) * 0.72
-		var sgn := -1.0 if P.next() < 0.5 else 1.0
-		var spin := sgn * (frame * 0.35 + P.next() * 6.2)
-		var length0 := r * (0.22 + P.next() * 0.42) * (0.45 + u * 0.7)
-		var width0 := length0 * (0.18 + P.next() * 0.16)
-		var shard_a := strength * pow(maxf(0.001, u), 0.35) * (0.45 + P.next() * 0.5)
-		var ang := dir.angle() + (P.next() - 0.5) * 0.9 + spin
-		var c := a.lerp(b, f) + nrm * side
-		var ca := cos(ang)
-		var sa := sin(ang)
-		var fwd := Vector2(ca, sa)
-		var sidev := Vector2(-sa, ca)
-		var poly := PackedVector2Array([c + fwd * length0 * 0.62, c + sidev * width0, c - fwd * length0 * 0.38, c - sidev * width0])
-		var tone := core_color.lerp(rim_color, 0.25)
-		_poly_fill(poly, PackedColorArray([_col(rim_color, shard_a * 0.15), _col(tone, shard_a), _col(rim_color, shard_a * 0.15), _col(tone, shard_a)]))
 
 func _remote_ice(r: float, key: int) -> void:
-	var roll := _t * TAU + key
-	_ice_head_back(r, key)
-	var mesh := _ice_prism(r, roll, key)
-	_ice_draw_mesh(mesh, key, r, 0.82)
-	_add = true
-	var tone := core_color.lerp(rim_color, 0.4)
-	for path in _ice_cracks(r, key, roll):
-		_line(path, PackedColorArray([_col(tone, 0.72)]), maxf(0.5, r * 0.016))
-	var tip := Vector2(-1e9, 0)
-	for p in mesh.vertices:
-		if p.x > tip.x: tip = Vector2(p.x, p.y)
-	_ice_head_front(r, tip)
+	_ice_spear(r, key)
 `;

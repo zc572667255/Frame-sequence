@@ -1,7 +1,6 @@
-// Frost left behind an ice lance: a tapered mist, a bright core, and shards
-// that stay on the birth time of the path (seeking a frame does not reshuffle them).
-import { rng, rgba } from "../../trails/glow/util.js";
-import { mixRgb } from "../common.js";
+// Frost left behind an ice lance (drawn by icemagic.js). The wake width and shard helpers
+// stay on the birth time of the path (seeking a frame does not reshuffle them).
+import { rng } from "../../trails/glow/util.js";
 import { drawIceMagicWake } from "./icemagic.js";
 
 export function iceWakeHalf(r, u, trailWidth = 70, strength = 1) {
@@ -52,57 +51,8 @@ export function iceWakeShards(points, r, strength, seed, oldest, newest, trailWi
   return shards;
 }
 
-function ribbon(g, line, halfOf, color, alpha) {
-  const { pts } = line, n = pts.length - 1;
-  g.beginPath();
-  for (let i = 0; i <= n; i++) {
-    const s = atLength(line, line.lengths[i]), h = halfOf(i / n);
-    const x = s.x + s.nx * h, y = s.y + s.ny * h;
-    if (i) g.lineTo(x, y); else g.moveTo(x, y);
-  }
-  for (let i = n; i >= 0; i--) {
-    const s = atLength(line, line.lengths[i]), h = halfOf(i / n);
-    g.lineTo(s.x - s.nx * h, s.y - s.ny * h);
-  }
-  g.closePath();
-  const a = pts[0], b = pts[n];
-  const gr = g.createLinearGradient(a[0], a[1], b[0], b[1]);
-  gr.addColorStop(0, rgba(color, 0));
-  gr.addColorStop(0.22, rgba(color, alpha));
-  gr.addColorStop(1, rgba(color, alpha));
-  g.fillStyle = gr;
-  g.fill();
-}
-
-function shard(g, s, pal) {
-  g.save();
-  g.translate(s.at[0], s.at[1]);
-  g.rotate(s.angle);
-  g.beginPath();
-  g.moveTo(s.length * 0.62, 0);
-  g.lineTo(0, s.width);
-  g.lineTo(-s.length * 0.38, 0);
-  g.lineTo(0, -s.width);
-  g.closePath();
-  const gr = g.createLinearGradient(-s.length * 0.4, 0, s.length * 0.6, 0);
-  gr.addColorStop(0, rgba(pal.rim, s.alpha * 0.15));
-  gr.addColorStop(0.45, rgba(mixRgb(pal.core, pal.rim, 0.25), s.alpha));
-  gr.addColorStop(1, rgba(pal.rim, s.alpha * 0.05));
-  g.fillStyle = gr;
-  g.fill();
-  g.restore();
-}
-
 export function drawIceWake(g, pal, points, r, strength, seed, clock, trailWidth, frame, amount = 1) {
   const line = centerline(points);
   if (!line || strength <= 0.001) return;
-  g.save();
-  g.globalCompositeOperation = pal.dark ? "source-over" : "lighter";
-  ribbon(g, line, (u) => iceWakeHalf(r, u, trailWidth, strength), pal.rim, 0.12 * strength);
-  g.restore();
   drawIceMagicWake(g, pal, points, r, strength, seed, clock, trailWidth, frame, amount);
-  g.save();
-  g.globalCompositeOperation = pal.dark ? "source-over" : "lighter";
-  for (const s of iceWakeShards(points, r, strength, seed, clock.oldest, clock.newest, trailWidth, frame)) shard(g, s, pal);
-  g.restore();
 }

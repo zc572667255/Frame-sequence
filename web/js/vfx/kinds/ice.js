@@ -2,7 +2,7 @@ import { rgba,rng } from "../../trails/glow/util.js";
 import { mixRgb, blob } from "../common.js";
 import { drawIceGrain } from "./icegrain.js";
 import { iceSolid,iceSolidSides,iceMesh,iceRotate } from "./icegeometry.js";
-import { drawIceHeadBack, drawIceHeadFront } from "./icemagic.js";
+import { drawIceSpear } from "./icemagic.js";
 
 export function icePrism(r,roll,seed=1){
   const solid=iceSolid(r,seed);
@@ -60,16 +60,7 @@ export function drawIceMesh(g,mesh,pal,seed,r,alpha=1){
   g.restore();
 }
 
+// 飞行中的冰矛画成一把光刃（icePrism 的晶体网格只留给命中时的碎块）
 export function drawIcePrism(g,c,r){
-  const roll=c.t*Math.PI*2+c.seed,mesh=icePrism(r,roll,c.seed),pal=c.pal;
-  drawIceHeadBack(g,c,r);
-  drawIceMesh(g,mesh,pal,c.seed,r,0.82);
-  g.save();
-  g.globalCompositeOperation=pal.dark?"source-over":"lighter";
-  g.lineCap="round";g.lineJoin="round";
-  g.strokeStyle=rgba(mixRgb(pal.core,pal.rim,0.4),0.72);g.lineWidth=Math.max(0.5,r*0.016);
-  for(const path of iceCracks(r,c.seed,roll)){g.beginPath();path.forEach(([x,y],i)=>i?g.lineTo(x,y):g.moveTo(x,y));g.stroke();}
-  g.restore();
-  const tip=mesh.vertices.reduce((p,q)=>q[0]>p[0]?q:p);
-  drawIceHeadFront(g,c,r,tip);
+  drawIceSpear(g,c,r);
 }

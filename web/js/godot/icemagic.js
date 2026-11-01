@@ -1,6 +1,7 @@
-// 冰矛的魔法层（vfx/kinds/icemagic.js 的同一套公式）：白芯、交织彩带、沿路冰刺、
+// 冰矛的魔法层（vfx/kinds/icemagic.js 的同一套公式）：光刃弹头、交织彩带、沿霜线成簇的冰晶、
 // 霜尘闪光、出手月牙光环和命中冰晶爆发。
 export const ICE_MAGIC_GD = `
+const _ICE_STRANDS := [[-1.0, 0.85, 0.3, 0.29, 0.7, 1.0], [1.0, 1.15, 0.35, 0.21, 2.1, 1.1], [-1.0, 0.16, 0.14, 0.43, 4.0, 0.5]]
 const _ICE_RIBBONS := [[0.4, 0.9, 0.3, 1.2, 1.0], [2.5, 1.3, -0.22, 0.95, 0.9], [4.5, 0.7, 0.18, 1.35, 1.1], [1.3, 1.8, 0.4, 0.6, 0.55]]
 
 func _ice_hue(c: Color, deg: float, boost := 1.25) -> Color:
@@ -13,7 +14,7 @@ func _ice_spread(r: float, width: float, strength: float) -> float:
 	return maxf(0.0, r) * (0.35 + 0.7 * clampf(width, 0.0, 180.0) / 100.0) * sqrt(maxf(0.0, strength)) * 1.6
 
 func _ice_envelope(u: float) -> float:
-	return pow(clampf(u, 0.0, 1.0), 0.55) * pow(clampf(1.0 - u, 0.0, 1.0), 0.35) * 1.9
+	return pow(clampf(u, 0.0, 1.0), 0.55) * pow(clampf(1.0 - u, 0.0, 1.0), 0.75) * 2.3
 
 func _ice_line(points: PackedVector2Array, n := 40) -> Dictionary:
 	var pts := PackedVector2Array()
@@ -40,16 +41,48 @@ func _ice_line(points: PackedVector2Array, n := 40) -> Dictionary:
 		us.append(u)
 	return {"p": at, "d": dirs, "u": us}
 
-func _ice_kite(root: Vector2, angle: float, length0: float, width0: float, alpha: float) -> void:
+func _ice_strand(k: int, born: float, seed: int) -> float:
+	var st: Array = _ICE_STRANDS[k]
+	return st[0] * (st[1] + st[2] * sin(born * st[3] + st[4] + seed * 0.37))
+
+func _ice_cluster(k: int, born: float, seed: int) -> float:
+	var a := 0.5 + 0.5 * sin(born * 1.1 + k * 1.9 + seed * 1.3) * cos(born * 0.37 + seed * 0.7 + k)
+	return a * a
+
+func _ice_open(age: float) -> float:
+	return 0.45 + 0.55 * _smooth(0.0, 6.0, age)
+
+func _ice_grow(age: float) -> float:
+	return 1.0 - pow(1.0 - clampf(age / 1.6, 0.0, 1.0), 3.0)
+
+# 两色线性渐变填充（顶点色按到渐变轴的投影算，和 Canvas 的 createLinearGradient 一样）
+func _ice_grad_fill(poly: PackedVector2Array, from: Vector2, to: Vector2, c0: Color, a0: float, c1: Color, a1: float) -> void:
+	var axis := to - from
+	var l2 := maxf(0.000001, axis.length_squared())
+	var k0 := _col(c0, a0)
+	var k1 := _col(c1, a1)
+	var cols := PackedColorArray()
+	for q in poly: cols.append(k0.lerp(k1, clampf((q - from).dot(axis) / l2, 0.0, 1.0)))
+	_poly_fill(poly, cols)
+
+func _ice_crystal_shape(root: Vector2, angle: float, length0: float, width0: float) -> PackedVector2Array:
+	var d := Vector2.from_angle(angle)
+	var nv := Vector2(-d.y, d.x)
+	return PackedVector2Array([root + d * (-length0 * 0.04) + nv * width0 * 0.45, root + d * length0 * 0.2 + nv * width0, root + d * length0, root + d * length0 * 0.13 - nv * width0 * 0.8, root + d * (-length0 * 0.04) - nv * width0 * 0.5])
+
+func _ice_crystal(root: Vector2, angle: float, length0: float, width0: float, alpha: float) -> void:
 	if alpha <= 0.004 or length0 <= 0.4: return
 	var d := Vector2.from_angle(angle)
-	var nv := Vector2(-d.y, d.x) * width0
-	var tip := root + d * length0
-	var mid := root + d * length0 * 0.3
-	var c0 := _col(rim_color, alpha * 0.35)
-	var c1 := _col(core_color.lerp(rim_color, 0.2), alpha * 0.95)
-	_poly_fill(PackedVector2Array([root - d * width0 * 0.6, mid + nv, tip, mid - nv]), PackedColorArray([c0, c0.lerp(c1, 0.3), c1, c0.lerp(c1, 0.3)]))
-	_line(PackedVector2Array([mid + nv, tip]), PackedColorArray([_col(core_color, alpha * 0.85)]), maxf(0.5, width0 * 0.22))
+	var groot := root - d * length0 * 0.04
+	var glow := _ice_crystal_shape(groot, angle, length0 * 1.08, width0 * 2.0)
+	var c := _ice_crystal_shape(root, angle, length0, width0)
+	var body := _ice_hue(rim_color, 12.0)
+	var edge := rim_color.lerp(Color.WHITE, 0.6)
+	_ice_grad_fill(glow, root, glow[2], body, alpha * 0.12, body, alpha * 0.04)
+	_ice_grad_fill(c, root, c[2], body, alpha * 0.3, body.lerp(Color.WHITE, 0.4), alpha * 0.9)
+	_line(PackedVector2Array([root + d * length0 * 0.08, root + d * length0 * 0.9]), PackedColorArray([_col(Color.WHITE, alpha * 0.3)]), maxf(0.5, width0 * 0.25))
+	_line(PackedVector2Array([c[0], c[1], c[2]]), PackedColorArray([_col(edge, alpha * 0.95)]), maxf(0.5, width0 * 0.2))
+	_line(PackedVector2Array([c[3], c[2]]), PackedColorArray([_col(edge, alpha * 0.4)]), maxf(0.4, width0 * 0.12))
 
 func _ice_glint(at0: Vector2, size0: float, col: Color, alpha: float, turn := 0.0) -> void:
 	if alpha <= 0.004: return
@@ -87,7 +120,7 @@ func _ice_magic_wake(pts: PackedVector2Array, r: float, strength: float, frame: 
 	var ha := PackedFloat32Array()
 	for u in us:
 		hw.append(W * (0.35 + 1.5 * _ice_envelope(u)))
-		ha.append(strength * _smooth(0.0, 0.4, u) * 0.16)
+		ha.append(strength * _smooth(0.0, 0.4, u) * (1.0 - _smooth(0.75, 1.0, u)) * 0.16)
 	_ice_taper(line, zero, hw, ha, colors[0], 1.0, 1.0)
 	for k in _ICE_RIBBONS.size():
 		var rb: Array = _ICE_RIBBONS[k]
@@ -117,7 +150,20 @@ func _ice_magic_wake(pts: PackedVector2Array, r: float, strength: float, frame: 
 	var span := maxf(0.001, newest - oldest)
 	var seed := random_seed + index * 31
 	var rate := maxf(0.25, minf(2.0, amount))
-	var step := 0.5 / rate
+	# 霜线上的雾带
+	var mist := rim_color.lerp(Color.WHITE, 0.6)
+	for k in 2:
+		var offs := PackedFloat32Array()
+		var ws := PackedFloat32Array()
+		var al := PackedFloat32Array()
+		for u in us:
+			var born := oldest + u * span
+			offs.append(_ice_strand(k, born, seed) * W * _ice_open(newest - born))
+			ws.append(r * (0.12 + 0.3 * _smooth(0.0, 0.5, u)))
+			al.append(strength * _smooth(0.0, 0.4, u) * (1.0 - _smooth(0.8, 1.0, u)))
+		_ice_taper(line, offs, ws, al, mist, 2.2, 0.06)
+		_ice_taper(line, offs, ws, al, mist, 0.8, 0.12)
+	var step := 0.14 / rate
 	for m in range(ceili(oldest / step), floori(newest / step + 0.000001) + 1):
 		var born := m * step
 		var u := clampf((born - oldest) / span, 0.0, 1.0)
@@ -125,15 +171,28 @@ func _ice_magic_wake(pts: PackedVector2Array, r: float, strength: float, frame: 
 		var i := roundi(u * (n - 1))
 		var P := Rand.new(seed * 613 + m * 131)
 		P.next()
-		var side := -1.0 if P.next() < 0.5 else 1.0
-		var off := side * W * (0.12 + P.next() * 0.5) * (0.35 + _ice_envelope(u) * 0.65)
-		var tilt := 0.5 + P.next() * 0.7
-		var ang := d[i].angle() + side * (PI - tilt)
-		var length0 := r * (0.35 + P.next() * 0.75) * (0.4 + 0.6 * u) * _smooth(0.0, 1.2, age)
-		var width0 := length0 * (0.16 + P.next() * 0.1)
-		var alpha := strength * _smooth(0.0, 0.25, u) * (0.6 + 0.4 * P.next())
-		if length0 > 0.4: _ice_kite(p[i] + Vector2(-d[i].y, d[i].x) * off, ang, length0, width0, alpha)
-	step = 0.12 / rate
+		var pick := P.next()
+		var k := 0 if pick < 0.42 else (1 if pick < 0.84 else 2)
+		var gate := P.next()
+		var jitter := (P.next() - 0.5) * 0.16
+		var lean := 0.18 + P.next() * 0.5
+		var lr := P.next()
+		var wr := P.next()
+		var ar := P.next()
+		var cl := _ice_cluster(k, born, seed)
+		if gate > 0.42 + 0.58 * cl: continue
+		var st: Array = _ICE_STRANDS[k]
+		var side: float = st[0]
+		var off := (_ice_strand(k, born, seed) + jitter) * W * _ice_open(age)
+		var ang := d[i].angle() + side * (PI / 2.0 + lean)
+		var length0: float = r * (0.6 + 2.3 * pow(lr, 1.6)) * (0.35 + 0.9 * cl) * st[5] * _ice_grow(age) * (0.25 + 0.75 * _smooth(0.0, 0.6, u))
+		var width0 := length0 * (0.07 + 0.05 * wr) + r * 0.025
+		var alpha := strength * _smooth(0.0, 0.45, u) * (0.55 + 0.45 * ar)
+		if length0 > 0.4:
+			var root := p[i] + Vector2(-d[i].y, d[i].x) * off
+			_ice_crystal(root, ang, length0, width0, alpha)
+			if lr > 0.78 and ar > 0.45: _ice_glint(root + Vector2.from_angle(ang) * length0, maxf(0.6, r * 0.05), rim_color.lerp(Color.WHITE, 0.6), alpha * 0.8, ang)
+	step = 0.045 / rate
 	for m in range(ceili(oldest / step), floori(newest / step + 0.000001) + 1):
 		var born := m * step
 		var u := clampf((born - oldest) / span, 0.0, 1.0)
@@ -141,57 +200,65 @@ func _ice_magic_wake(pts: PackedVector2Array, r: float, strength: float, frame: 
 		var i := roundi(u * (n - 1))
 		var P := Rand.new(seed * 733 + m * 53)
 		P.next()
-		var side := P.next() * 2.0 - 1.0
-		var off := side * W * (0.25 + 0.75 * _ice_envelope(u)) + side * r * 0.08 * age
-		var size0 := maxf(0.6, r * (0.025 + P.next() * 0.045))
-		var star := P.next() < 0.12
-		var twinkle := 0.55 + 0.45 * sin(frame * 1.7 + P.next() * TAU)
-		var alpha := strength * _smooth(0.0, 0.2, u) * (0.35 + 0.65 * P.next()) * twinkle
+		var pick := P.next()
+		var k := 0 if pick < 0.36 else (1 if pick < 0.72 else (2 if pick < 0.84 else 3))
+		var j1 := P.next()
+		var j2 := P.next()
+		var star := P.next() < 0.1
+		var tw := P.next()
+		var a := P.next()
 		var tone := P.next()
+		var off := 0.0
+		if k < 3: off = (_ice_strand(k, born, seed) + (j1 - 0.5) * 0.14) * W * _ice_open(age) + (j2 - 0.5) * r * 0.06 * age
+		else: off = (j1 * 2.0 - 1.0) * W * (0.25 + 0.75 * _ice_envelope(u)) + (j1 * 2.0 - 1.0) * r * 0.08 * age
+		var size0 := maxf(0.7, r * (0.022 + j2 * 0.04))
+		var twinkle := 0.55 + 0.45 * sin(frame * 1.7 + tw * TAU)
+		var alpha := strength * _smooth(0.0, 0.2, u) * (0.3 + 0.7 * a) * twinkle * (1.2 if k < 3 else 0.6)
 		var at0 := p[i] + Vector2(-d[i].y, d[i].x) * off + Vector2(0.0, r * 0.02 * age)
-		var col := rim_color.lerp(Color.WHITE, 0.4 + tone * 0.6)
+		var col := rim_color.lerp(Color.WHITE, 0.5 + tone * 0.5)
 		if star: _ice_glint(at0, size0, col, alpha, tone)
 		elif alpha > 0.004: _tri_rect(Rect2(at0 - Vector2.ONE * size0 * 0.5, Vector2.ONE * size0), _col(col, alpha))
 
-func _ice_head_back(r: float, key: int) -> void:
-	var cols := _ice_ribbon_colors()
-	_add = additive
-	_blob(Vector2(-r * 0.1 * 2.6, 0.0), r * 2.3, [[0.0, rim_color, 0.42], [0.5, cols[1], 0.14], [1.0, cols[1], 0.0]], Vector2(2.6, 0.7))
-	_blob(Vector2(-r * 0.55 * 3.2, 0.0), r * 2.2, [[0.0, cols[2], 0.16], [1.0, cols[2], 0.0]], Vector2(3.2, 0.5))
-	var P := Rand.new(key * 977 + 5)
-	for j in 6:
-		var side := -1.0 if j % 2 else 1.0
-		var x := -r * (1.3 - P.next() * 2.1)
-		var tilt := 0.45 + P.next() * 0.55
-		var len0 := r * (0.8 + P.next() * 0.9) * (0.92 + 0.08 * sin(_t * TAU * 2.0 + j))
-		_ice_kite(Vector2(x, side * r * 0.25), side * (PI - tilt), len0, len0 * 0.2, 0.75)
+# 弹头的光刃：[上缘, 下缘] 两串点（r 的倍数，+x 朝前）
+func _ice_blade(r: float, scale0 := 1.0, n := 16) -> PackedVector2Array:
+	var back := -2.6
+	var tip := 4.2
+	var top := PackedVector2Array()
+	var bottom := PackedVector2Array()
+	for k in n + 1:
+		var s := float(k) / float(n)
+		var x := (back + (tip - back) * s) * r
+		var f := pow(s, 0.35) * pow(1.0 - s, 1.2) * 2.29
+		var y := -r * 0.16 * sin(PI * s)
+		top.append(Vector2(x, y - r * 0.36 * f * scale0))
+		bottom.append(Vector2(x, y + r * 0.2 * f * scale0))
+	var poly := PackedVector2Array(top)
+	for k in range(n - 1, 0, -1): poly.append(bottom[k])
+	return poly
 
-func _ice_head_front(r: float, tip: Vector2) -> void:
+func _ice_spear(r: float, key: int) -> void:
+	var cols := _ice_ribbon_colors()
+	var pulse := 0.9 + 0.1 * sin(_t * TAU * 3.0)
 	_add = additive
-	var back := Vector2(-r * 1.6, 0.0)
-	var ctrl := r * 0.6
-	var upper := PackedVector2Array()
-	var lower := PackedVector2Array()
-	for k in 13:
-		var s := float(k) / 12.0
-		var a := back.lerp(Vector2(ctrl, -r * 0.34), s)
-		var b := Vector2(ctrl, -r * 0.34).lerp(tip, s)
-		upper.append(a.lerp(b, s))
-		var c := back.lerp(Vector2(ctrl, r * 0.34), s)
-		var e := Vector2(ctrl, r * 0.34).lerp(tip, s)
-		lower.append(c.lerp(e, s))
-	var poly := PackedVector2Array()
-	poly.append_array(upper)
-	for k in range(lower.size() - 2, 0, -1): poly.append(lower[k])
-	var pc := PackedColorArray()
-	for q in poly:
-		var g := clampf((q.x - back.x) / maxf(0.000001, tip.x - back.x), 0.0, 1.0)
-		pc.append(_col(rim_color, 0.0).lerp(_col(Color.WHITE, 0.75), g / 0.45) if g < 0.45 else _col(Color.WHITE, 0.75).lerp(_col(Color.WHITE, 0.95), (g - 0.45) / 0.55))
-	_poly_fill(poly, pc)
-	var pulse := 0.85 + 0.15 * sin(_t * TAU * 3.0)
-	_blob(tip, r * 1.1 * pulse, [[0.0, Color.WHITE, 0.95], [0.25, rim_color, 0.45], [1.0, rim_color, 0.0]])
-	_ice_glint(tip, r * 0.32 * pulse, rim_color.lerp(Color.WHITE, 0.5), 0.9, 0.0)
-	_line(PackedVector2Array([tip - Vector2(r * 2.6, 0.0), tip + Vector2(r * 1.4, 0.0)]), PackedColorArray([_col(Color.WHITE, 0.55)]), maxf(0.6, r * 0.05))
+	_blob(Vector2(-r * 0.12 * 3.4, 0.0), r * 2.2, [[0.0, rim_color, 0.65], [0.45, cols[1], 0.22], [1.0, cols[1], 0.0]], Vector2(3.4, 0.6))
+	var P := Rand.new(key * 977 + 5)
+	for j in 7:
+		var side := -1.0 if P.next() < 0.62 else 1.0
+		var x := -r * (0.6 + P.next() * 2.2)
+		var lean := 0.55 + P.next() * 0.75
+		var lr := P.next()
+		var wr := P.next()
+		var len0 := r * (0.8 + 2.0 * pow(lr, 1.4)) * (0.94 + 0.06 * sin(_t * TAU * 2.0 + j))
+		_ice_crystal(Vector2(x, -r * 0.12 + side * r * 0.12), PI - side * lean, len0, len0 * (0.07 + 0.05 * wr) + r * 0.025, 0.5)
+	_blob(Vector2(r * 0.15 * 3.6, -r * 0.3 * 0.4), r * 1.2, [[0.0, rim_color, 0.55], [1.0, rim_color, 0.0]], Vector2(3.6, 0.4))
+	var back := Vector2(-2.6 * r, 0.0)
+	var tip := Vector2(4.2 * r, 0.0)
+	var blade := _ice_blade(r)
+	_ice_grad_fill(blade, back, tip, rim_color, 0.0, rim_color.lerp(Color.WHITE, 0.55), 0.9)
+	_ice_grad_fill(_ice_blade(r, 0.4), back, tip, Color.WHITE, 0.2, Color.WHITE, 1.0)
+	_line(blade.slice(2, 17), PackedColorArray([_col(rim_color.lerp(Color.WHITE, 0.7), 0.75)]), maxf(0.6, r * 0.05))
+	_blob(Vector2(-r * 0.3, -r * 0.08), r * 0.8 * pulse, [[0.0, Color.WHITE, 0.8], [0.4, rim_color, 0.3], [1.0, rim_color, 0.0]])
+	_line(PackedVector2Array([tip - Vector2(r * 0.2, 0.0), tip + Vector2(r * 0.9, 0.0)]), PackedColorArray([_col(Color.WHITE, 0.75), _col(Color.WHITE, 0.0)]), maxf(0.6, r * 0.06))
 
 func _ice_muzzle(at0: Vector2, angle: float, r: float, age: float) -> void:
 	var life := 9.0
@@ -220,9 +287,9 @@ func _ice_burst(radius: float, key: int, t: float, angle: float) -> void:
 	_ring(Vector2.ZERO, maxf(0.6, wave * radius * 1.4), maxf(0.6, radius * 0.025), 0.55, cols[2], (1.0 - t) * 0.45)
 	for j in 9:
 		var a := angle + PI + (j - 4) * 0.62 + (P.next() - 0.5) * 0.4
-		var len0 := radius * (0.45 + P.next() * 0.6) * grow
-		var w := len0 * (0.16 + P.next() * 0.08)
-		_ice_kite(Vector2.ZERO, a, len0, w, fade * (0.7 + 0.3 * P.next()))
+		var len0 := radius * (0.45 + P.next() * 0.75) * grow
+		var w := len0 * (0.08 + P.next() * 0.05) + radius * 0.015
+		_ice_crystal(Vector2.ZERO, a, len0, w, fade * (0.7 + 0.3 * P.next()))
 	var move := 1.0 - pow(1.0 - clampf(t / 0.7, 0.0, 1.0), 2.0)
 	var col := rim_color.lerp(Color.WHITE, 0.6)
 	for j in roundi(16.0 * maxf(0.25, minf(2.0, amount))):
