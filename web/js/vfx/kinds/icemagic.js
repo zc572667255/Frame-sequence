@@ -1,4 +1,4 @@
-// 冰矛的“魔法”层：发亮的白芯、交织的青/蓝/紫彩带、沿路长出的冰刺、霜尘与闪光点、
+// 冰矛的“魔法”层：光刃弹头、交织的青/蓝/紫彩带、霜线上的雾带、霜尘与闪光点、
 // 出手时的月牙光环和命中时的冰晶爆发。所有位置都按出生时间和种子算出，任意跳帧都一样。
 // godot/icemagic.js 的 GDScript 用同一套公式（同样的随机数调用顺序）。
 import { rng, rgba, smooth } from "../../trails/glow/util.js";
@@ -68,55 +68,26 @@ export function iceRibbons(line, r, trailWidth, strength, frame) {
   });
 }
 
-// 冰刺和霜尘沿三条弯曲的“霜线”生长（不在中心线两侧均匀排开）：
-// [朝哪一侧, 离中心的距离, 摆动, 摆动频率, 相位, 冰刺长短]
-export const ICE_STRANDS = [[-1, 0.85, 0.3, 0.29, 0.7, 1], [1, 1.15, 0.35, 0.21, 2.1, 1.1], [-1, 0.16, 0.14, 0.43, 4.0, 0.5]];
+// 霜尘沿三条弯曲的“霜线”铺开：[朝哪一侧, 离中心的距离, 摆动, 摆动频率, 相位]
+export const ICE_STRANDS = [[-1, 0.85, 0.3, 0.29, 0.7], [1, 1.15, 0.35, 0.21, 2.1], [-1, 0.16, 0.14, 0.43, 4.0]];
 // 霜线在出生时刻 born 的位置（中心线法向的倍数），随路径固定，不随时间漂
 export function iceStrand(k, born, seed) {
   const [side, base, wave, freq, phase] = ICE_STRANDS[k];
   return side * (base + wave * Math.sin(born * freq + phase + seed * 0.37));
 }
-// 冰刺成簇：0 = 空, 1 = 最密最长
-export function iceCluster(k, born, seed) {
-  const a = 0.5 + 0.5 * Math.sin(born * 1.1 + k * 1.9 + seed * 1.3) * Math.cos(born * 0.37 + seed * 0.7 + k);
-  return a * a;
-}
 // 弹头刚过时霜线贴近中心，之后张开
 const iceOpen = (age) => 0.45 + 0.55 * smooth(0, 6, age);
-const iceGrow = (age) => 1 - Math.pow(1 - clamp01(age / 1.6), 3);
 
-// 沿霜线长出的细长冰晶：一簇一簇、长短悬殊，向外并向后斜，尾端缩小淡出成霜尘
-export function iceSpikes(line, r, trailWidth, strength, seed, oldest, newest, amount = 1) {
-  if (!line || strength <= 0.001) return [];
-  const span = Math.max(0.001, newest - oldest), step = 0.14 / Math.max(0.25, Math.min(2, amount)), W = iceSpread(r, trailWidth, strength), out = [];
-  for (let n = Math.ceil(oldest / step); n <= Math.floor(newest / step + 1e-6); n++) {
-    const born = n * step, u = clamp01((born - oldest) / span), age = newest - born;
-    const p = line.pts[Math.round(u * (line.pts.length - 1))];
-    const P = rng(seed * 613 + n * 131); P();
-    const pick = P(), k = pick < 0.42 ? 0 : pick < 0.84 ? 1 : 2;
-    const gate = P(), jitter = (P() - 0.5) * 0.16, lean = 0.18 + P() * 0.5, lr = P(), wr = P(), ar = P();
-    const cl = iceCluster(k, born, seed);
-    if (gate > 0.42 + 0.58 * cl) continue;
-    const side = ICE_STRANDS[k][0], off = (iceStrand(k, born, seed) + jitter) * W * iceOpen(age);
-    const angle = Math.atan2(p.dy, p.dx) + side * (Math.PI / 2 + lean);
-    const length = r * (0.6 + 2.3 * Math.pow(lr, 1.6)) * (0.35 + 0.9 * cl) * ICE_STRANDS[k][5] * iceGrow(age) * (0.25 + 0.75 * smooth(0, 0.6, u));
-    const width = length * (0.07 + 0.05 * wr) + r * 0.025;
-    const alpha = strength * smooth(0, 0.45, u) * (0.55 + 0.45 * ar);
-    if (length > 0.4) out.push({ root: [p.x + p.nx * off, p.y + p.ny * off], angle, length, width, alpha, glint: lr > 0.78 && ar > 0.45 });
-  }
-  return out;
-}
-
-// 霜尘：大多铺在霜线上（冰刺的根部），少量散在彩带之间，向外飘散并闪烁
+// 霜尘：大多铺在霜线上，少量散在彩带之间，向外飘散并闪烁
 export function iceDust(line, r, trailWidth, strength, seed, oldest, newest, frame, amount = 1) {
   if (!line || strength <= 0.001) return [];
-  const span = Math.max(0.001, newest - oldest), step = 0.045 / Math.max(0.25, Math.min(2, amount)), W = iceSpread(r, trailWidth, strength), out = [];
+  const span = Math.max(0.001, newest - oldest), step = 0.03 / Math.max(0.25, Math.min(2, amount)), W = iceSpread(r, trailWidth, strength), out = [];
   for (let n = Math.ceil(oldest / step); n <= Math.floor(newest / step + 1e-6); n++) {
     const born = n * step, u = clamp01((born - oldest) / span), age = newest - born;
     const p = line.pts[Math.round(u * (line.pts.length - 1))];
     const P = rng(seed * 733 + n * 53); P();
     const pick = P(), k = pick < 0.36 ? 0 : pick < 0.72 ? 1 : pick < 0.84 ? 2 : 3;
-    const j1 = P(), j2 = P(), star = P() < 0.1, tw = P(), a = P(), tone = P();
+    const j1 = P(), j2 = P(), star = P() < 0.13, tw = P(), a = P(), tone = P();
     const off = k < 3
       ? (iceStrand(k, born, seed) + (j1 - 0.5) * 0.14) * W * iceOpen(age) + (j2 - 0.5) * r * 0.06 * age
       : (j1 * 2 - 1) * W * (0.25 + 0.75 * iceEnvelope(u)) + (j1 * 2 - 1) * r * 0.08 * age;
@@ -149,7 +120,7 @@ export function taperLine(g, pts, widths, color, alphas, scale = 1, amul = 1) {
   }
 }
 
-// 细长的半透明冰晶：外层冷光、由根部到尖端变亮的晶体、一条亮边和一道浅色晶芯
+// 细长的半透明冰晶（弹头后的冰晶簇和命中冰刺）：外层冷光、由根部到尖端变亮的晶体、一条亮边和一道浅色晶芯
 export function iceCrystalShape(root, angle, length, width, grow = 1) {
   const d = [Math.cos(angle), Math.sin(angle)], n = [-d[1], d[0]], L = length * grow, w = width * grow;
   const at = (a, b) => [root[0] + d[0] * a + n[0] * b, root[1] + d[1] * a + n[1] * b];
@@ -209,20 +180,16 @@ export function drawIceMagicWake(g, pal, points, r, strength, seed, clock, trail
   const cw = line.pts.map((p) => r * 0.42 * Math.pow(p.u, 1.6) + 0.6), ca = line.pts.map((p) => strength * smooth(0.25, 0.9, p.u));
   taperLine(g, haze, cw, pal.rim, ca, 2.6, 0.35);
   taperLine(g, haze, cw, WHITE, ca, 1, 0.95);
-  // 霜线上的雾带：冰刺的根部连成一道道白色霜尘
+  // 霜线上的雾带：一道道白色霜尘
   const span = Math.max(0.001, clock.newest - clock.oldest), mist = mixRgb(pal.rim, WHITE, 0.6);
   for (let k = 0; k < 2; k++) {
     const pts = line.pts.map((p) => {
       const born = clock.oldest + p.u * span, off = iceStrand(k, born, seed) * W * iceOpen(clock.newest - born);
       return [p.x + p.nx * off, p.y + p.ny * off];
     });
-    const ws = line.pts.map((p) => r * (0.12 + 0.3 * smooth(0, 0.5, p.u))), as = line.pts.map((p) => strength * smooth(0, 0.4, p.u) * (1 - smooth(0.8, 1, p.u)));
-    taperLine(g, pts, ws, mist, as, 2.2, 0.06);
-    taperLine(g, pts, ws, mist, as, 0.8, 0.12);
-  }
-  for (const s of iceSpikes(line, r, trailWidth, strength, seed, clock.oldest, clock.newest, amount)) {
-    drawIceCrystal(g, s.root, s.angle, s.length, s.width, pal, s.alpha);
-    if (s.glint) drawIceGlint(g, [s.root[0] + Math.cos(s.angle) * s.length, s.root[1] + Math.sin(s.angle) * s.length], Math.max(0.6, r * 0.05), mixRgb(pal.rim, WHITE, 0.6), s.alpha * 0.8, s.angle);
+    const ws = line.pts.map((p) => r * (0.16 + 0.42 * smooth(0, 0.5, p.u))), as = line.pts.map((p) => strength * smooth(0, 0.4, p.u) * (1 - smooth(0.8, 1, p.u)));
+    taperLine(g, pts, ws, mist, as, 2.4, 0.09);
+    taperLine(g, pts, ws, mist, as, 0.8, 0.2);
   }
   for (const d of iceDust(line, r, trailWidth, strength, seed, clock.oldest, clock.newest, frame, amount)) {
     const col = mixRgb(pal.rim, WHITE, 0.5 + d.tone * 0.5);
@@ -249,8 +216,8 @@ function bladeFill(g, b, c0, a0, c1, a1) { gradFill(g, b.poly, [b.back, 0], [b.t
 export function iceHeadShards(r, seed, t) {
   const P = rng(seed * 977 + 5), out = [];
   for (let j = 0; j < 7; j++) {
-    const side = P() < 0.62 ? -1 : 1, x = -r * (0.6 + P() * 2.2), lean = 0.55 + P() * 0.75, lr = P(), wr = P();
-    const length = r * (0.8 + 2.0 * Math.pow(lr, 1.4)) * (0.94 + 0.06 * Math.sin(t * TAU * 2 + j));
+    const side = P() < 0.62 ? -1 : 1, x = -r * (0.4 + P() * 1.8), lean = 0.22 + P() * 0.4, lr = P(), wr = P();
+    const length = r * (0.7 + 1.1 * Math.pow(lr, 1.4)) * (0.94 + 0.06 * Math.sin(t * TAU * 2 + j));
     out.push({ root: [x, -r * 0.12 + side * r * 0.12], angle: Math.PI - side * lean, length, width: length * (0.07 + 0.05 * wr) + r * 0.025 });
   }
   return out;
@@ -261,7 +228,7 @@ export function drawIceSpear(g, c, r) {
   g.save();
   g.globalCompositeOperation = pal.dark ? "source-over" : "lighter";
   g.save(); g.scale(3.4, 0.6); blob(g, -r * 0.12, 0, r * 2.2, [[0, pal.rim, 0.65], [0.45, cols[1], 0.22], [1, cols[1], 0]]); g.restore();
-  for (const s of iceHeadShards(r, c.seed, c.t)) drawIceCrystal(g, s.root, s.angle, s.length, s.width, pal, 0.5);
+  for (const s of iceHeadShards(r, c.seed, c.t)) drawIceCrystal(g, s.root, s.angle, s.length, s.width, pal, 0.42);
   g.save(); g.scale(3.6, 0.4); blob(g, r * 0.15, -r * 0.3, r * 1.2, [[0, pal.rim, 0.55], [1, pal.rim, 0]]); g.restore();
   const blade = iceBlade(r);
   bladeFill(g, blade, pal.rim, 0, mixRgb(pal.rim, WHITE, 0.55), 0.9);

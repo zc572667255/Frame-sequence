@@ -1,7 +1,7 @@
-// 冰矛的魔法层（vfx/kinds/icemagic.js 的同一套公式）：光刃弹头、交织彩带、沿霜线成簇的冰晶、
+// 冰矛的魔法层（vfx/kinds/icemagic.js 的同一套公式）：光刃弹头、交织彩带、霜线雾带、
 // 霜尘闪光、出手月牙光环和命中冰晶爆发。
 export const ICE_MAGIC_GD = `
-const _ICE_STRANDS := [[-1.0, 0.85, 0.3, 0.29, 0.7, 1.0], [1.0, 1.15, 0.35, 0.21, 2.1, 1.1], [-1.0, 0.16, 0.14, 0.43, 4.0, 0.5]]
+const _ICE_STRANDS := [[-1.0, 0.85, 0.3, 0.29, 0.7], [1.0, 1.15, 0.35, 0.21, 2.1], [-1.0, 0.16, 0.14, 0.43, 4.0]]
 const _ICE_RIBBONS := [[0.4, 0.9, 0.3, 1.2, 1.0], [2.5, 1.3, -0.22, 0.95, 0.9], [4.5, 0.7, 0.18, 1.35, 1.1], [1.3, 1.8, 0.4, 0.6, 0.55]]
 
 func _ice_hue(c: Color, deg: float, boost := 1.25) -> Color:
@@ -45,15 +45,8 @@ func _ice_strand(k: int, born: float, seed: int) -> float:
 	var st: Array = _ICE_STRANDS[k]
 	return st[0] * (st[1] + st[2] * sin(born * st[3] + st[4] + seed * 0.37))
 
-func _ice_cluster(k: int, born: float, seed: int) -> float:
-	var a := 0.5 + 0.5 * sin(born * 1.1 + k * 1.9 + seed * 1.3) * cos(born * 0.37 + seed * 0.7 + k)
-	return a * a
-
 func _ice_open(age: float) -> float:
 	return 0.45 + 0.55 * _smooth(0.0, 6.0, age)
-
-func _ice_grow(age: float) -> float:
-	return 1.0 - pow(1.0 - clampf(age / 1.6, 0.0, 1.0), 3.0)
 
 # 两色线性渐变填充（顶点色按到渐变轴的投影算，和 Canvas 的 createLinearGradient 一样）
 func _ice_grad_fill(poly: PackedVector2Array, from: Vector2, to: Vector2, c0: Color, a0: float, c1: Color, a1: float) -> void:
@@ -159,40 +152,11 @@ func _ice_magic_wake(pts: PackedVector2Array, r: float, strength: float, frame: 
 		for u in us:
 			var born := oldest + u * span
 			offs.append(_ice_strand(k, born, seed) * W * _ice_open(newest - born))
-			ws.append(r * (0.12 + 0.3 * _smooth(0.0, 0.5, u)))
+			ws.append(r * (0.16 + 0.42 * _smooth(0.0, 0.5, u)))
 			al.append(strength * _smooth(0.0, 0.4, u) * (1.0 - _smooth(0.8, 1.0, u)))
-		_ice_taper(line, offs, ws, al, mist, 2.2, 0.06)
-		_ice_taper(line, offs, ws, al, mist, 0.8, 0.12)
-	var step := 0.14 / rate
-	for m in range(ceili(oldest / step), floori(newest / step + 0.000001) + 1):
-		var born := m * step
-		var u := clampf((born - oldest) / span, 0.0, 1.0)
-		var age := newest - born
-		var i := roundi(u * (n - 1))
-		var P := Rand.new(seed * 613 + m * 131)
-		P.next()
-		var pick := P.next()
-		var k := 0 if pick < 0.42 else (1 if pick < 0.84 else 2)
-		var gate := P.next()
-		var jitter := (P.next() - 0.5) * 0.16
-		var lean := 0.18 + P.next() * 0.5
-		var lr := P.next()
-		var wr := P.next()
-		var ar := P.next()
-		var cl := _ice_cluster(k, born, seed)
-		if gate > 0.42 + 0.58 * cl: continue
-		var st: Array = _ICE_STRANDS[k]
-		var side: float = st[0]
-		var off := (_ice_strand(k, born, seed) + jitter) * W * _ice_open(age)
-		var ang := d[i].angle() + side * (PI / 2.0 + lean)
-		var length0: float = r * (0.6 + 2.3 * pow(lr, 1.6)) * (0.35 + 0.9 * cl) * st[5] * _ice_grow(age) * (0.25 + 0.75 * _smooth(0.0, 0.6, u))
-		var width0 := length0 * (0.07 + 0.05 * wr) + r * 0.025
-		var alpha := strength * _smooth(0.0, 0.45, u) * (0.55 + 0.45 * ar)
-		if length0 > 0.4:
-			var root := p[i] + Vector2(-d[i].y, d[i].x) * off
-			_ice_crystal(root, ang, length0, width0, alpha)
-			if lr > 0.78 and ar > 0.45: _ice_glint(root + Vector2.from_angle(ang) * length0, maxf(0.6, r * 0.05), rim_color.lerp(Color.WHITE, 0.6), alpha * 0.8, ang)
-	step = 0.045 / rate
+		_ice_taper(line, offs, ws, al, mist, 2.4, 0.09)
+		_ice_taper(line, offs, ws, al, mist, 0.8, 0.2)
+	var step := 0.03 / rate
 	for m in range(ceili(oldest / step), floori(newest / step + 0.000001) + 1):
 		var born := m * step
 		var u := clampf((born - oldest) / span, 0.0, 1.0)
@@ -204,7 +168,7 @@ func _ice_magic_wake(pts: PackedVector2Array, r: float, strength: float, frame: 
 		var k := 0 if pick < 0.36 else (1 if pick < 0.72 else (2 if pick < 0.84 else 3))
 		var j1 := P.next()
 		var j2 := P.next()
-		var star := P.next() < 0.1
+		var star := P.next() < 0.13
 		var tw := P.next()
 		var a := P.next()
 		var tone := P.next()
@@ -244,12 +208,12 @@ func _ice_spear(r: float, key: int) -> void:
 	var P := Rand.new(key * 977 + 5)
 	for j in 7:
 		var side := -1.0 if P.next() < 0.62 else 1.0
-		var x := -r * (0.6 + P.next() * 2.2)
-		var lean := 0.55 + P.next() * 0.75
+		var x := -r * (0.4 + P.next() * 1.8)
+		var lean := 0.22 + P.next() * 0.4
 		var lr := P.next()
 		var wr := P.next()
-		var len0 := r * (0.8 + 2.0 * pow(lr, 1.4)) * (0.94 + 0.06 * sin(_t * TAU * 2.0 + j))
-		_ice_crystal(Vector2(x, -r * 0.12 + side * r * 0.12), PI - side * lean, len0, len0 * (0.07 + 0.05 * wr) + r * 0.025, 0.5)
+		var len0 := r * (0.7 + 1.1 * pow(lr, 1.4)) * (0.94 + 0.06 * sin(_t * TAU * 2.0 + j))
+		_ice_crystal(Vector2(x, -r * 0.12 + side * r * 0.12), PI - side * lean, len0, len0 * (0.07 + 0.05 * wr) + r * 0.025, 0.42)
 	_blob(Vector2(r * 0.15 * 3.6, -r * 0.3 * 0.4), r * 1.2, [[0.0, rim_color, 0.55], [1.0, rim_color, 0.0]], Vector2(3.6, 0.4))
 	var back := Vector2(-2.6 * r, 0.0)
 	var tip := Vector2(4.2 * r, 0.0)
