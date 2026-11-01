@@ -2,7 +2,7 @@
 // the trail brush and attack trails. u runs from the oldest point to the body.
 import { createCanvas } from "../core/util.js";
 import { uvMap } from "../trails/uv.js";
-import { renderGlow, glowStyle, GLOW_PRESETS } from "../trails/glow.js";
+import { renderGlow, glowStyle } from "../trails/glow.js";
 import { bolts } from "../trails/glow/layers.js";
 import { fbmNoise, rng, smooth, clamp01, rgba } from "../trails/glow/util.js";
 import { at, streak, TAU } from "./common.js";
@@ -10,7 +10,7 @@ import { flightTrail, flightTrailWindow, pathAt, pathProgress } from "./remote.j
 import { projectile, projectileBounds } from "./kinds/arrow.js";
 import { arrowSections } from "./arrowhead.js";
 import { flameUV } from "./ribbonmesh.js";
-import { iceTrailProfile } from "./kinds/ice.js";
+import { drawIceWake } from "./kinds/icewake.js";
 
 export function ribbonSections(points, radius, kind, strength = 1, headRadius = radius) {
   const pts = [];
@@ -18,7 +18,7 @@ export function ribbonSections(points, radius, kind, strength = 1, headRadius = 
   if (pts.length < 2) return [];
   const lengths = [0];
   for (let i = 1; i < pts.length; i++) lengths.push(lengths[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
-  const length = lengths.at(-1), width = kind === "sand" ? 0.48 : kind === "ice" ? 0.85 : kind === "wind" ? 1.45 : kind === "arrow" ? 0.7 : kind === "fireball" ? 1.4 : 1.3;
+  const length = lengths.at(-1), width = kind === "sand" ? 0.95 : kind === "ice" ? 0.85 : kind === "wind" ? 1.45 : kind === "arrow" ? 0.7 : kind === "fireball" ? 1.4 : 1.3;
   const normals = pts.map((p, i) => {
     const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
     let dx = b[0] - a[0], dy = b[1] - a[1];
@@ -50,24 +50,8 @@ export function ribbonSections(points, radius, kind, strength = 1, headRadius = 
   });
 }
 
-export function iceTrailSections(points,r,roll,seed,strength=1){
-  const profile=iceTrailProfile(r,roll,seed);
-  const shifted=points.map((p,i)=>{
-    const a=points[Math.max(0,i-1)],b=points[Math.min(points.length-1,i+1)],len=Math.hypot(b[0]-a[0],b[1]-a[1])||1,dx=(b[0]-a[0])/len,dy=(b[1]-a[1])/len;
-    return [p[0]-dx*r*0.65-dy*profile.offset,p[1]-dy*r*0.65+dx*profile.offset];
-  });
-  return ribbonSections(shifted,profile.half/0.85,"ice",strength,r);
-}
-
 // These equations are mirrored by the native ribbon shader in godot/remotetrail.js.
 export const flameFlow = (birth, frame) => birth * 0.42 + frame * 0.1;
-
-// The same 冰晶 preset used by the trail brush and attack trails. Geometry
-// stays icy even when the projectile's colours are changed.
-export function iceTrailStyle(pal) {
-  return { ...glowStyle(GLOW_PRESETS.find(p => p.id === "frost")),
-    glowColors: pal.preset.colors, glowCore: pal.preset.core, glowRim: pal.preset.rim, glowSplat: pal.preset.splat };
-}
 
 export function materialAt(kind, u, v, frame, noise, fine, start = 0, span = 8) {
   if (kind === "fireball") {
@@ -91,19 +75,20 @@ export function materialAt(kind, u, v, frame, noise, fine, start = 0, span = 8) 
   if (kind === "sand") {
     const birth = start + u * span, phase = birth * 1.7 + frame * 0.06;
     const weave = Math.sin(birth * 0.7 + frame * 0.05) * 0.07;
-    const lane = Math.exp(-(((v - 0.5 - weave) / 0.075) ** 2))
-      + 0.4 * Math.exp(-(((v - 0.28 + weave) / 0.055) ** 2))
-      + 0.3 * Math.exp(-(((v - 0.72 + weave) / 0.06) ** 2));
-    const grains = smooth(0.54 - u * 0.16, 0.72 - u * 0.12, fine(phase * 8, v * 29));
-    const feather = (1 - smooth(0.55, 1, d)) * smooth(0, 0.4, u) ** 1.2 * (0.08 + 0.92 * u);
-    return [0.45 + grains * 0.5, (lane * grains * 0.88 + (1 - d) ** 3 * 0.045) * feather];
+    const lane = Math.exp(-(((v - 0.5 - weave) / 0.16) ** 2))
+      + 0.55 * Math.exp(-(((v - 0.32 + weave) / 0.1) ** 2))
+      + 0.45 * Math.exp(-(((v - 0.68 + weave) / 0.11) ** 2));
+    const grains = smooth(0.48 - u * 0.12, 0.7 - u * 0.1, fine(phase * 8, v * 29));
+    // 最新的一端也要羽化：否则沙带在弹头后面是一刀平切的直边
+    const feather = (1 - smooth(0.72, 1, d)) * smooth(0, 0.22, u) * (0.2 + 0.8 * u) * (1 - 0.85 * smooth(0.88, 1, u));
+    return [0.42 + grains * 0.5, clamp01((lane * (0.28 + grains * 0.62) + (1 - d) ** 2 * 0.14) * feather)];
   }
   if (kind === "thunder") return [0.35 + n * 0.4, Math.pow(1 - d, 3) * end * (0.12 + f * 0.08)];
   const curl = (n - 0.5) * (0.7 + (1 - u) * 0.5);
   const billow = Math.max(0, 1 - Math.abs(v * 2 - 1 + curl));
   const thread = Math.pow(Math.max(0, Math.sin((v * 4 + warp * 0.65 + u * 0.4) * TAU)), 18);
-  const mist = Math.pow(billow, 1.8) * smooth(0.2, 0.8, f) * (kind === "wind" ? 0.6 : 0.22);
-  return [0.62 + f * 0.35, (mist + thread * billow * (kind === "wind" ? 0.18 : 0.28)) * end * (0.35 + u * 0.65)];
+  const mist = Math.pow(billow, 1.6) * smooth(0.15, 0.75, f) * (kind === "wind" ? 0.95 : 0.22);
+  return [0.62 + f * 0.35, clamp01((mist + thread * billow * (kind === "wind" ? 0.42 : 0.28)) * end * (kind === "wind" ? 0.5 + u * 0.5 : 0.35 + u * 0.65))];
 }
 
 function ribbonMaterial(g, c, sections, strength, clock, frame) {
@@ -185,26 +170,18 @@ export function drawRemoteTrail(g, c, s, state, frame, index, r) {
   const wrapping = c.kind === "arrow" && state.body;
   if (!wrapping && (pts.length < 2 || s.trailWidth <= 0)) return;
   const strength = 1 - smooth(0, Math.max(1, Math.min(s.trailFrames, s.impactFrames)), Math.max(0, state.time - s.chargeFrames - s.travelFrames));
+  if (c.kind === "ice") {
+    drawIceWake(g, c.pal, pts, r, strength, c.seed, flightTrailWindow(s, frame, index), s.trailWidth, frame, c.amount);
+    return;
+  }
   let run;
   if (wrapping) {
-    const radius = r * (state.launched ? 1 : 0.15 + state.charge * 0.85), R = radius * 2.1;
+    const radius = r * (state.launched ? 1 : 0.45 + state.charge * 0.55), R = radius * 2.1;
     const obj = projectile(c.shape, c.spin, c.pal, R, c.core), bounds = projectileBounds(obj);
     bounds[0] += (obj.round ? 0 : obj.L / 2) + R * (c.coreShift || 0);
     run = arrowSections(s.trailWidth > 0 ? pts : [], state.at, state.angle, radius, bounds, s, strength);
-  } else {
-    run = c.kind === "ice" ? iceTrailSections(pts,r,c.t*TAU+c.seed,c.seed,strength) : ribbonSections(pts,r*s.trailWidth/70,c.kind,strength,r);
-  }
+  } else run = ribbonSections(pts, r * s.trailWidth / 70, c.kind, strength, r);
   if (run.length < 2) return;
-  if (c.kind === "ice") {
-    const cv = renderGlow([run], iceTrailStyle(c.pal), c.w, c.h, { seed: c.seed, frame: c.i, alpha: strength, fade: 0.6 });
-    if (cv) {
-      g.save(); g.beginPath();
-      [...run.map(q => q.a), ...run.toReversed().map(q => q.b)].forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y));
-      g.closePath(); g.clip();
-      g.globalCompositeOperation = "source-over"; g.drawImage(cv, 0, 0); g.restore();
-    }
-    return;
-  }
   if (c.kind === "arrow") {
     const halves = ["a", "b"].map(side => run.map(q => ({ a: q[side], b: [(q.a[0] + q.b[0]) / 2, (q.a[1] + q.b[1]) / 2], u: q.u })));
     const look = glowStyle(c.pal.preset);

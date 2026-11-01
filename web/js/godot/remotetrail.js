@@ -67,11 +67,11 @@ void fragment() {
       float birth = COLOR.b * 64.0 + u * COLOR.a * 24.0;
       float phase = birth * 1.7 + frame * 0.06;
       float weave = sin(birth * 0.7 + frame * 0.05) * 0.07;
-      float lane = exp(-pow((v - 0.5 - weave) / 0.075, 2.0)) + 0.4 * exp(-pow((v - 0.28 + weave) / 0.055, 2.0)) + 0.3 * exp(-pow((v - 0.72 + weave) / 0.06, 2.0));
-      float grains = smoothstep(0.54 - u * 0.16, 0.72 - u * 0.12, fbm(vec2(phase * 8.0, v * 29.0), fs));
-      float feather = (1.0 - smoothstep(0.55, 1.0, d)) * pow(smoothstep(0.0, 0.4, u), 1.2) * (0.08 + 0.92 * u);
-      heat = 0.45 + grains * 0.5;
-      alpha = (lane * grains * 0.88 + pow(1.0 - d, 3.0) * 0.045) * feather;
+      float lane = exp(-pow((v - 0.5 - weave) / 0.16, 2.0)) + 0.55 * exp(-pow((v - 0.32 + weave) / 0.1, 2.0)) + 0.45 * exp(-pow((v - 0.68 + weave) / 0.11, 2.0));
+      float grains = smoothstep(0.48 - u * 0.12, 0.7 - u * 0.1, fbm(vec2(phase * 8.0, v * 29.0), fs));
+      float feather = (1.0 - smoothstep(0.72, 1.0, d)) * smoothstep(0.0, 0.22, u) * (0.2 + 0.8 * u) * (1.0 - 0.85 * smoothstep(0.88, 1.0, u));
+      heat = 0.42 + grains * 0.5;
+      alpha = clamp((lane * (0.28 + grains * 0.62) + pow(1.0 - d, 2.0) * 0.14) * feather, 0.0, 1.0);
     } else if (kind == 14) {
       heat = 0.35 + n * 0.4;
       alpha = pow(1.0 - d, 3.0) * end * (0.12 + f * 0.08);
@@ -79,9 +79,9 @@ void fragment() {
       float curl = (n - 0.5) * (0.7 + (1.0 - u) * 0.5);
       float billow = max(0.0, 1.0 - abs(v * 2.0 - 1.0 + curl));
       float thread = pow(max(0.0, sin((v * 4.0 + warp * 0.65 + u * 0.4) * 6.283185307)), 18.0);
-      float mist = pow(billow, 1.8) * smoothstep(0.2, 0.8, f) * (kind == 16 ? 0.6 : 0.22);
+      float mist = pow(billow, 1.6) * smoothstep(0.15, 0.75, f) * (kind == 16 ? 0.95 : 0.22);
       heat = 0.62 + f * 0.35;
-      alpha = (mist + thread * billow * (kind == 16 ? 0.18 : 0.28)) * end * (0.35 + u * 0.65);
+      alpha = clamp((mist + thread * billow * (kind == 16 ? 0.42 : 0.28)) * end * (kind == 16 ? 0.5 + u * 0.5 : 0.35 + u * 0.65), 0.0, 1.0);
     }
     COLOR = vec4(across(heat), alpha * COLOR.g);
   }
@@ -205,7 +205,7 @@ func _remote_sections(points: PackedVector2Array, r: float, strength: float, hea
 	var lengths := PackedFloat32Array([0.0])
 	for i in range(1, pts.size()): lengths.append(lengths[-1] + pts[i].distance_to(pts[i - 1]))
 	var length0 := lengths[-1]
-	var width := 0.48 if kind == 17 else (0.85 if kind == 15 else (1.45 if kind == 16 else (0.7 if kind == 12 else (1.4 if kind == 13 else 1.3))))
+	var width := 0.95 if kind == 17 else (0.85 if kind == 15 else (1.45 if kind == 16 else (0.7 if kind == 12 else (1.4 if kind == 13 else 1.3))))
 	var normals := PackedVector2Array()
 	var halves := PackedFloat32Array()
 	for i in pts.size():

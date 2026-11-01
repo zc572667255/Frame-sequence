@@ -9,17 +9,18 @@ export function iceRotate([x, y, z], yaw, pitch, roll) {
 // Unequal cross-sections fixed in object space. Impact splits this same solid.
 export function iceSolid(r, seed) {
   const P=rng(seed*359+29), vertices=[], rings=[], centres=[];
-  const angles=Array.from({length:6},(_,j)=>j*Math.PI/3+(P()-0.5)*0.25);
-  const widths=Array.from({length:6},()=>0.8+P()*0.32);
-  for(const [band,[x,width]] of [[-1.35,0.62],[-0.65,0.94],[0.38,0.52],[1.35,0.23]].entries()){
-    const cy=(P()-0.5)*0.14,cz=(P()-0.5)*0.14,ring=[];
+  const angles=Array.from({length:6},(_,j)=>j*Math.PI/3+(P()-0.5)*0.16);
+  const widths=Array.from({length:6},()=>0.9+P()*0.16);
+  // A long lance: chipped root, full shoulder, tapering shaft, sharp tip.
+  for(const [band,[x,width]] of [[-1.62,0.5],[-0.35,0.72],[0.78,0.42],[1.78,0.17]].entries()){
+    const cy=(P()-0.5)*0.06,cz=(P()-0.5)*0.06,ring=[];
     for(let j=0;j<6;j++){
-      const rough=0.88+P()*0.24,px=x+(P()-0.5)*(band<2?0.34:0.22),angle=angles[j]+band*0.065;
+      const rough=0.94+P()*0.1,px=x+(P()-0.5)*(band<2?0.12:0.06),angle=angles[j]+band*0.03;
       ring.push(vertices.length);vertices.push([px*r,(cy+Math.sin(angle)*width*widths[j]*rough)*r,(cz+Math.cos(angle)*width*widths[j]*rough)*r]);
     }
     rings.push(ring);centres.push([x*r,cy*r,cz*r]);
   }
-  const tip=[r*(2.45+P()*0.3),r*0.04,-r*0.06];vertices.push(tip);
+  const tip=[r*(3.05+P()*0.15),r*0.02,-r*0.02];vertices.push(tip);
   return {vertices,rings,centres,tip};
 }
 

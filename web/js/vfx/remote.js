@@ -37,7 +37,7 @@ export const FLIGHT_FIELDS = [
   { label: "命中效果", key: "impactKind", options: FLIGHT_IMPACTS },
   { label: "命中范围", key: "impactSize", min: 5, max: 40, unit: "%" },
 ];
-export const flightFieldVisible = (f, s) => !(s.kind === "ice" && f.key === "trailWidth") && (!f.kind || f.kind === s.kind) && (f.always || (hasFlight(s) && (!f.path || f.path.includes(s.flightPath))));
+export const flightFieldVisible = (f, s) => (!f.kind || f.kind === s.kind) && (f.always || (hasFlight(s) && (!f.path || f.path.includes(s.flightPath))));
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, Number(v) || 0));
 const mix = (a, b, t) => a + (b - a) * t;
 const smooth = (t) => t * t * (3 - 2 * t);
@@ -80,8 +80,29 @@ export function pathAt(s, w, h, u, index = 0) {
     x += dx / len * Math.cos(a) * r * 0.45;
     y += dy / len * Math.cos(a) * r * 0.45;
   }
-  offset += fan * Math.sin(Math.PI * u);
+  // Shots share a muzzle and separate toward the target, instead of bowing apart and meeting again.
+  offset += fan * u;
   return [x + nx * offset, y + ny * offset];
+}
+
+// Easing is applied to distance along the path, so a bend does not change speed by itself.
+export function arcParameter(s, w, h, u, index = 0) {
+  u = clamp(u, 0, 1);
+  if (u === 0 || u === 1 || !s.flightPath || s.flightPath === "straight" || s.flightPath === "sprite") return u;
+  const n = 24, lens = [0];
+  let prev = pathAt(s, w, h, 0, index);
+  for (let i = 1; i <= n; i++) {
+    const p = pathAt(s, w, h, i / n, index);
+    lens.push(lens[i - 1] + Math.hypot(p[0] - prev[0], p[1] - prev[1]));
+    prev = p;
+  }
+  const total = lens[n];
+  if (total < 1e-4) return u;
+  const target = total * u;
+  let i = 1;
+  while (i < n && lens[i] < target) i++;
+  const span = lens[i] - lens[i - 1] || 1;
+  return ((i - 1) + (target - lens[i - 1]) / span) / n;
 }
 
 export function pathProgress(s, u) {
@@ -92,7 +113,7 @@ export function pathProgress(s, u) {
 export function flightState(s, w, h, frame, index = 0) {
   const p = remoteSettings(s), time = frame - index * p.flightInterval;
   const born = time >= 0, launched = time >= p.chargeFrames;
-  const u = pathProgress(p, (time - p.chargeFrames) / p.travelFrames);
+  const u = arcParameter(p, w, h, pathProgress(p, (time - p.chargeFrames) / p.travelFrames), index);
   const hit = (time - p.chargeFrames - p.travelFrames) / p.impactFrames;
   const at = pathAt(p, w, h, u, index);
   const a = pathAt(p, w, h, Math.max(0, u - 0.005), index), b = pathAt(p, w, h, Math.min(1, u + 0.005), index);
@@ -115,5 +136,8 @@ export function flightTrail(s, w, h, frame, index = 0) {
   const p = remoteSettings(s), { oldest, newest, span } = flightTrailWindow(s, frame, index);
   if (span <= 0 || newest <= oldest) return [];
   const n = Math.max(3, Math.ceil((newest - oldest) * 2));
-  return Array.from({ length: n + 1 }, (_, i) => pathAt(p, w, h, pathProgress(p, (mix(oldest, newest, i / n) - p.chargeFrames) / p.travelFrames), index));
+  return Array.from({ length: n + 1 }, (_, i) => {
+    const eased = pathProgress(p, (mix(oldest, newest, i / n) - p.chargeFrames) / p.travelFrames);
+    return pathAt(p, w, h, arcParameter(p, w, h, eased, index), index);
+  });
 }
