@@ -8,7 +8,7 @@ import { drawPuff } from "../remotetrail.js";
 export function sandGrains(r, amount, seed, t) {
   const P = rng(seed * 131 + 17), grains = [];
   for (let i = 0, count = Math.round(48 * Math.max(0.25, Math.min(2, amount))); i < count; i++) {
-    const phase = P(), side = P() + P() - 1, reach = 1.5 + P() * 2.4;
+    const phase = P(), side = P() + P() - 1, reach = 0.6 + P() * 1.0;
     const cycles = 3 + Math.floor(P() * 3), width = Math.max(1.1, r * (0.07 + P() * 0.06));
     const strength = 0.45 + P() * 0.5, flicker = P() * TAU, age = frac(phase + t * cycles);
     const x = -r * (0.06 + reach * age), y = r * (side * (0.07 + age * 0.35) + Math.sin(age * 2 + flicker) * 0.035 * age);
@@ -21,10 +21,8 @@ export function sandGrains(r, amount, seed, t) {
 export function drawSandBody(g, c, r) {
   const { pal } = c;
   g.globalCompositeOperation = pal.dark ? "source-over" : "lighter";
-  for (let k = 0; k < 4; k++) {
-    const u = k / 3;
-    blob(g, -r * (0.15 + u * 2.2), 0, r * (0.95 - u * 0.4), [[0, pal.rim, 0.42 * (1 - u * 0.65)], [1, pal.rim, 0]]);
-  }
+  // 头部一圈紧凑的柔光（不再沿朝向往后排一串光团：那串光是直的，不跟随弯曲的路径，会拉成一条光条）
+  blob(g, -r * 0.1, 0, r * 1.1, [[0, pal.rim, 0.45], [0.5, pal.rim, 0.16], [1, pal.rim, 0]]);
   blob(g, r * 0.08, 0, r * 0.62, [[0, pal.core, 0.95], [0.22, pal.rim, 0.6], [1, pal.rim, 0]]);
   for (const grain of sandGrains(r, c.amount, c.seed, c.t)) {
     if (grain.alpha < 0.005) continue;

@@ -69,7 +69,7 @@ void fragment() {
       float weave = sin(birth * 0.7 + frame * 0.05) * 0.07;
       float lane = exp(-pow((v - 0.5 - weave) / 0.16, 2.0)) + 0.55 * exp(-pow((v - 0.32 + weave) / 0.1, 2.0)) + 0.45 * exp(-pow((v - 0.68 + weave) / 0.11, 2.0));
       float grains = smoothstep(0.48 - u * 0.12, 0.7 - u * 0.1, fbm(vec2(phase * 8.0, v * 29.0), fs));
-      float feather = (1.0 - smoothstep(0.72, 1.0, d)) * smoothstep(0.0, 0.22, u) * (0.2 + 0.8 * u);
+      float feather = (1.0 - smoothstep(0.72, 1.0, d)) * smoothstep(0.0, 0.22, u) * (0.2 + 0.8 * u) * (1.0 - 0.85 * smoothstep(0.88, 1.0, u));
       heat = 0.42 + grains * 0.5;
       alpha = clamp((lane * (0.28 + grains * 0.62) + pow(1.0 - d, 2.0) * 0.14) * feather, 0.0, 1.0);
     } else if (kind == 14) {

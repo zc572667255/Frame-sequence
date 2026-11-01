@@ -184,7 +184,7 @@ func _sand_grains(r: float, quantity: float, key: int, t: float) -> Array:
 	for i in roundi(48.0 * maxf(0.25, minf(2.0, quantity))):
 		var phase := P.next()
 		var side := P.next() + P.next() - 1.0
-		var reach := 1.5 + P.next() * 2.4
+		var reach := 0.6 + P.next() * 1.0
 		var cycles := 3.0 + floorf(P.next() * 3.0)
 		var width := maxf(1.1, r * (0.07 + P.next() * 0.06))
 		var strength := 0.45 + P.next() * 0.5
@@ -249,9 +249,7 @@ func _remote_body(r: float) -> void:
 				_trail(PackedVector2Array([Vector2(-back, y * 0.35), Vector2(-r * 0.15, y)]), maxf(0.35, r * 0.028), 0.28 + (0.22 if j == 2 else 0.0), true, rim_color, core_color)
 		17:
 			_add = additive
-			for k in 4:
-				var u := float(k) / 3.0
-				_blob(Vector2(-r * (0.15 + u * 2.2), 0), r * (0.95 - u * 0.4), [[0.0, rim_color, 0.42 * (1.0 - u * 0.65)], [1.0, rim_color, 0.0]])
+			_blob(Vector2(-r * 0.1, 0), r * 1.1, [[0.0, rim_color, 0.45], [0.5, rim_color, 0.16], [1.0, rim_color, 0.0]])
 			_blob(Vector2(r * 0.08, 0), r * 0.62, [[0.0, core_color, 0.95], [0.22, rim_color, 0.6], [1.0, rim_color, 0.0]])
 			for grain in _sand_grains(r, amount, random_seed + _remote_shot * 31, _t):
 				if grain.alpha < 0.005: continue

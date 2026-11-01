@@ -79,7 +79,8 @@ export function materialAt(kind, u, v, frame, noise, fine, start = 0, span = 8) 
       + 0.55 * Math.exp(-(((v - 0.32 + weave) / 0.1) ** 2))
       + 0.45 * Math.exp(-(((v - 0.68 + weave) / 0.11) ** 2));
     const grains = smooth(0.48 - u * 0.12, 0.7 - u * 0.1, fine(phase * 8, v * 29));
-    const feather = (1 - smooth(0.72, 1, d)) * smooth(0, 0.22, u) * (0.2 + 0.8 * u);
+    // 最新的一端也要羽化：否则沙带在弹头后面是一刀平切的直边
+    const feather = (1 - smooth(0.72, 1, d)) * smooth(0, 0.22, u) * (0.2 + 0.8 * u) * (1 - 0.85 * smooth(0.88, 1, u));
     return [0.42 + grains * 0.5, clamp01((lane * (0.28 + grains * 0.62) + (1 - d) ** 2 * 0.14) * feather)];
   }
   if (kind === "thunder") return [0.35 + n * 0.4, Math.pow(1 - d, 3) * end * (0.12 + f * 0.08)];
