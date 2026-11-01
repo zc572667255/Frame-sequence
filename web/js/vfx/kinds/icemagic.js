@@ -226,14 +226,14 @@ export function drawIceMagicWake(g, pal, points, r, strength, seed, clock, trail
   g.restore();
 }
 
-// 弹头：一把细长、微弯的光刃。白热的芯收成针尖，外面是青蓝色的光，身后拖着一道柔和的辉光。
+// 弹头：一把细长、微弯的光刃。白热的芯收成针尖，外面裹着一圈紧凑的青蓝色柔光（不拉成长条）。
 // 刃形 [x, 上缘, 下缘]（r 的倍数，+x 朝前）
 export function iceBlade(r, scale = 1, n = 16) {
-  const back = -2.6, tip = 4.2, top = [], bottom = [];
+  const back = -1.2, tip = 2.2, top = [], bottom = [];
   for (let k = 0; k <= n; k++) {
-    const s = k / n, x = (back + (tip - back) * s) * r, f = Math.pow(s, 0.35) * Math.pow(1 - s, 1.2) * 2.29, y = -r * 0.16 * Math.sin(Math.PI * s);
-    top.push([x, y - r * 0.36 * f * scale]);
-    bottom.push([x, y + r * 0.2 * f * scale]);
+    const s = k / n, x = (back + (tip - back) * s) * r, f = Math.pow(s, 0.35) * Math.pow(1 - s, 1.2) * 2.29, y = -r * 0.08 * Math.sin(Math.PI * s);
+    top.push([x, y - r * 0.24 * f * scale]);
+    bottom.push([x, y + r * 0.14 * f * scale]);
   }
   return { top, bottom, back: back * r, tip: tip * r, poly: [...top, ...bottom.slice(1, -1).reverse()] };
 }
@@ -244,19 +244,17 @@ export function drawIceSpear(g, c, r) {
   const pal = c.pal, cols = iceRibbonColors(pal), pulse = 0.9 + 0.1 * Math.sin(c.t * TAU * 3);
   g.save();
   g.globalCompositeOperation = pal.dark ? "source-over" : "lighter";
-  g.save(); g.scale(3.4, 0.6); blob(g, -r * 0.12, 0, r * 2.2, [[0, pal.rim, 0.75], [0.45, cols[1], 0.26], [1, cols[1], 0]]); g.restore();
-  g.save(); g.scale(2.6, 0.3); blob(g, -r * 0.55, -r * 0.3, r * 1.3, [[0, mixRgb(pal.rim, WHITE, 0.5), 0.45 * pulse], [1, pal.rim, 0]]); g.restore();
-  g.save(); g.scale(3.6, 0.4); blob(g, r * 0.15, -r * 0.3, r * 1.2, [[0, pal.rim, 0.55], [1, pal.rim, 0]]); g.restore();
+  g.save(); g.scale(1.3, 0.8); blob(g, r * 0.25, 0, r * 1.35, [[0, pal.rim, 0.6], [0.5, cols[1], 0.18], [1, cols[1], 0]]); g.restore();
   const blade = iceBlade(r);
   bladeFill(g, blade, pal.rim, 0, mixRgb(pal.rim, WHITE, 0.55), 0.9);
   bladeFill(g, iceBlade(r, 0.4), WHITE, 0.2, WHITE, 1);
-  g.strokeStyle = rgba(mixRgb(pal.rim, WHITE, 0.7), 0.75); g.lineWidth = Math.max(0.6, r * 0.05); g.lineCap = "round"; g.lineJoin = "round";
+  g.strokeStyle = rgba(mixRgb(pal.rim, WHITE, 0.7), 0.75); g.lineWidth = Math.max(0.6, r * 0.04); g.lineCap = "round"; g.lineJoin = "round";
   g.beginPath(); blade.top.slice(2).forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.stroke();
-  blob(g, -r * 0.3, -r * 0.08, r * 0.8 * pulse, [[0, WHITE, 0.8], [0.4, pal.rim, 0.3], [1, pal.rim, 0]]);
-  const tip = blade.tip, ng = g.createLinearGradient(tip - r * 0.2, 0, tip + r * 0.9, 0);
+  blob(g, -r * 0.1, -r * 0.04, r * 0.55 * pulse, [[0, WHITE, 0.8], [0.4, pal.rim, 0.3], [1, pal.rim, 0]]);
+  const tip = blade.tip, ng = g.createLinearGradient(tip - r * 0.15, 0, tip + r * 0.5, 0);
   ng.addColorStop(0, rgba(WHITE, 0.75)); ng.addColorStop(1, rgba(WHITE, 0));
-  g.strokeStyle = ng; g.lineWidth = Math.max(0.6, r * 0.06);
-  g.beginPath(); g.moveTo(tip - r * 0.2, 0); g.lineTo(tip + r * 0.9, 0); g.stroke();
+  g.strokeStyle = ng; g.lineWidth = Math.max(0.6, r * 0.05);
+  g.beginPath(); g.moveTo(tip - r * 0.15, 0); g.lineTo(tip + r * 0.5, 0); g.stroke();
   g.restore();
 }
 

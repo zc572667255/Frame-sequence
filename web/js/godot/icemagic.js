@@ -226,17 +226,17 @@ func _ice_magic_wake(pts: PackedVector2Array, r: float, strength: float, frame: 
 
 # 弹头的光刃：[上缘, 下缘] 两串点（r 的倍数，+x 朝前）
 func _ice_blade(r: float, scale0 := 1.0, n := 16) -> PackedVector2Array:
-	var back := -2.6
-	var tip := 4.2
+	var back := -1.2
+	var tip := 2.2
 	var top := PackedVector2Array()
 	var bottom := PackedVector2Array()
 	for k in n + 1:
 		var s := float(k) / float(n)
 		var x := (back + (tip - back) * s) * r
 		var f := pow(s, 0.35) * pow(1.0 - s, 1.2) * 2.29
-		var y := -r * 0.16 * sin(PI * s)
-		top.append(Vector2(x, y - r * 0.36 * f * scale0))
-		bottom.append(Vector2(x, y + r * 0.2 * f * scale0))
+		var y := -r * 0.08 * sin(PI * s)
+		top.append(Vector2(x, y - r * 0.24 * f * scale0))
+		bottom.append(Vector2(x, y + r * 0.14 * f * scale0))
 	var poly := PackedVector2Array(top)
 	for k in range(n - 1, 0, -1): poly.append(bottom[k])
 	return poly
@@ -245,17 +245,15 @@ func _ice_spear(r: float, _key: int) -> void:
 	var cols := _ice_ribbon_colors()
 	var pulse := 0.9 + 0.1 * sin(_t * TAU * 3.0)
 	_add = additive
-	_blob(Vector2(-r * 0.12 * 3.4, 0.0), r * 2.2, [[0.0, rim_color, 0.75], [0.45, cols[1], 0.26], [1.0, cols[1], 0.0]], Vector2(3.4, 0.6))
-	_blob(Vector2(-r * 0.55 * 2.6, -r * 0.3 * 0.3), r * 1.3, [[0.0, rim_color.lerp(Color.WHITE, 0.5), 0.45 * pulse], [1.0, rim_color, 0.0]], Vector2(2.6, 0.3))
-	_blob(Vector2(r * 0.15 * 3.6, -r * 0.3 * 0.4), r * 1.2, [[0.0, rim_color, 0.55], [1.0, rim_color, 0.0]], Vector2(3.6, 0.4))
-	var back := Vector2(-2.6 * r, 0.0)
-	var tip := Vector2(4.2 * r, 0.0)
+	_blob(Vector2(r * 0.25 * 1.3, 0.0), r * 1.35, [[0.0, rim_color, 0.6], [0.5, cols[1], 0.18], [1.0, cols[1], 0.0]], Vector2(1.3, 0.8))
+	var back := Vector2(-1.2 * r, 0.0)
+	var tip := Vector2(2.2 * r, 0.0)
 	var blade := _ice_blade(r)
 	_ice_grad_fill(blade, back, tip, rim_color, 0.0, rim_color.lerp(Color.WHITE, 0.55), 0.9)
 	_ice_grad_fill(_ice_blade(r, 0.4), back, tip, Color.WHITE, 0.2, Color.WHITE, 1.0)
-	_line(blade.slice(2, 17), PackedColorArray([_col(rim_color.lerp(Color.WHITE, 0.7), 0.75)]), maxf(0.6, r * 0.05))
-	_blob(Vector2(-r * 0.3, -r * 0.08), r * 0.8 * pulse, [[0.0, Color.WHITE, 0.8], [0.4, rim_color, 0.3], [1.0, rim_color, 0.0]])
-	_line(PackedVector2Array([tip - Vector2(r * 0.2, 0.0), tip + Vector2(r * 0.9, 0.0)]), PackedColorArray([_col(Color.WHITE, 0.75), _col(Color.WHITE, 0.0)]), maxf(0.6, r * 0.06))
+	_line(blade.slice(2, 17), PackedColorArray([_col(rim_color.lerp(Color.WHITE, 0.7), 0.75)]), maxf(0.6, r * 0.04))
+	_blob(Vector2(-r * 0.1, -r * 0.04), r * 0.55 * pulse, [[0.0, Color.WHITE, 0.8], [0.4, rim_color, 0.3], [1.0, rim_color, 0.0]])
+	_line(PackedVector2Array([tip - Vector2(r * 0.15, 0.0), tip + Vector2(r * 0.5, 0.0)]), PackedColorArray([_col(Color.WHITE, 0.75), _col(Color.WHITE, 0.0)]), maxf(0.6, r * 0.05))
 
 func _ice_muzzle(at0: Vector2, angle: float, r: float, age: float) -> void:
 	var life := 9.0
