@@ -41,7 +41,7 @@ import { spriteOf, spriteUrl } from "./projectiles.js";
 // kinds: name, what it is for, and the settings it starts with
 export const VFX_KINDS = [
   { id: "thunder", name: "雷电", help: "向前的电矛和向后分叉的电弧，拖尾是整段闪电；命中时短促闪光、多次放电、飞散电火花和逐渐冷却的放射电纹", defaults: { palette: "animebolt", loop: true, size: 90, glow: 40, acc: "none" }, round: true },
-  { id: "ice", name: "冰矛", help: "尖细的六棱冰晶，沿飞行方向指向前方，晶面透亮并带冷色高光和内部裂纹。拖尾是逐渐变细的霜雾、亮芯和冰晶碎片，拖尾宽度改变霜雾粗细。命中时闪光、霜环、冰裂纹，冰晶碎裂飞散", defaults: { palette: "frost", loop: true, size: 90, glow: 48, acc: "none", flightPath: "straight", bodySize: 9 }, round: true },
+  { id: "ice", name: "冰矛", help: "发光的冰晶长矛：白热光芯和弹尖星芒，身后青、蓝紫、品红三色彩带交织流动，沿路长出冰刺，洒下霜尘和闪光点，出手时起点张开月牙光环。拖尾宽度改变彩带和冰刺的展开幅度，粒子数量改变冰刺和霜尘的密度。命中时强闪光、彩色霜环、放射冰刺、冰晶碎裂飞散", defaults: { palette: "frost", loop: true, size: 90, glow: 60, acc: "none", flightPath: "straight", bodySize: 9, trailFrames: 14 }, round: true },
   { id: "wind", name: "风刃", help: "月牙形风刃和身后的速度线，沿路径留下空气尾迹，命中时切开的气流散开", defaults: { palette: "air", loop: true, size: 90, glow: 28, acc: "none" }, round: true },
   { id: "sand", name: "沙流", help: "前端亮点后的沙束由粗细不同的沙粒组成，沿路径留下变宽的沙雾，命中时扬起散沙", defaults: { palette: "sand", loop: true, size: 90, glow: 24, acc: "none", flightPath: "wave", bodySize: 10 }, round: true },
   { id: "hit", name: "命中火花", help: "打中的一瞬间：白热闪光、尖刺和飞溅的火花", defaults: { palette: "radiant", frames: 7, loop: false, size: 80 } },
@@ -115,7 +115,7 @@ export const effectKinds = (remote = false) => {
 const EFFECTS = { hit, explosion, shock, dust, charge, circle, heal, aura, ribbon, wings, burn, cloud, arrow, fireball };
 
 // how much bloom each kind gets on top of what it draws itself
-const BLOOM = { hit: 1, shock: 0.8, charge: 1, heal: 0.7, circle: 0, explosion: 0.7, dust: 0, aura: 0.9, burn: 0.9, ribbon: 1, wings: 1, cloud: 0, arrow: 0.4, fireball: 0.45, ice: 0.28 };
+const BLOOM = { hit: 1, shock: 0.8, charge: 1, heal: 0.7, circle: 0, explosion: 0.7, dust: 0, aura: 0.9, burn: 0.9, ribbon: 1, wings: 1, cloud: 0, arrow: 0.4, fireball: 0.45, ice: 0.8 };
 
 // one frame: a w×h canvas
 export function renderVfx(p, i) {

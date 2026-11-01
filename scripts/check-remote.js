@@ -6,6 +6,7 @@ import { flightTrailWindow } from "../web/js/vfx/remote.js";
 import { icePrism, iceCracks } from "../web/js/vfx/kinds/ice.js";
 import { iceWakeHalf, iceWakeShards } from "../web/js/vfx/kinds/icewake.js";
 import { iceDebris } from "../web/js/vfx/kinds/icehit.js";
+import { iceLine, iceRibbons, iceSpikes, iceDust, iceBurst, iceHue } from "../web/js/vfx/kinds/icemagic.js";
 import { thunderDischarge } from "../web/js/vfx/kinds/thunderhit.js";
 import { sandGrains } from "../web/js/vfx/kinds/sand.js";
 import { flameCells } from "../web/js/vfx/ribbonmesh.js";
@@ -264,6 +265,30 @@ for (let u = 0; u <= 1; u += 0.1) {
   previous = a;
 }
 console.log("冰晶尖锥、霜雾拖尾、碎片范围与沿路径匀速检查通过");
+{
+  const path = [[0, 0], [60, -12], [130, -18], [200, -10]], line = iceLine(path);
+  assert.ok(line && line.pts.length === 41 && line.pts[0].u === 0 && line.pts.at(-1).u === 1);
+  const ribbons = iceRibbons(line, 18, 70, 1, 12);
+  assert.ok(ribbons.length >= 3, "several coloured ribbons interweave behind the head");
+  for (const rb of ribbons) {
+    close(rb.pts.at(-1), [line.pts.at(-1).x, line.pts.at(-1).y]);
+    assert.ok(rb.pts.flat().every(Number.isFinite) && rb.alphas[0] === 0, "ribbons meet at the head and fade at the tail");
+  }
+  assert.notDeepEqual(iceRibbons(line, 18, 70, 1, 12)[0].pts, iceRibbons(line, 18, 70, 1, 13)[0].pts, "ribbons flow between frames");
+  for (const seed of [1, 23, 97]) {
+    const spikes = iceSpikes(line, 18, 70, 1, seed, 4, 18), dust = iceDust(line, 18, 70, 1, seed, 4, 18, 9);
+    assert.ok(spikes.length >= 10 && dust.length >= 60, "ice spikes and frost dust line the path");
+    assert.deepEqual(spikes, iceSpikes(line, 18, 70, 1, seed, 4, 18), "spikes are deterministic when seeking");
+    assert.ok(spikes.some(s => Math.sin(s.angle) > 0) && spikes.some(s => Math.sin(s.angle) < 0), "spikes grow on both sides");
+    assert.ok(iceSpikes(line, 18, 70, 1, seed, 4, 18, 2).length > spikes.length, "particle amount adds spikes");
+    const burst = iceBurst(40, seed, 0.3, 0.5);
+    assert.ok(burst.spikes.length === 9 && burst.glints.every(p => p.at.every(Number.isFinite)));
+    assert.ok(iceBurst(40, seed, 1, 0.5).spikes.every(s => s.alpha === 0), "the burst is gone when the hit ends");
+  }
+  const [cr, cg, cb] = iceHue([95, 214, 255], 105);
+  assert.ok(cr > cg && cb > cg, "the third ribbon turns magenta");
+}
+console.log("冰矛彩带交织、沿路冰刺、霜尘闪光与命中冰晶爆发检查通过");
 for (const width of [0.5, 1, 2.5]) {
   const body = 40, run = ribbonSections([[0, 0], [120, 0], [240, 0]], body * width, "fireball", 1, body);
   assert.ok(Math.hypot(run.at(-1).a[0] - run.at(-1).b[0], run.at(-1).a[1] - run.at(-1).b[1]) <= body * 1.7 + 1e-9, "wide flame joins remain inside the body's height");

@@ -2,6 +2,7 @@ import { rng,rgba,smooth } from "../../trails/glow/util.js";
 import { TAU,mixRgb,blob,ring,streak } from "../common.js";
 import { drawPuff } from "../remotetrail.js";
 import { drawIceMesh } from "./ice.js";
+import { drawIceBurst } from "./icemagic.js";
 import { iceSolid,iceCells,iceMesh,iceRotate } from "./icegeometry.js";
 export { iceFaceCracks } from "./ice.js";
 
@@ -54,8 +55,9 @@ export function drawIceImpact(g,c,radius,angle){
   const pieces=iceDebris(radius,c.amount,c.seed,t,angle,c.bodyRadius,c.iceRoll).sort((a,b)=>a.depth-b.depth);
   for(const piece of pieces){
     if(piece.alpha<=0)continue;
-    g.save();g.translate(...piece.at);drawIceMesh(g,piece,pal,c.seed+piece.id*131,Math.max(1,piece.radius),piece.alpha);g.restore();
+    g.save();g.translate(...piece.at);g.globalCompositeOperation=pal.dark?"source-over":"lighter";blob(g,0,0,Math.max(1,piece.radius)*2.2,[[0,pal.rim,piece.alpha*0.35],[1,pal.rim,0]]);drawIceMesh(g,piece,pal,c.seed+piece.id*131,Math.max(1,piece.radius),piece.alpha*0.72);g.restore();
   }
+  drawIceBurst(g,pal,radius,c.seed,t,angle,c.amount);
   g.globalCompositeOperation=pal.dark?"source-over":"lighter";
   const S=rng(c.seed*809+3);
   for(let j=0;j<7;j++){

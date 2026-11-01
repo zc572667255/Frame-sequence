@@ -124,7 +124,7 @@ func _ice_draw_mesh(mesh: Dictionary, key: int, r: float, alpha := 1.0) -> void:
 		var pts: PackedVector2Array = face.points
 		var d := pts[2]-pts[0]
 		var cl := PackedColorArray()
-		var cover := alpha * (0.9 + face.light * 0.08)
+		var cover: float = alpha * (0.9 + face.light * 0.08)
 		for p in pts: cl.append(_col(blue.lerp(lit,clampf((p-pts[0]).dot(d)/maxf(0.00000001,d.length_squared()),0.0,1.0)),cover))
 		_poly_fill(pts,cl)
 		var surface_key: int = key*419+face.id*17+7
@@ -175,19 +175,18 @@ func _remote_ice_wake(pts: PackedVector2Array, r: float, strength: float, frame:
 	if total < 0.5: return
 	var window := _remote_window(frame, index)
 	var span := maxf(0.001, window.y - window.x)
-	_add = true
-	for scale in [1.65, 1.0, 0.28]:
-		var alpha := 0.16 if scale > 1.4 else (0.34 if scale > 0.5 else 0.7)
-		var col := rim_color if scale > 0.5 else core_color
-		var line := PackedVector2Array()
-		var cols := PackedColorArray()
-		var ws := PackedFloat32Array()
-		for i in clean.size():
-			var u := float(i) / float(clean.size() - 1)
-			line.append(clean[i])
-			cols.append(_col(col, alpha * strength * _smooth(0.0, 0.22, u)))
-			ws.append(_ice_wake_half(r, u, trail_width, strength) * scale * 2.0)
-		_line(line, cols, 1.0, ws)
+	_add = additive
+	var line := PackedVector2Array()
+	var cols := PackedColorArray()
+	var ws := PackedFloat32Array()
+	for i in clean.size():
+		var u := float(i) / float(clean.size() - 1)
+		line.append(clean[i])
+		cols.append(_col(rim_color, 0.12 * strength * _smooth(0.0, 0.22, u)))
+		ws.append(_ice_wake_half(r, u, trail_width, strength) * 2.0)
+	_line(line, cols, 1.0, ws)
+	_ice_magic_wake(pts, r, strength, frame, index)
+	_add = additive
 	var step := 0.85
 	var seed := random_seed + index * 31
 	var first := ceili(window.x / step)
@@ -225,11 +224,9 @@ func _remote_ice_wake(pts: PackedVector2Array, r: float, strength: float, frame:
 
 func _remote_ice(r: float, key: int) -> void:
 	var roll := _t * TAU + key
-	_add = true
-	_blob(Vector2(r * 0.55, 0), r * 2.55, [[0.0, rim_color, 0.22], [0.55, rim_color, 0.07], [1.0, rim_color, 0.0]])
-	_blob(Vector2(r * 2.15, 0), r * 1.15, [[0.0, core_color, 0.3], [0.45, rim_color, 0.1], [1.0, rim_color, 0.0]])
+	_ice_head_back(r, key)
 	var mesh := _ice_prism(r, roll, key)
-	_ice_draw_mesh(mesh, key, r)
+	_ice_draw_mesh(mesh, key, r, 0.82)
 	_add = true
 	var tone := core_color.lerp(rim_color, 0.4)
 	for path in _ice_cracks(r, key, roll):
@@ -237,5 +234,5 @@ func _remote_ice(r: float, key: int) -> void:
 	var tip := Vector2(-1e9, 0)
 	for p in mesh.vertices:
 		if p.x > tip.x: tip = Vector2(p.x, p.y)
-	_blob(tip, r * 0.42, [[0.0, core_color, 0.95], [0.35, core_color, 0.4], [1.0, rim_color, 0.0]])
+	_ice_head_front(r, tip)
 `;

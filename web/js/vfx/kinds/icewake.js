@@ -2,6 +2,7 @@
 // that stay on the birth time of the path (seeking a frame does not reshuffle them).
 import { rng, rgba } from "../../trails/glow/util.js";
 import { mixRgb } from "../common.js";
+import { drawIceMagicWake } from "./icemagic.js";
 
 export function iceWakeHalf(r, u, trailWidth = 70, strength = 1) {
   const widen = 0.35 + 0.7 * Math.max(0, Math.min(180, trailWidth)) / 100;
@@ -92,14 +93,16 @@ function shard(g, s, pal) {
   g.restore();
 }
 
-export function drawIceWake(g, pal, points, r, strength, seed, clock, trailWidth, frame) {
+export function drawIceWake(g, pal, points, r, strength, seed, clock, trailWidth, frame, amount = 1) {
   const line = centerline(points);
   if (!line || strength <= 0.001) return;
   g.save();
   g.globalCompositeOperation = pal.dark ? "source-over" : "lighter";
-  ribbon(g, line, (u) => iceWakeHalf(r, u, trailWidth, strength) * 1.65, pal.rim, 0.16 * strength);
-  ribbon(g, line, (u) => iceWakeHalf(r, u, trailWidth, strength), pal.rim, 0.34 * strength);
-  ribbon(g, line, (u) => iceWakeHalf(r, u, trailWidth, strength) * 0.28, pal.core, 0.7 * strength);
+  ribbon(g, line, (u) => iceWakeHalf(r, u, trailWidth, strength), pal.rim, 0.12 * strength);
+  g.restore();
+  drawIceMagicWake(g, pal, points, r, strength, seed, clock, trailWidth, frame, amount);
+  g.save();
+  g.globalCompositeOperation = pal.dark ? "source-over" : "lighter";
   for (const s of iceWakeShards(points, r, strength, seed, clock.oldest, clock.newest, trailWidth, frame)) shard(g, s, pal);
   g.restore();
 }

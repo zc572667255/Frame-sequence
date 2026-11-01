@@ -170,7 +170,7 @@ export function drawRemoteTrail(g, c, s, state, frame, index, r) {
   if (!wrapping && (pts.length < 2 || s.trailWidth <= 0)) return;
   const strength = 1 - smooth(0, Math.max(1, Math.min(s.trailFrames, s.impactFrames)), Math.max(0, state.time - s.chargeFrames - s.travelFrames));
   if (c.kind === "ice") {
-    drawIceWake(g, c.pal, pts, r, strength, c.seed + index * 31, flightTrailWindow(s, frame, index), s.trailWidth, frame);
+    drawIceWake(g, c.pal, pts, r, strength, c.seed, flightTrailWindow(s, frame, index), s.trailWidth, frame, c.amount);
     return;
   }
   let run;

@@ -65,13 +65,16 @@ func _remote_ice_hit(at0: Vector2, t: float, angle: float, key: int, radius: flo
 		var p := Vector2(cos(a)*radius*t*0.7,sin(a)*radius*t*0.32)
 		_remote_puff(p,radius*(0.16+t*0.38),a,rim_color,_smooth(0.0,0.08,t)*fade*0.2*minf(1.5,amount),j+key,1.6)
 	var axial_roll := (charge_frames+travel_frames)/float(frames)*TAU+key
-	var pieces := _ice_debris(radius,amount,key,t,angle,_remote_radius(),axial_roll)
+	var pieces := _ice_debris(radius,amount,key,t,angle,_remote_radius()*0.6,axial_roll)
 	pieces.sort_custom(func(a,b): return a.depth<b.depth)
 	for piece in pieces:
 		if piece.alpha<=0.0: continue
 		_xf = xf*Transform2D(0.0,at0+piece.at)
-		_ice_draw_mesh(piece,key+piece.id*131,maxf(1.0,piece.radius),piece.alpha)
+		_add = additive
+		_blob(Vector2.ZERO,maxf(1.0,piece.radius)*2.2,[[0.0,rim_color,piece.alpha*0.35],[1.0,rim_color,0.0]])
+		_ice_draw_mesh(piece,key+piece.id*131,maxf(1.0,piece.radius),piece.alpha*0.72)
 	_xf = xf*Transform2D(0.0,at0)
+	_ice_burst(radius,key,t,angle)
 	_add = additive
 	var S := Rand.new(key*809+3)
 	for j in 7:

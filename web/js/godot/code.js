@@ -34,13 +34,14 @@ import { remoteParams, remoteProps, remoteExports, REMOTE_FIELD, REMOTE_GD } fro
 import { REMOTE_TRAIL_SHADER, REMOTE_TRAIL_GD } from "./remotetrail.js";
 import { ICE_GD } from "./ice.js";
 import { ICE_HIT_GD } from "./icehit.js";
+import { ICE_MAGIC_GD } from "./icemagic.js";
 import { THUNDER_HIT_GD } from "./thunderhit.js";
 
 export const CODE_KINDS = ["hit", "shock", "charge", "heal", "ribbon", "wings", "circle", "aura", "burn", "explosion", "dust", "cloud", "arrow", "fireball", "thunder", "ice", "wind", "sand"];
 const PATTERNS = { hex: 0, penta: 1, square: 2, taiji: 3, burst: 4, holy: 5, whirl: 6, stars: 7, wisp: 8, arrows: 9 };
 // how much bloom each kind gets (vfx/effects.js BLOOM); 箭矢 more, standing in
 // for the bloom its trail glow adds to itself in the editor
-const BLOOM = { hit: 1, shock: 0.8, charge: 1, heal: 0.7, circle: 0, ribbon: 1, wings: 1, aura: 0.9, burn: 0.9, explosion: 0.7, dust: 0, cloud: 0, arrow: 1, fireball: 0.45, ice: 0.28 };
+const BLOOM = { hit: 1, shock: 0.8, charge: 1, heal: 0.7, circle: 0, ribbon: 1, wings: 1, aura: 0.9, burn: 0.9, explosion: 0.7, dust: 0, cloud: 0, arrow: 1, fireball: 0.45, ice: 0.8 };
 // 箭矢's glow: the trail look's amounts the script reads, in this order
 // (strands is a count, the rest 0..1) — GDScript TG_KEYS
 const TG_KEYS = ["strands", "core", "haze", "glow", "flow", "flames", "bolts", "crystal", "speedLines", "curls", "rays", "serrate", "rocks", "shadow", "snow", "dust", "sparkles", "sparkleSize"];
@@ -2478,6 +2479,7 @@ ${REMOTE_GD}
 ${REMOTE_TRAIL_GD}
 ${ICE_GD}
 ${ICE_HIT_GD}
+${ICE_MAGIC_GD}
 ${THUNDER_HIT_GD}
 
 # 环绕光的位置：火焰尖、光束、火花到中心以上 1.77 ry，底部到中心以下 1.22 ry，两侧 1.15 rx，全部在画幅里

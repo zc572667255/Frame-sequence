@@ -7,6 +7,7 @@ import { fireball } from "./fireball.js";
 import { arrow } from "./arrow.js";
 import { drawIcePrism } from "./ice.js";
 import { drawIceImpact } from "./icehit.js";
+import { drawIceMuzzle } from "./icemagic.js";
 import { drawThunderImpact } from "./thunderhit.js";
 import { drawSandBody, drawSandImpact } from "./sand.js";
 import { explosion } from "./explosion.js";
@@ -88,7 +89,7 @@ function impact(g, c, s, atPoint, t, angle) {
   const radius = Math.min(c.w, c.h) * s.impactSize / 100;
   const local = { ...c, t, loop: false, cx: atPoint[0], cy: atPoint[1], R: radius, gy: atPoint[1], squash: 0.45 };
   const kind = s.impactKind;
-  if (c.kind === "ice" && (kind === "auto" || kind === "explosion")) return drawIceImpact(g, { ...local, bodyRadius: Math.min(c.w,c.h)*s.bodySize/100*s.size/90, iceRoll: (s.chargeFrames+s.travelFrames)/s.frames*TAU+c.seed }, radius, angle);
+  if (c.kind === "ice" && (kind === "auto" || kind === "explosion")) return drawIceImpact(g, { ...local, bodyRadius: Math.min(c.w,c.h)*s.bodySize/100*s.size/90*0.6, iceRoll: (s.chargeFrames+s.travelFrames)/s.frames*TAU+c.seed }, radius, angle);
   if (c.kind === "thunder" && (kind === "auto" || kind === "explosion")) return drawThunderImpact(g, local, radius);
   if (c.kind === "wind" && (kind === "auto" || kind === "shock")) return drawWindImpact(g, local, radius);
   if (c.kind === "sand" && (kind === "auto" || kind === "explosion")) return drawSandImpact(g, local, radius);
@@ -123,6 +124,10 @@ export function remote(g, c, settings) {
     if (!state.born || state.finished) continue;
     const ctx = { ...c, seed: c.seed + index * 31 };
     const wrap = drawRemoteTrail(g, ctx, s, state, frame, index, radius);
+    if (c.kind === "ice") {
+      const a = pathAt(s, c.w, c.h, 0, index), b = pathAt(s, c.w, c.h, 0.01, index);
+      drawIceMuzzle(g, c.pal, a, Math.atan2(b[1] - a[1], b[0] - a[0]), radius, state.time - s.chargeFrames);
+    }
     if (state.body) {
       const scale = state.launched ? 1 : 0.45 + state.charge * 0.55;
       g.save(); g.translate(...state.at); g.rotate(state.angle);

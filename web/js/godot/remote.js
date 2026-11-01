@@ -342,6 +342,9 @@ func _k_remote() -> void:
 		var state := _remote_state(frame, index)
 		if not state.born or state.finished: continue
 		var wrap := _remote_trail(state, frame, index, r)
+		if kind == 15:
+			var m0 := _remote_path(0.0, index)
+			_ice_muzzle(m0, (_remote_path(0.01, index) - m0).angle(), r, state.time - charge_frames)
 		if state.body:
 			var scale0: float = 1.0 if state.launched else 0.45 + state.charge * 0.55
 			_xf = xf * Transform2D(state.angle, state.at)
