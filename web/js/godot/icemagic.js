@@ -16,29 +16,49 @@ func _ice_spread(r: float, width: float, strength: float) -> float:
 func _ice_envelope(u: float) -> float:
 	return pow(clampf(u, 0.0, 1.0), 0.55) * pow(clampf(1.0 - u, 0.0, 1.0), 0.75) * 2.3
 
-func _ice_line(points: PackedVector2Array, n := 40) -> Dictionary:
+# 中心线：先用向心 Catmull-Rom 样条把轨迹点连成光滑曲线，再按弧长密集重采样（同 JS 的 iceLine）
+func _ice_cr(p0: Vector2, p1: Vector2, p2: Vector2, p3: Vector2, s: float) -> Vector2:
+	var t1 := maxf(0.0001, sqrt(p0.distance_to(p1)))
+	var t2 := t1 + maxf(0.0001, sqrt(p1.distance_to(p2)))
+	var t3 := t2 + maxf(0.0001, sqrt(p2.distance_to(p3)))
+	var t := t1 + (t2 - t1) * s
+	var a1 := (p0 * (t1 - t) + p1 * t) / t1
+	var a2 := (p1 * (t2 - t) + p2 * (t - t1)) / (t2 - t1)
+	var a3 := (p2 * (t3 - t) + p3 * (t - t2)) / (t3 - t2)
+	var b1 := (a1 * (t2 - t) + a2 * t) / t2
+	var b2 := (a2 * (t3 - t) + a3 * (t - t1)) / (t3 - t1)
+	return (b1 * (t2 - t) + b2 * (t - t1)) / (t2 - t1)
+
+func _ice_line(points: PackedVector2Array, n := 120) -> Dictionary:
 	var pts := PackedVector2Array()
 	for p in points:
 		if pts.is_empty() or pts[pts.size() - 1].distance_to(p) > 0.35: pts.append(p)
 	if pts.size() < 2: return {}
+	var m := pts.size()
+	var dense := PackedVector2Array([pts[0]])
+	for i in m - 1:
+		var p0: Vector2 = pts[i - 1] if i > 0 else pts[0] * 2.0 - pts[1]
+		var p3: Vector2 = pts[i + 2] if i + 2 < m else pts[m - 1] * 2.0 - pts[m - 2]
+		for j in range(1, 9):
+			dense.append(pts[i + 1] if j == 8 else _ice_cr(p0, pts[i], pts[i + 1], p3, j / 8.0))
 	var lengths := PackedFloat32Array([0.0])
-	for i in range(1, pts.size()): lengths.append(lengths[i - 1] + pts[i - 1].distance_to(pts[i]))
-	var total := lengths[pts.size() - 1]
+	for i in range(1, dense.size()): lengths.append(lengths[i - 1] + dense[i - 1].distance_to(dense[i]))
+	var total := lengths[dense.size() - 1]
 	if total < 0.5: return {}
 	var at := PackedVector2Array()
-	var dirs := PackedVector2Array()
 	var us := PackedFloat32Array()
 	var i := 1
 	for k in n + 1:
-		var u := float(k) / float(n)
-		var dist := u * total
-		while i < pts.size() - 1 and lengths[i] < dist: i += 1
+		var dist := float(k) / float(n) * total
+		while i < dense.size() - 1 and lengths[i] < dist: i += 1
 		var seg := maxf(0.000001, lengths[i] - lengths[i - 1])
 		var f := clampf((dist - lengths[i - 1]) / seg, 0.0, 1.0)
-		var d := pts[i] - pts[i - 1]
-		at.append(pts[i - 1] + d * f)
-		dirs.append(d / maxf(0.000001, d.length()))
-		us.append(u)
+		at.append(dense[i - 1].lerp(dense[i], f))
+		us.append(float(k) / float(n))
+	var dirs := PackedVector2Array()
+	for k in n + 1:
+		var dv := at[mini(n, k + 1)] - at[maxi(0, k - 1)]
+		dirs.append(dv / maxf(0.000001, dv.length()))
 	return {"p": at, "d": dirs, "u": us}
 
 func _ice_strand(k: int, born: float, seed: int) -> float:
@@ -84,7 +104,8 @@ func _ice_glint(at0: Vector2, size0: float, col: Color, alpha: float, turn := 0.
 		_line(PackedVector2Array([at0 - d, at0 + d]), PackedColorArray([_col(col, alpha)]), maxf(0.5, size0 * 0.35))
 	_blob(at0, size0 * 1.6, [[0.0, Color.WHITE, alpha], [1.0, col, 0.0]])
 
-func _ice_taper(line: Dictionary, offsets: PackedFloat32Array, widths: PackedFloat32Array, alphas: PackedFloat32Array, col: Color, scale0: float, amul: float) -> void:
+# soft：横截面两侧 30% 渐隐到透明（同 JS 的 taperLine soft）
+func _ice_taper(line: Dictionary, offsets: PackedFloat32Array, widths: PackedFloat32Array, alphas: PackedFloat32Array, col: Color, scale0: float, amul: float, soft := false) -> void:
 	var pts := PackedVector2Array()
 	var cols := PackedColorArray()
 	var ws := PackedFloat32Array()
@@ -94,7 +115,27 @@ func _ice_taper(line: Dictionary, offsets: PackedFloat32Array, widths: PackedFlo
 		pts.append(p[i] + Vector2(-d[i].y, d[i].x) * offsets[i])
 		cols.append(_col(col, alphas[i] * amul))
 		ws.append(widths[i] * scale0)
-	_line(pts, cols, 1.0, ws)
+	if not soft:
+		_line(pts, cols, 1.0, ws)
+		return
+	if not _ok() or pts.size() < 2: return
+	var n := pts.size()
+	var verts := PackedVector2Array()
+	var vc := PackedColorArray()
+	var idx := PackedInt32Array()
+	for i in n:
+		var dv := pts[mini(n - 1, i + 1)] - pts[maxi(0, i - 1)]
+		var nv := Vector2(-dv.y, dv.x) / maxf(0.000001, dv.length())
+		var h := ws[i] * 0.5
+		var c := _col(col, minf(1.0, alphas[i] * amul * 1.3))
+		var ct := Color(c, 0.0)
+		verts.append_array(PackedVector2Array([pts[i] + nv * h, pts[i] + nv * h * 0.4, pts[i] - nv * h * 0.4, pts[i] - nv * h]))
+		vc.append_array(PackedColorArray([ct, c, c, ct]))
+		if i > 0:
+			var b := (i - 1) * 4
+			for j in 3:
+				idx.append_array(PackedInt32Array([b + j, b + j + 1, b + 5 + j, b + j, b + 5 + j, b + 4 + j]))
+	_tri(idx, verts, vc)
 
 func _ice_magic_wake(pts: PackedVector2Array, r: float, strength: float, frame: float, index: int) -> void:
 	var line := _ice_line(pts)
@@ -114,7 +155,7 @@ func _ice_magic_wake(pts: PackedVector2Array, r: float, strength: float, frame: 
 	for u in us:
 		hw.append(W * (0.35 + 1.5 * _ice_envelope(u)))
 		ha.append(strength * _smooth(0.0, 0.4, u) * (1.0 - _smooth(0.75, 1.0, u)) * 0.16)
-	_ice_taper(line, zero, hw, ha, colors[0], 1.0, 1.0)
+	_ice_taper(line, zero, hw, ha, colors[0], 1.0, 1.0, true)
 	for k in _ICE_RIBBONS.size():
 		var rb: Array = _ICE_RIBBONS[k]
 		var offs := PackedFloat32Array()
@@ -127,7 +168,7 @@ func _ice_magic_wake(pts: PackedVector2Array, r: float, strength: float, frame: 
 			var a := strength * _smooth(0.0, 0.35, u) * (0.55 + 0.45 * u)
 			al.append(a)
 			hot.append(a * u)
-		_ice_taper(line, offs, ws, al, cols[k], 3.2, 0.28)
+		_ice_taper(line, offs, ws, al, cols[k], 3.2, 0.28, true)
 		_ice_taper(line, offs, ws, al, cols[k].lerp(Color.WHITE, 0.3), 1.0, 0.9)
 		_ice_taper(line, offs, ws, hot, Color.WHITE, 0.3, 0.7)
 	var cw := PackedFloat32Array()
@@ -135,7 +176,7 @@ func _ice_magic_wake(pts: PackedVector2Array, r: float, strength: float, frame: 
 	for u in us:
 		cw.append(r * 0.42 * pow(u, 1.6) + 0.6)
 		ca.append(strength * _smooth(0.25, 0.9, u))
-	_ice_taper(line, zero, cw, ca, rim_color, 2.6, 0.35)
+	_ice_taper(line, zero, cw, ca, rim_color, 2.6, 0.35, true)
 	_ice_taper(line, zero, cw, ca, Color.WHITE, 1.0, 0.95)
 	var window := _remote_window(frame, index)
 	var oldest := window.x
@@ -154,8 +195,8 @@ func _ice_magic_wake(pts: PackedVector2Array, r: float, strength: float, frame: 
 			offs.append(_ice_strand(k, born, seed) * W * _ice_open(newest - born))
 			ws.append(r * (0.16 + 0.42 * _smooth(0.0, 0.5, u)))
 			al.append(strength * _smooth(0.0, 0.4, u) * (1.0 - _smooth(0.8, 1.0, u)))
-		_ice_taper(line, offs, ws, al, mist, 2.4, 0.09)
-		_ice_taper(line, offs, ws, al, mist, 0.8, 0.2)
+		_ice_taper(line, offs, ws, al, mist, 2.4, 0.09, true)
+		_ice_taper(line, offs, ws, al, mist, 0.8, 0.2, true)
 	var step := 0.03 / rate
 	for m in range(ceili(oldest / step), floori(newest / step + 0.000001) + 1):
 		var born := m * step

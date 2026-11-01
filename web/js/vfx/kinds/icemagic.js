@@ -28,24 +28,43 @@ export function iceSpread(r, trailWidth, strength) {
 // 彩带的包络：尾端和弹头处收拢，中段最宽
 export const iceEnvelope = (u) => Math.pow(clamp01(u), 0.55) * Math.pow(clamp01(1 - u), 0.75) * 2.3;
 
-// 均匀重采样的中心线（u: 0 = 最老的尾端, 1 = 弹头）
-export function iceLine(points, n = 40) {
+// 中心线（u: 0 = 最老的尾端, 1 = 弹头）。轨迹只是一串每半帧的位置，直接连成折线会在每个点上折一下，
+// 法线也会跳，彩带一偏移就出现棱角；所以先用向心 Catmull-Rom 样条把这些点连成光滑曲线，
+// 再按弧长密集重采样，法线取相邻采样点的差（随曲线连续变化）。
+export const ICE_LINE_SAMPLES = 120;
+const SPLINE_STEPS = 8;
+function catmull(p0, p1, p2, p3, s) {
+  const k = (a, b) => Math.max(1e-4, Math.sqrt(Math.hypot(b[0] - a[0], b[1] - a[1])));
+  const t1 = k(p0, p1), t2 = t1 + k(p1, p2), t3 = t2 + k(p2, p3), t = t1 + (t2 - t1) * s;
+  const L = (a, b, ta, tb) => [(a[0] * (tb - t) + b[0] * (t - ta)) / (tb - ta), (a[1] * (tb - t) + b[1] * (t - ta)) / (tb - ta)];
+  const a1 = L(p0, p1, 0, t1), a2 = L(p1, p2, t1, t2), a3 = L(p2, p3, t2, t3);
+  return L(L(a1, a2, 0, t2), L(a2, a3, t1, t3), t1, t2);
+}
+export function iceLine(points, n = ICE_LINE_SAMPLES) {
   const pts = [];
   for (const p of points) if (!pts.length || Math.hypot(p[0] - pts.at(-1)[0], p[1] - pts.at(-1)[1]) > 0.35) pts.push(p);
   if (pts.length < 2) return null;
+  const m = pts.length, ext = (a, b) => [2 * a[0] - b[0], 2 * a[1] - b[1]], dense = [pts[0]];
+  for (let i = 0; i < m - 1; i++) {
+    const p0 = i > 0 ? pts[i - 1] : ext(pts[0], pts[1]), p3 = i + 2 < m ? pts[i + 2] : ext(pts[m - 1], pts[m - 2]);
+    for (let j = 1; j <= SPLINE_STEPS; j++) dense.push(j === SPLINE_STEPS ? pts[i + 1] : catmull(p0, pts[i], pts[i + 1], p3, j / SPLINE_STEPS));
+  }
   const lengths = [0];
-  for (let i = 1; i < pts.length; i++) lengths.push(lengths[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+  for (let i = 1; i < dense.length; i++) lengths.push(lengths[i - 1] + Math.hypot(dense[i][0] - dense[i - 1][0], dense[i][1] - dense[i - 1][1]));
   const total = lengths.at(-1);
   if (total < 0.5) return null;
-  const out = [];
+  const at = [];
   let i = 1;
   for (let k = 0; k <= n; k++) {
-    const u = k / n, dist = u * total;
-    while (i < pts.length - 1 && lengths[i] < dist) i++;
-    const seg = Math.max(1e-6, lengths[i] - lengths[i - 1]), f = clamp01((dist - lengths[i - 1]) / seg);
-    const a = pts[i - 1], b = pts[i], dx = b[0] - a[0], dy = b[1] - a[1], len = Math.max(1e-6, Math.hypot(dx, dy));
-    out.push({ x: a[0] + dx * f, y: a[1] + dy * f, dx: dx / len, dy: dy / len, nx: -dy / len, ny: dx / len, u });
+    const dist = k / n * total;
+    while (i < dense.length - 1 && lengths[i] < dist) i++;
+    const seg = Math.max(1e-6, lengths[i] - lengths[i - 1]), f = clamp01((dist - lengths[i - 1]) / seg), a = dense[i - 1], b = dense[i];
+    at.push([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f]);
   }
+  const out = at.map((p, k) => {
+    const a = at[Math.max(0, k - 1)], b = at[Math.min(n, k + 1)], dx = b[0] - a[0], dy = b[1] - a[1], len = Math.max(1e-6, Math.hypot(dx, dy));
+    return { x: p[0], y: p[1], dx: dx / len, dy: dy / len, nx: -dy / len, ny: dx / len, u: k / n };
+  });
   return { pts: out, total };
 }
 
@@ -100,7 +119,9 @@ export function iceDust(line, r, trailWidth, strength, seed, oldest, newest, fra
 }
 
 // 宽度和透明度逐点变化的线（与 Godot 的 _line(pts, cols, w, ws) 相同）
-export function taperLine(g, pts, widths, color, alphas, scale = 1, amul = 1) {
+// soft：横截面两侧 30% 渐隐到透明（辉光和雾带用，免得硬边一段段地显出棱角），透明度补偿 1.3 倍
+const SOFT_CORE = 0.4, SOFT_GAIN = 1.3;
+export function taperLine(g, pts, widths, color, alphas, scale = 1, amul = 1, soft = false) {
   const n = pts.length;
   if (n < 2) return;
   const nrm = pts.map((p, i) => {
@@ -112,7 +133,13 @@ export function taperLine(g, pts, widths, color, alphas, scale = 1, amul = 1) {
     const a = (alphas[i - 1] + alphas[i]) / 2 * amul;
     if (a <= 0.004) continue;
     const h0 = widths[i - 1] * scale / 2, h1 = widths[i] * scale / 2, p = pts[i - 1], q = pts[i], m = nrm[i - 1], k = nrm[i];
-    g.fillStyle = rgba(color, a);
+    const l0 = [p[0] + m[0] * h0, p[1] + m[1] * h0], l1 = [q[0] + k[0] * h1, q[1] + k[1] * h1];
+    const r0 = [p[0] - m[0] * h0, p[1] - m[1] * h0], r1 = [q[0] - k[0] * h1, q[1] - k[1] * h1];
+    if (soft) {
+      const gr = g.createLinearGradient((l0[0] + l1[0]) / 2, (l0[1] + l1[1]) / 2, (r0[0] + r1[0]) / 2, (r0[1] + r1[1]) / 2), as = Math.min(1, a * SOFT_GAIN), lo = (1 - SOFT_CORE) / 2;
+      gr.addColorStop(0, rgba(color, 0)); gr.addColorStop(lo, rgba(color, as)); gr.addColorStop(1 - lo, rgba(color, as)); gr.addColorStop(1, rgba(color, 0));
+      g.fillStyle = gr;
+    } else g.fillStyle = rgba(color, a);
     g.beginPath();
     g.moveTo(p[0] + m[0] * h0, p[1] + m[1] * h0); g.lineTo(q[0] + k[0] * h1, q[1] + k[1] * h1);
     g.lineTo(q[0] - k[0] * h1, q[1] - k[1] * h1); g.lineTo(p[0] - m[0] * h0, p[1] - m[1] * h0);
@@ -169,16 +196,16 @@ export function drawIceMagicWake(g, pal, points, r, strength, seed, clock, trail
   g.globalCompositeOperation = pal.dark ? "source-over" : "lighter";
   const W = iceSpread(r, trailWidth, strength);
   const haze = line.pts.map((p) => [p.x, p.y]), hw = line.pts.map((p) => W * (0.35 + 1.5 * iceEnvelope(p.u))), ha = line.pts.map((p) => strength * smooth(0, 0.4, p.u) * (1 - smooth(0.75, 1, p.u)) * 0.16);
-  taperLine(g, haze, hw, deep, ha);
+  taperLine(g, haze, hw, deep, ha, 1, 1, true);
   for (const rb of iceRibbons(line, r, trailWidth, strength, frame)) {
     const col = cols[rb.k];
-    taperLine(g, rb.pts, rb.widths, col, rb.alphas, 3.2, 0.28);
+    taperLine(g, rb.pts, rb.widths, col, rb.alphas, 3.2, 0.28, true);
     taperLine(g, rb.pts, rb.widths, mixRgb(col, WHITE, 0.3), rb.alphas, 1, 0.9);
     taperLine(g, rb.pts, rb.widths, WHITE, rb.alphas.map((a, i) => a * line.pts[i].u), 0.3, 0.7);
   }
   // 白芯：后段到弹头的一道高亮光束
   const cw = line.pts.map((p) => r * 0.42 * Math.pow(p.u, 1.6) + 0.6), ca = line.pts.map((p) => strength * smooth(0.25, 0.9, p.u));
-  taperLine(g, haze, cw, pal.rim, ca, 2.6, 0.35);
+  taperLine(g, haze, cw, pal.rim, ca, 2.6, 0.35, true);
   taperLine(g, haze, cw, WHITE, ca, 1, 0.95);
   // 霜线上的雾带：一道道白色霜尘
   const span = Math.max(0.001, clock.newest - clock.oldest), mist = mixRgb(pal.rim, WHITE, 0.6);
@@ -188,8 +215,8 @@ export function drawIceMagicWake(g, pal, points, r, strength, seed, clock, trail
       return [p.x + p.nx * off, p.y + p.ny * off];
     });
     const ws = line.pts.map((p) => r * (0.16 + 0.42 * smooth(0, 0.5, p.u))), as = line.pts.map((p) => strength * smooth(0, 0.4, p.u) * (1 - smooth(0.8, 1, p.u)));
-    taperLine(g, pts, ws, mist, as, 2.4, 0.09);
-    taperLine(g, pts, ws, mist, as, 0.8, 0.2);
+    taperLine(g, pts, ws, mist, as, 2.4, 0.09, true);
+    taperLine(g, pts, ws, mist, as, 0.8, 0.2, true);
   }
   for (const d of iceDust(line, r, trailWidth, strength, seed, clock.oldest, clock.newest, frame, amount)) {
     const col = mixRgb(pal.rim, WHITE, 0.5 + d.tone * 0.5);

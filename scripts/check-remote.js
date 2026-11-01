@@ -267,7 +267,11 @@ for (let u = 0; u <= 1; u += 0.1) {
 console.log("冰晶尖锥、霜雾拖尾、碎片范围与沿路径匀速检查通过");
 {
   const path = [[0, 0], [60, -12], [130, -18], [200, -10]], line = iceLine(path);
-  assert.ok(line && line.pts.length === 41 && line.pts[0].u === 0 && line.pts.at(-1).u === 1);
+  assert.ok(line && line.pts.length === 121 && line.pts[0].u === 0 && line.pts.at(-1).u === 1);
+  for (let i = 1; i < line.pts.length; i++) {
+    const a = line.pts[i - 1], b = line.pts[i];
+    assert.ok(Math.abs(Math.atan2(a.dx * b.dy - a.dy * b.dx, a.dx * b.dx + a.dy * b.dy)) < 0.05, "the centreline bends smoothly instead of kinking at trail points");
+  }
   const ribbons = iceRibbons(line, 18, 70, 1, 12);
   assert.ok(ribbons.length >= 3, "several coloured ribbons interweave behind the head");
   for (const rb of ribbons) {
