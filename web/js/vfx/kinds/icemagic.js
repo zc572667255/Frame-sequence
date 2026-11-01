@@ -120,7 +120,7 @@ export function taperLine(g, pts, widths, color, alphas, scale = 1, amul = 1) {
   }
 }
 
-// 细长的半透明冰晶（弹头后的冰晶簇和命中冰刺）：外层冷光、由根部到尖端变亮的晶体、一条亮边和一道浅色晶芯
+// 细长的半透明冰晶（命中冰刺）：外层冷光、由根部到尖端变亮的晶体、一条亮边和一道浅色晶芯
 export function iceCrystalShape(root, angle, length, width, grow = 1) {
   const d = [Math.cos(angle), Math.sin(angle)], n = [-d[1], d[0]], L = length * grow, w = width * grow;
   const at = (a, b) => [root[0] + d[0] * a + n[0] * b, root[1] + d[1] * a + n[1] * b];
@@ -199,7 +199,7 @@ export function drawIceMagicWake(g, pal, points, r, strength, seed, clock, trail
   g.restore();
 }
 
-// 弹头：一把细长、微弯的光刃。白热的芯收成针尖，外面是青蓝色的光，身后一簇向后炸开的冰晶。
+// 弹头：一把细长、微弯的光刃。白热的芯收成针尖，外面是青蓝色的光，身后拖着一道柔和的辉光。
 // 刃形 [x, 上缘, 下缘]（r 的倍数，+x 朝前）
 export function iceBlade(r, scale = 1, n = 16) {
   const back = -2.6, tip = 4.2, top = [], bottom = [];
@@ -213,22 +213,12 @@ export function iceBlade(r, scale = 1, n = 16) {
 
 function bladeFill(g, b, c0, a0, c1, a1) { gradFill(g, b.poly, [b.back, 0], [b.tip, 0], c0, a0, c1, a1); }
 
-export function iceHeadShards(r, seed, t) {
-  const P = rng(seed * 977 + 5), out = [];
-  for (let j = 0; j < 7; j++) {
-    const side = P() < 0.62 ? -1 : 1, x = -r * (0.4 + P() * 1.8), lean = 0.22 + P() * 0.4, lr = P(), wr = P();
-    const length = r * (0.7 + 1.1 * Math.pow(lr, 1.4)) * (0.94 + 0.06 * Math.sin(t * TAU * 2 + j));
-    out.push({ root: [x, -r * 0.12 + side * r * 0.12], angle: Math.PI - side * lean, length, width: length * (0.07 + 0.05 * wr) + r * 0.025 });
-  }
-  return out;
-}
-
 export function drawIceSpear(g, c, r) {
   const pal = c.pal, cols = iceRibbonColors(pal), pulse = 0.9 + 0.1 * Math.sin(c.t * TAU * 3);
   g.save();
   g.globalCompositeOperation = pal.dark ? "source-over" : "lighter";
-  g.save(); g.scale(3.4, 0.6); blob(g, -r * 0.12, 0, r * 2.2, [[0, pal.rim, 0.65], [0.45, cols[1], 0.22], [1, cols[1], 0]]); g.restore();
-  for (const s of iceHeadShards(r, c.seed, c.t)) drawIceCrystal(g, s.root, s.angle, s.length, s.width, pal, 0.42);
+  g.save(); g.scale(3.4, 0.6); blob(g, -r * 0.12, 0, r * 2.2, [[0, pal.rim, 0.75], [0.45, cols[1], 0.26], [1, cols[1], 0]]); g.restore();
+  g.save(); g.scale(2.6, 0.3); blob(g, -r * 0.55, -r * 0.3, r * 1.3, [[0, mixRgb(pal.rim, WHITE, 0.5), 0.45 * pulse], [1, pal.rim, 0]]); g.restore();
   g.save(); g.scale(3.6, 0.4); blob(g, r * 0.15, -r * 0.3, r * 1.2, [[0, pal.rim, 0.55], [1, pal.rim, 0]]); g.restore();
   const blade = iceBlade(r);
   bladeFill(g, blade, pal.rim, 0, mixRgb(pal.rim, WHITE, 0.55), 0.9);

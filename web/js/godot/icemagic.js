@@ -200,20 +200,12 @@ func _ice_blade(r: float, scale0 := 1.0, n := 16) -> PackedVector2Array:
 	for k in range(n - 1, 0, -1): poly.append(bottom[k])
 	return poly
 
-func _ice_spear(r: float, key: int) -> void:
+func _ice_spear(r: float, _key: int) -> void:
 	var cols := _ice_ribbon_colors()
 	var pulse := 0.9 + 0.1 * sin(_t * TAU * 3.0)
 	_add = additive
-	_blob(Vector2(-r * 0.12 * 3.4, 0.0), r * 2.2, [[0.0, rim_color, 0.65], [0.45, cols[1], 0.22], [1.0, cols[1], 0.0]], Vector2(3.4, 0.6))
-	var P := Rand.new(key * 977 + 5)
-	for j in 7:
-		var side := -1.0 if P.next() < 0.62 else 1.0
-		var x := -r * (0.4 + P.next() * 1.8)
-		var lean := 0.22 + P.next() * 0.4
-		var lr := P.next()
-		var wr := P.next()
-		var len0 := r * (0.7 + 1.1 * pow(lr, 1.4)) * (0.94 + 0.06 * sin(_t * TAU * 2.0 + j))
-		_ice_crystal(Vector2(x, -r * 0.12 + side * r * 0.12), PI - side * lean, len0, len0 * (0.07 + 0.05 * wr) + r * 0.025, 0.42)
+	_blob(Vector2(-r * 0.12 * 3.4, 0.0), r * 2.2, [[0.0, rim_color, 0.75], [0.45, cols[1], 0.26], [1.0, cols[1], 0.0]], Vector2(3.4, 0.6))
+	_blob(Vector2(-r * 0.55 * 2.6, -r * 0.3 * 0.3), r * 1.3, [[0.0, rim_color.lerp(Color.WHITE, 0.5), 0.45 * pulse], [1.0, rim_color, 0.0]], Vector2(2.6, 0.3))
 	_blob(Vector2(r * 0.15 * 3.6, -r * 0.3 * 0.4), r * 1.2, [[0.0, rim_color, 0.55], [1.0, rim_color, 0.0]], Vector2(3.6, 0.4))
 	var back := Vector2(-2.6 * r, 0.0)
 	var tip := Vector2(4.2 * r, 0.0)
