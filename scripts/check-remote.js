@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { REMOTE_DEFAULTS, remoteSettings, hasFlight, pathAt, flightState, flightTrail } from "../web/js/vfx/remote.js";
+import { REMOTE_DEFAULTS, remoteSettings, hasFlight, pathAt, flightState, flightTrail, arcParameter } from "../web/js/vfx/remote.js";
 import { migrate } from "../web/js/core/store.js";
 import { ribbonSections, materialAt, flameFlow } from "../web/js/vfx/remotetrail.js";
 import { flightTrailWindow } from "../web/js/vfx/remote.js";
-import { icePrism, iceCracks, iceTrailHalfWidth } from "../web/js/vfx/kinds/ice.js";
+import { icePrism, iceCracks } from "../web/js/vfx/kinds/ice.js";
+import { iceWakeHalf, iceWakeShards } from "../web/js/vfx/kinds/icewake.js";
 import { iceDebris } from "../web/js/vfx/kinds/icehit.js";
 import { thunderDischarge } from "../web/js/vfx/kinds/thunderhit.js";
 import { sandGrains } from "../web/js/vfx/kinds/sand.js";
@@ -22,7 +23,10 @@ for (const flightPath of ["straight", "arc", "wave", "spiral", "custom"]) {
     const s = remoteSettings({ ...REMOTE_DEFAULTS, kind: "fireball", flightPath, flightEase, flightCount: 3 });
     for (let index = 0; index < s.flightCount; index++) {
       close(pathAt(s, width, height, 0, index), [width * s.startX / 100, height * s.startY / 100]);
-      close(pathAt(s, width, height, 1, index), [width * s.endX / 100, height * s.endY / 100]);
+      const landed = pathAt(s, width, height, 1, index);
+      const sharedEnd = [width * s.endX / 100, height * s.endY / 100];
+      if (index === (s.flightCount - 1) / 2) close(landed, sharedEnd);
+      else assert.ok(Math.hypot(landed[0] - sharedEnd[0], landed[1] - sharedEnd[1]) > 1, "volley shots separate at the target");
       const launch = index * s.flightInterval + s.chargeFrames;
       const frame = launch + s.travelFrames * 0.6;
       const state = flightState(s, width, height, frame, index);
@@ -114,6 +118,7 @@ for (const field of FLIGHT_FIELDS.filter(f => f.key === "headWidth" || f.key ===
   assert.ok(flightFieldVisible(field, { kind: "arrow", flightPath: "arc" }));
   assert.equal(flightFieldVisible(field, { kind: "fireball", flightPath: "arc" }), false);
 }
+assert.ok(flightFieldVisible(FLIGHT_FIELDS.find((f) => f.key === "trailWidth"), { kind: "ice", flightPath: "straight" }), "ice frost width stays adjustable");
 console.log("箭身完整包裹、旋转与长宽适配、头部弧度和宽度独立控制检查通过");
 
 const frameIds = Array.from({ length: 36 }, (_, i) => 'C' + i);
@@ -144,12 +149,16 @@ assert.ok(Math.abs(samplePhase(14, 18, w0) - samplePhase(14, 18, { oldest: 4, ne
 assert.ok(Math.abs(flameFlow(14, 18) - flameFlow(14 - 0.1 / 0.42, 19)) < 1e-9, "a feature travels toward the older tail");
 const signedArea = pts => pts.reduce((area, p, i) => { const q = pts[(i + 1) % pts.length]; return area + p[0] * q[1] - q[0] * p[1]; }, 0) / 2;
 for (let i = 0; i < 48; i++) {
-  const prism = icePrism(12, i * Math.PI / 24);
-  assert.ok(prism.faces.length >= 2 && prism.faces.length <= 3, "only visible ice faces are painted");
-  const intervals = prism.faces.map(face => [Math.min(face.body[0][1], face.body[3][1]), Math.max(face.body[0][1], face.body[3][1])]).sort((a, b) => a[0] - b[0]);
-  for (let j = 1; j < intervals.length; j++) assert.ok(intervals[j][0] >= intervals[j - 1][1] - 1e-7, "ice panes do not stack into an opaque silhouette");
-  for (const face of prism.faces) for (const points of [face.body, face.tip, face.blade, face.tail]) assert.ok(signedArea(points) > 1e-7, "consistently wound crystal facets");
+  const roll = i * Math.PI / 24;
+  const prism = icePrism(18, roll, 7);
+  assert.ok(prism.faces.length >= 8 && prism.faces.length <= 40, "ice shows a faceted front, not a flat card or a broken mesh");
+  for (const face of prism.faces) assert.ok(signedArea(face.points) > 1e-6, "front faces stay consistently wound");
+  const xs = prism.vertices.map((p) => p[0]), ys = prism.vertices.map((p) => p[1]);
+  assert.ok(Math.max(...xs) - Math.min(...xs) > (Math.max(...ys) - Math.min(...ys)) * 2.2, "the crystal reads as a spike");
 }
+const forward = icePrism(18, 0, 7).vertices.map((p) => p[0]);
+assert.deepEqual(forward, icePrism(18, 1.3, 7).vertices.map((p) => p[0]), "spinning on the long axis keeps the tip pointing forward");
+assert.notDeepEqual(icePrism(18, 0, 7).vertices.map((p) => p[1]), icePrism(18, 1.3, 7).vertices.map((p) => p[1]), "the crystal still turns");
 for (const seed of [1, 23, 97]) {
   const roll = 0.37, a = iceCracks(12, seed, roll), b = iceCracks(12, seed, roll + Math.PI * 2);
   for (let j = 0; j < a.length; j++) for (let k = 0; k < a[j].length; k++) {
@@ -170,7 +179,7 @@ for (const seed of [1, 23, 97]) for (const angle of [0, 0.7]) {
       assert.ok(piece.alpha >= 0 && piece.alpha <= 1);
       assert.ok(piece.at.every(Number.isFinite));
       for (const face of piece.faces) assert.ok(signedArea(face.points) > 1e-8, "only front-facing chunk surfaces are drawn");
-      for (const edge of [[0, 1], [0, 2], [0, 4]]) {
+      for (const edge of [[0, 1], [0, 2], [1, 2]]) {
         const length = vertices => Math.hypot(...vertices[edge[0]].map((x, k) => x - vertices[edge[1]][k]));
         assert.ok(Math.abs(length(piece.vertices) - length(initial[j].vertices)) < 1e-9, "ice chunks tumble as rigid volumes and never shrink into sparks");
       }
@@ -225,16 +234,36 @@ for (const seed of [1, 23, 97]) {
   assert.ok(first.some((p,i) => Math.hypot(p.at[0]-moving[i].at[0],p.at[1]-moving[i].at[1]) > 1), "sand body streams independently of path history");
 }
 console.log("流沙主体的独立流动、粒子重生渐隐与循环衔接检查通过");
-for (const seed of [1, 23, 97]) for (const roll of [0, 0.7, 2.4, 5.1]) {
-  const r = 30, prism = icePrism(r, roll, seed), half = iceTrailHalfWidth(r, roll, seed);
-  const silhouette = Math.max(...prism.faces.flatMap(f => f.tip.map(p => Math.abs(p[1])))) * prism.tip[0] / (prism.tip[0] - prism.frontX);
-  assert.ok(half > 0 && half < silhouette, "ice wake remains inside the projected body width");
-  for (const multiplier of [0.2, 1, 3]) {
-    const sections = ribbonSections([[0,0],[50,0],[100,0]], Math.min(r * multiplier, half / 0.85), "ice");
-    assert.ok(sections.every(q => Math.max(Math.abs(q.a[1]), Math.abs(q.b[1])) <= half + 1e-8));
+assert.ok(iceWakeHalf(20, 1, 70, 1) > iceWakeHalf(20, 0.05, 70, 1) * 3, "frost wake thins toward the tail");
+assert.ok(iceWakeHalf(20, 1, 150, 1) > iceWakeHalf(20, 1, 40, 1) * 1.5, "trail width widens the frost");
+for (const seed of [1, 23, 97]) {
+  const shards = iceWakeShards([[0, 0], [80, 10], [170, 0]], 20, 1, seed, 4, 18, 70, 6);
+  assert.ok(shards.length >= 4, "the wake sheds readable shards");
+  assert.deepEqual(shards, iceWakeShards([[0, 0], [80, 10], [170, 0]], 20, 1, seed, 4, 18, 70, 6));
+  const path = [[0, 0], [80, 10], [170, 0]];
+  for (const shard of shards) {
+    assert.ok(shard.alpha > 0 && shard.length > shard.width && shard.at.every(Number.isFinite));
+    let nearest = Infinity;
+    for (let i = 1; i < path.length; i++) {
+      const a = path[i - 1], b = path[i], dx = b[0] - a[0], dy = b[1] - a[1], len2 = dx * dx + dy * dy || 1;
+      const t = Math.max(0, Math.min(1, ((shard.at[0] - a[0]) * dx + (shard.at[1] - a[1]) * dy) / len2));
+      nearest = Math.min(nearest, Math.hypot(shard.at[0] - (a[0] + dx * t), shard.at[1] - (a[1] + dy * t)));
+    }
+    assert.ok(nearest <= iceWakeHalf(20, shard.u, 70, 1) * 0.72 + 0.02, "shards stay inside the frost wake");
   }
 }
-console.log("冰晶拖尾不超过本体宽度与加宽上限检查通过");
+const straight = remoteSettings({ ...REMOTE_DEFAULTS, kind: "ice", flightPath: "straight" });
+assert.equal(arcParameter(straight, width, height, 0.37), 0.37);
+const curve = remoteSettings({ ...REMOTE_DEFAULTS, kind: "fireball", flightPath: "custom", controlX: 8, controlY: 96 });
+assert.equal(arcParameter(curve, width, height, 0), 0);
+assert.equal(arcParameter(curve, width, height, 1), 1);
+let previous = -1;
+for (let u = 0; u <= 1; u += 0.1) {
+  const a = arcParameter(curve, width, height, u);
+  assert.ok(a >= previous - 1e-9 && a <= 1);
+  previous = a;
+}
+console.log("冰晶尖锥、霜雾拖尾、碎片范围与沿路径匀速检查通过");
 for (const width of [0.5, 1, 2.5]) {
   const body = 40, run = ribbonSections([[0, 0], [120, 0], [240, 0]], body * width, "fireball", 1, body);
   assert.ok(Math.hypot(run.at(-1).a[0] - run.at(-1).b[0], run.at(-1).a[1] - run.at(-1).b[1]) <= body * 1.7 + 1e-9, "wide flame joins remain inside the body's height");

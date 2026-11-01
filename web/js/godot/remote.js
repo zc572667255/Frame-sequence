@@ -120,11 +120,29 @@ func _remote_path(u: float, index := 0) -> Vector2:
 			var r := sin(PI * u) * (1.0 - u * 0.65) * path_wave * scale0
 			offset = sin(angle) * r
 			p += d / length0 * cos(angle) * r * 0.45
-	return p + nv * (offset + fan * sin(PI * u))
+	return p + nv * (offset + fan * u)
+
+func _remote_arc(u: float, index: int) -> float:
+	u = clampf(u, 0.0, 1.0)
+	if u <= 0.0 or u >= 1.0 or flight_path == "straight" or flight_path == "sprite": return u
+	var n := 24
+	var lens := PackedFloat32Array([0.0])
+	var prev := _remote_path(0.0, index)
+	for i in n:
+		var p := _remote_path(float(i + 1) / n, index)
+		lens.append(lens[i] + prev.distance_to(p))
+		prev = p
+	var total := lens[n]
+	if total < 0.0001: return u
+	var target := total * u
+	var i := 1
+	while i < n and lens[i] < target: i += 1
+	var span := maxf(0.000001, lens[i] - lens[i - 1])
+	return (float(i - 1) + (target - lens[i - 1]) / span) / n
 
 func _remote_state(frame: float, index: int) -> Dictionary:
 	var time := frame - index * _remote_interval()
-	var u := _remote_progress((time - charge_frames) / maxf(1.0, travel_frames))
+	var u := _remote_arc(_remote_progress((time - charge_frames) / maxf(1.0, travel_frames)), index)
 	var hit := (time - charge_frames - travel_frames) / maxf(1.0, impact_frames)
 	var a := _remote_path(maxf(0.0, u - 0.005), index)
 	var b := _remote_path(minf(1.0, u + 0.005), index)
@@ -147,7 +165,8 @@ func _remote_points(frame: float, index: int) -> PackedVector2Array:
 	if trail_frames <= 0.0 or newest <= oldest: return out
 	var n := maxi(3, ceili((newest - oldest) * 2.0))
 	for i in n + 1:
-		out.append(_remote_path(_remote_progress((lerpf(oldest, newest, float(i) / n) - charge_frames) / maxf(1.0, travel_frames)), index))
+		var eased := _remote_progress((lerpf(oldest, newest, float(i) / n) - charge_frames) / maxf(1.0, travel_frames))
+		out.append(_remote_path(_remote_arc(eased, index), index))
 	return out
 
 func _remote_radius() -> float:
@@ -165,9 +184,9 @@ func _sand_grains(r: float, quantity: float, key: int, t: float) -> Array:
 	for i in roundi(48.0 * maxf(0.25, minf(2.0, quantity))):
 		var phase := P.next()
 		var side := P.next() + P.next() - 1.0
-		var reach := 1.2 + P.next() * 1.1
+		var reach := 1.5 + P.next() * 2.4
 		var cycles := 3.0 + floorf(P.next() * 3.0)
-		var width := maxf(0.45, r * (0.018 + P.next() * 0.027))
+		var width := maxf(1.1, r * (0.07 + P.next() * 0.06))
 		var strength := 0.45 + P.next() * 0.5
 		var flicker := P.next() * TAU
 		var age := fposmod(phase + t * cycles, 1.0)
@@ -192,37 +211,48 @@ func _remote_body(r: float) -> void:
 		13:
 			_blob(Vector2(r * 0.12, 0), r * 0.58, [[0.0, core_color, 0.65], [0.35, core_color, 0.4], [1.0, rim_color, 0.0]])
 		14:
-			var Q := Rand.new(random_seed * 139 + int(floor(_t * frames / 2.0)))
+			var Q := Rand.new((random_seed + _remote_shot * 31) * 139 + int(floor(_t * frames / 2.0)))
 			_add = true
-			_blob(Vector2.ZERO, r * 2.0, [[0.0, core_color, 0.8], [0.25, rim_color, 0.4], [1.0, rim_color, 0.0]])
-			for j in 4:
-				var a := Q.next() * TAU
-				var points := PackedVector2Array()
-				for k in 7:
-					var angle := a + k * 0.4
-					var radius := r * (0.55 + Q.next() * 0.5)
-					points.append(Vector2.from_angle(angle) * radius)
-				_bolt(points, maxf(0.55, r * 0.04), 0.8)
-			_blob(Vector2.ZERO, r * 0.65, [[0.0, core_color, 1.0], [0.5, core_color, 0.95], [1.0, rim_color, 0.0]])
+			_blob(Vector2(-r * 0.15, 0), r * 1.7, [[0.0, rim_color, 0.34], [0.45, rim_color, 0.1], [1.0, rim_color, 0.0]])
+			var main := PackedVector2Array()
+			for k in 8:
+				var wobble := 0.0 if k == 0 or k == 7 else (Q.next() * 2.0 - 1.0) * r * 0.22
+				main.append(Vector2(-r * 1.85 + r * 3.0 * float(k) / 7.0, wobble))
+			_bolt(main, maxf(0.7, r * 0.075), 1.0)
+			for j in 3:
+				var frm := main[2 + j]
+				var fork := PackedVector2Array([frm])
+				var x := frm.x
+				var y := frm.y
+				var side := -1.0 if j == 1 else 1.0
+				for k in 3:
+					x -= r * (0.28 + Q.next() * 0.22)
+					y += side * r * (0.18 + Q.next() * 0.28)
+					fork.append(Vector2(x, y))
+				_bolt(fork, maxf(0.4, r * 0.032), 0.75)
+			_blob(Vector2(r * 0.95, 0), r * 0.48, [[0.0, core_color, 1.0], [0.35, core_color, 0.75], [1.0, rim_color, 0.0]])
 		15:
 			_remote_ice(r, random_seed + _remote_shot * 31)
 		16:
-			var spin := _t * TAU * 2.0
-			for j in 6:
-				var a := spin + j * TAU / 6.0
-				_remote_puff(Vector2(cos(a) * r * 0.45, sin(a) * r * 0.32), r * 0.72, a, core_color, 0.58, random_seed + _remote_shot * 31 + j, 1.5, true)
-			_remote_puff(Vector2.ZERO, r * 0.8, -spin * 0.5, core_color, 0.85, random_seed + _remote_shot * 31, 1.5, true)
+			var flick := 0.5 + 0.5 * sin(_t * TAU * 3.0)
 			_add = additive
-			for j in 2:
-				var points := PackedVector2Array()
-				for k in 19:
-					var a := spin + j * PI + k * 0.15
-					var radius := r * (0.9 + k / 60.0)
-					points.append(Vector2(cos(a) * radius * 1.5, sin(a) * radius * 0.7))
-				_trail(points, maxf(0.6, r * 0.055), 0.32, false, rim_color, core_color)
+			_blob(Vector2(-r * 0.15, 0), r * 1.15, [[0.0, core_color, 0.16], [0.55, rim_color, 0.05], [1.0, rim_color, 0.0]])
+			var blade := PackedVector2Array()
+			for k in 19:
+				var a := -1.15 + float(k) / 18.0 * 2.3
+				var rad := r * (0.72 + 0.28 * sin(float(k) / 18.0 * PI))
+				blade.append(Vector2(cos(a) * rad * 1.25, sin(a) * rad * 0.62))
+			_trail(blade, maxf(0.7, r * 0.11), 0.75 + flick * 0.2, false, rim_color, core_color)
+			for j in 5:
+				var y := (j - 2) * r * 0.22
+				var back := r * (1.1 + (1.0 if j % 2 else 0.0) * 0.45)
+				_trail(PackedVector2Array([Vector2(-back, y * 0.35), Vector2(-r * 0.15, y)]), maxf(0.35, r * 0.028), 0.28 + (0.22 if j == 2 else 0.0), true, rim_color, core_color)
 		17:
 			_add = additive
-			_blob(Vector2.ZERO, r * 0.8, [[0.0, core_color, 0.95], [0.15, rim_color, 0.7], [1.0, rim_color, 0.0]])
+			for k in 4:
+				var u := float(k) / 3.0
+				_blob(Vector2(-r * (0.15 + u * 2.2), 0), r * (0.95 - u * 0.4), [[0.0, rim_color, 0.42 * (1.0 - u * 0.65)], [1.0, rim_color, 0.0]])
+			_blob(Vector2(r * 0.08, 0), r * 0.62, [[0.0, core_color, 0.95], [0.22, rim_color, 0.6], [1.0, rim_color, 0.0]])
 			for grain in _sand_grains(r, amount, random_seed + _remote_shot * 31, _t):
 				if grain.alpha < 0.005: continue
 				_streak(grain.back, grain.at, rim_color, _remote_color(grain.heat), grain.alpha, grain.width)
@@ -235,16 +265,15 @@ func _remote_trail(state: Dictionary, frame: float, index: int, r: float) -> Arr
 	var strength := 1.0 - _smooth(0.0, maxf(1.0, minf(trail_frames, impact_frames)), maxf(0.0, state.time - charge_frames - travel_frames))
 	var run: Array
 	if wrapping:
-		var scale0: float = 1.0 if state.launched else 0.15 + state.charge * 0.85
+		var scale0: float = 1.0 if state.launched else 0.45 + state.charge * 0.55
 		run = _remote_arrow_sections(pts if trail_width > 0.0 else PackedVector2Array(), state.at, state.angle, r * scale0, strength)
 	else:
-		run = _ice_trail_sections(pts,r,random_seed+index*31,strength) if kind==15 else _remote_sections(pts,r*trail_width/70.0,strength,r)
-	if run.size() < 2: return []
+		run = [] if kind==15 else _remote_sections(pts,r*trail_width/70.0,strength,r)
 	if kind == 15:
-		_remote_set_clip(run)
-		_tg_glow(run, random_seed + index * 31, int(floor(frame)), strength, 1.0, false, 0, true)
-		_remote_clip.clear()
-	elif kind == 12:
+		_remote_ice_wake(pts, r, strength, frame, index)
+		return []
+	if run.size() < 2: return []
+	if kind == 12:
 		for side in 2:
 			var half := []
 			for q in run: half.append({"a": q.a if side == 0 else q.b, "b": (q.a + q.b) / 2.0, "u": q.u})
@@ -266,6 +295,12 @@ func _remote_impact(at0: Vector2, t: float, angle: float) -> void:
 		return
 	if kind == 14 and impact_kind in ["auto", "explosion"]:
 		_remote_thunder_hit(at0, t, random_seed + _remote_shot * 31, radius)
+		return
+	if kind == 16 and impact_kind in ["auto", "shock"]:
+		_remote_wind_hit(at0, t, random_seed + _remote_shot * 31, radius)
+		return
+	if kind == 17 and impact_kind in ["auto", "explosion"]:
+		_remote_sand_hit(at0, t, random_seed + _remote_shot * 31, radius)
 		return
 	var old := [_cx, _cy, _R, _t, _gy]
 	_cx = at0.x; _cy = at0.y; _R = radius; _t = t; _gy = at0.y
@@ -308,7 +343,7 @@ func _k_remote() -> void:
 		if not state.born or state.finished: continue
 		var wrap := _remote_trail(state, frame, index, r)
 		if state.body:
-			var scale0: float = 1.0 if state.launched else 0.15 + state.charge * 0.85
+			var scale0: float = 1.0 if state.launched else 0.45 + state.charge * 0.55
 			_xf = xf * Transform2D(state.angle, state.at)
 			var old_cx := _cx; var old_cy := _cy
 			_cx = 0.0; _cy = 0.0
@@ -330,6 +365,44 @@ func _k_remote() -> void:
 		_remote_impact(_remote_path(1.0, index), state.hit, state.angle)
 	_xf = xf
 
+func _remote_wind_hit(at0: Vector2, t: float, key: int, radius: float) -> void:
+	var xf := _xf
+	_xf = xf
+	var a := 1.0 - t
+	var spin := t * 5.0
+	_add = true
+	for j in 3:
+		var reach := radius * (0.28 + t * (0.75 + j * 0.16))
+		_swirl(at0.x, at0.y, reach, reach * 0.58, spin + j * 1.7, a * (0.62 - j * 0.14), maxf(0.6, radius * 0.032))
+	_ring(at0, maxf(0.4, t * radius * 1.15), maxf(0.6, radius * 0.04), 0.72, core_color, a * 0.75)
+	var P := Rand.new(key * 157 + 11)
+	for j in 8:
+		var th := -0.7 + P.next() * 1.4
+		var len := radius * (0.35 + t * 0.95)
+		_streak(at0 + Vector2(-len * 0.25, sin(th) * len * 0.15), at0 + Vector2(cos(th) * len * 0.35, sin(th) * len * 0.7), rim_color, core_color, a * 0.55, maxf(0.5, radius * 0.02))
+	_blob(at0, radius * 0.42 * maxf(0.15, a), [[0.0, core_color, a * 0.55], [1.0, rim_color, 0.0]])
+	_xf = xf
+
+func _remote_sand_hit(at0: Vector2, t: float, key: int, radius: float) -> void:
+	var fade := pow(1.0 - t, 1.1)
+	var wave := 1.0 - pow(1.0 - clampf(t / 0.4, 0.0, 1.0), 2.0)
+	_add = true
+	_blob(at0 + Vector2(0, -t * radius * 0.2), radius * (0.35 + t * 1.05), [[0.0, core_color, fade * 0.7], [0.45, rim_color, fade * 0.28], [1.0, rim_color, 0.0]])
+	_ring(at0, maxf(0.5, wave * radius), maxf(0.6, radius * 0.04), 0.5, rim_color, fade * 0.6)
+	var P := Rand.new(key * 157 + 11)
+	for j in int(round(40.0 * maxf(0.25, minf(2.0, amount)))):
+		var th := P.next() * TAU
+		var speed0 := radius * (0.35 + P.next() * 1.05)
+		var life := 0.5 + P.next() * 0.5
+		var w := maxf(0.7, radius * (0.012 + P.next() * 0.016))
+		var q := minf(1.0, t / (0.35 + P.next() * 0.2))
+		var p := at0 + Vector2(cos(th) * speed0 * q, sin(th) * speed0 * q * 0.62 + radius * q * q * 0.4)
+		var alpha := pow(maxf(0.0, 1.0 - t / life), 1.35) * (0.4 + P.next() * 0.55)
+		_streak(p - Vector2(cos(th) * w * 4.0, sin(th) * w * 2.0), p, rim_color, _remote_color(0.75), alpha, w)
+	for j in 4:
+		var a := j * TAU / 4.0 + 0.4
+		_remote_puff(at0 + Vector2(cos(a) * radius * t * 0.45, sin(a) * radius * t * 0.2 - t * radius * 0.1), radius * (0.18 + t * 0.35), a, rim_color, _smooth(0.0, 0.08, t) * fade * 0.28, key + j, 1.5, true)
+
 func _remote_field(m: ShaderMaterial) -> void:
 	# The attached fire body churns continuously during either flight playback mode.
 	m.set_shader_parameter("loop_on", true)
@@ -339,7 +412,7 @@ func _remote_field(m: ShaderMaterial) -> void:
 		var state := _remote_state(_t * frames, index)
 		if not state.born or state.finished: continue
 		if state.body and kind == 13:
-			var scale0: float = 1.0 if state.launched else 0.15 + state.charge * 0.85
+			var scale0: float = 1.0 if state.launched else 0.45 + state.charge * 0.55
 			ea.append(Vector4(state.at.x, state.at.y, _remote_radius() * scale0, state.angle))
 			eb.append(Vector4(0, 0, 0, 0))
 		if state.hit >= 0.0 and state.hit < 1.0 and kind not in [14, 15] and (impact_kind == "explosion" or (impact_kind == "auto" and kind == 13)):

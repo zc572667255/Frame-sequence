@@ -1,14 +1,14 @@
 import { createCanvas } from "../../core/util.js";
 import { rng, rgba } from "../../trails/glow/util.js";
-import { TAU, at, blob, ring, bolt, swirl, trail } from "../common.js";
-import { drawRemoteTrail, drawPuff } from "../remotetrail.js";
+import { TAU, at, blob, ring, bolt, swirl, trail, streak } from "../common.js";
+import { drawRemoteTrail } from "../remotetrail.js";
 import { REMOTE_DEFAULTS, remoteSettings, hasFlight, flightState, pathAt } from "../remote.js";
 import { fireball } from "./fireball.js";
 import { arrow } from "./arrow.js";
 import { drawIcePrism } from "./ice.js";
 import { drawIceImpact } from "./icehit.js";
 import { drawThunderImpact } from "./thunderhit.js";
-import { drawSandBody } from "./sand.js";
+import { drawSandBody, drawSandImpact } from "./sand.js";
 import { explosion } from "./explosion.js";
 import { shock } from "./shock.js";
 import { hit } from "./hit.js";
@@ -29,32 +29,58 @@ export function remoteBody(g, c, r) {
   } else if (c.kind === "thunder") {
     const Q = rng(c.seed * 139 + Math.floor(c.i / 2));
     g.globalCompositeOperation = "lighter";
-    blob(g, 0, 0, r * 2, [[0, pal.core, 0.8], [0.25, pal.rim, 0.4], [1, pal.rim, 0]]);
-    for (let j = 0; j < 4; j++) {
-      const a = Q() * TAU, points = [];
-      for (let k = 0; k < 7; k++) { const angle = a + k * 0.4, radius = r * (0.55 + Q() * 0.5); points.push([Math.cos(angle) * radius, Math.sin(angle) * radius]); }
-      bolt(g, pal, points, Math.max(0.55, r * 0.04), 0.8);
+    blob(g, -r * 0.15, 0, r * 1.7, [[0, pal.rim, 0.34], [0.45, pal.rim, 0.1], [1, pal.rim, 0]]);
+    const dart = (x0, x1, amp, n) => {
+      const pts = [];
+      for (let k = 0; k <= n; k++) pts.push([x0 + (x1 - x0) * k / n, (k === 0 || k === n) ? 0 : (Q() * 2 - 1) * amp]);
+      return pts;
+    };
+    const main = dart(-r * 1.85, r * 1.15, r * 0.22, 7);
+    bolt(g, pal, main, Math.max(0.7, r * 0.075), 1);
+    for (let j = 0; j < 3; j++) {
+      const from = main[2 + j], fork = [from];
+      let x = from[0], y = from[1];
+      const side = j === 1 ? -1 : 1;
+      for (let k = 0; k < 3; k++) { x -= r * (0.28 + Q() * 0.22); y += side * r * (0.18 + Q() * 0.28); fork.push([x, y]); }
+      bolt(g, pal, fork, Math.max(0.4, r * 0.032), 0.75);
     }
-    blob(g, 0, 0, r * 0.65, [[0, pal.core, 1], [0.5, pal.core, 0.95], [1, pal.rim, 0]]);
+    blob(g, r * 0.95, 0, r * 0.48, [[0, pal.core, 1], [0.35, pal.core, 0.75], [1, pal.rim, 0]]);
   } else if (c.kind === "wind") {
-    const spin = t * TAU * 2;
-    for (let j = 0; j < 6; j++) {
-      const a = spin + j * TAU / 6;
-      drawPuff(g, Math.cos(a) * r * 0.45, Math.sin(a) * r * 0.32, r * 0.72, a, pal.core, 0.58, c.seed + j, 1.5);
-    }
-    drawPuff(g, 0, 0, r * 0.8, -spin * 0.5, pal.core, 0.85, c.seed, 1.5);
+    const flick = 0.5 + 0.5 * Math.sin(t * TAU * 3);
     g.globalCompositeOperation = pal.dark ? "source-over" : "lighter";
-    for (let j = 0; j < 2; j++) {
-      const points = [];
-      for (let k = 0; k <= 18; k++) {
-        const a = spin + j * Math.PI + k * 0.15, radius = r * (0.9 + k / 60);
-        points.push([Math.cos(a) * radius * 1.5, Math.sin(a) * radius * 0.7]);
-      }
-      trail(g, pal, points, Math.max(0.6, r * 0.055), 0.32, false);
+    blob(g, -r * 0.15, 0, r * 1.15, [[0, pal.core, 0.16], [0.55, pal.rim, 0.05], [1, pal.rim, 0]]);
+    const blade = [];
+    for (let k = 0; k <= 18; k++) {
+      const a = -1.15 + (k / 18) * 2.3, rad = r * (0.72 + 0.28 * Math.sin((k / 18) * Math.PI));
+      blade.push([Math.cos(a) * rad * 1.25, Math.sin(a) * rad * 0.62]);
+    }
+    trail(g, pal, blade, Math.max(0.7, r * 0.11), 0.75 + flick * 0.2, false);
+    for (let j = 0; j < 5; j++) {
+      const y = (j - 2) * r * 0.22, back = r * (1.1 + (j % 2) * 0.45);
+      trail(g, pal, [[-back, y * 0.35], [-r * 0.15, y]], Math.max(0.35, r * 0.028), 0.28 + (j === 2 ? 0.22 : 0), true);
     }
   } else if (c.kind === "sand") {
     drawSandBody(g, c, r);
   }
+}
+
+function drawWindImpact(g, c, radius) {
+  const { pal, t } = c, a = 1 - t, spin = t * 5;
+  g.save();
+  g.translate(c.cx, c.cy);
+  g.globalCompositeOperation = pal.dark ? "source-over" : "lighter";
+  for (let j = 0; j < 3; j++) {
+    const reach = radius * (0.28 + t * (0.75 + j * 0.16));
+    swirl(g, pal, 0, 0, reach, reach * 0.58, spin + j * 1.7, a * (0.62 - j * 0.14), Math.max(0.6, radius * 0.032));
+  }
+  ring(g, 0, 0, Math.max(0.4, t * radius * 1.15), Math.max(0.6, radius * 0.04), 0.72, pal.core, a * 0.75);
+  const P = rng(c.seed * 157 + 11);
+  for (let j = 0; j < 8; j++) {
+    const th = -0.7 + P() * 1.4, len = radius * (0.35 + t * 0.95);
+    streak(g, [-len * 0.25, Math.sin(th) * len * 0.15], [Math.cos(th) * len * 0.35, Math.sin(th) * len * 0.7], pal.rim, pal.core, a * 0.55, Math.max(0.5, radius * 0.02));
+  }
+  blob(g, 0, 0, radius * 0.42 * Math.max(0.15, a), [[0, pal.core, a * 0.55], [1, pal.rim, 0]]);
+  g.restore();
 }
 
 function impact(g, c, s, atPoint, t, angle) {
@@ -64,6 +90,8 @@ function impact(g, c, s, atPoint, t, angle) {
   const kind = s.impactKind;
   if (c.kind === "ice" && (kind === "auto" || kind === "explosion")) return drawIceImpact(g, { ...local, bodyRadius: Math.min(c.w,c.h)*s.bodySize/100*s.size/90, iceRoll: (s.chargeFrames+s.travelFrames)/s.frames*TAU+c.seed }, radius, angle);
   if (c.kind === "thunder" && (kind === "auto" || kind === "explosion")) return drawThunderImpact(g, local, radius);
+  if (c.kind === "wind" && (kind === "auto" || kind === "shock")) return drawWindImpact(g, local, radius);
+  if (c.kind === "sand" && (kind === "auto" || kind === "explosion")) return drawSandImpact(g, local, radius);
   if (kind === "explosion" || (kind === "auto" && c.kind === "fireball")) return explosion(g, local);
   if (kind === "shock") return shock(g, local);
   if (kind === "hit" || (kind === "auto" && c.kind === "arrow")) return hit(g, local);
@@ -96,7 +124,7 @@ export function remote(g, c, settings) {
     const ctx = { ...c, seed: c.seed + index * 31 };
     const wrap = drawRemoteTrail(g, ctx, s, state, frame, index, radius);
     if (state.body) {
-      const scale = state.launched ? 1 : 0.15 + state.charge * 0.85;
+      const scale = state.launched ? 1 : 0.45 + state.charge * 0.55;
       g.save(); g.translate(...state.at); g.rotate(state.angle);
       remoteBody(g, ctx, radius * scale);
       drawAccents(g, { ...ctx, cx: 0, cy: 0, gy: 0, R: radius * scale * 1.5 }, accentAmounts(s, c.pal.preset));
