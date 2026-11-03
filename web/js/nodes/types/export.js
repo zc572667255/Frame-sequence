@@ -2,11 +2,12 @@ import { defineNode } from "../registry.js";
 import { makeStage } from "../view.js";
 import { el, downloadBlob, fmtBytes } from "../../core/util.js";
 import { describeOutput } from "../../imaging/output.js";
-import { outputSize, renderSheet, sheetGrid, SHEET_LAYOUTS, exportGif, exportWebp, exportSheet, exportPngZip, softAlphaShare } from "../exporters.js";
+import { asFrames } from "../data.js";
+import { outputSize, renderSheet, sheetGrid, SHEET_LAYOUTS, exportPng, exportGif, exportWebp, exportSheet, exportPngZip, softAlphaShare } from "../exporters.js";
 import { openModal } from "../../ui/modal.js";
 
 async function run(ctx, label, fn) {
-  const v = ctx.input("src");
+  const v = asFrames(ctx.input("src"));
   if (!v || !v.frames.length) { ctx.toast("没有可导出的帧。", "warn"); return; }
   ctx.toast("正在生成 " + label + "…");
   await new Promise((r) => setTimeout(r, 30));
@@ -19,6 +20,11 @@ async function run(ctx, label, fn) {
 }
 
 const actions = {
+  png: (ctx) => run(ctx, "PNG 图片", async (v, p) => {
+    const blob = await exportPng(v, p);
+    downloadBlob(blob, (p.name || "image") + ".png");
+    ctx.toast("已导出 PNG 图片（" + fmtBytes(blob.size) + "），保留透明背景。", "ok");
+  }),
   gif: (ctx, matte) => run(ctx, "GIF", async (v, p) => {
     const blob = await exportGif(v, { ...p, gifMatte: matte || null });
     downloadBlob(blob, (p.name || "animation") + ".gif");
@@ -48,7 +54,7 @@ const actions = {
 // of see-through (glows, soft fades) are checked first and the choice offered:
 // WebP instead, a background colour to lay them on, or GIF as it is
 function gifDialog(ctx) {
-  const v = ctx.input("src");
+  const v = asFrames(ctx.input("src"));
   if (!v || !v.frames.length) { ctx.toast("没有可导出的帧。", "warn"); return; }
   const share = softAlphaShare(v);
   if (share < 0.03) { actions.gif(ctx); return; }
@@ -70,7 +76,7 @@ function gifDialog(ctx) {
 // 序列图 from the card: choose the layout first, with the result in numbers and
 // a preview; the choice is kept on the node
 function sheetDialog(ctx) {
-  const v = ctx.input("src");
+  const v = asFrames(ctx.input("src"));
   if (!v || !v.frames.length) { ctx.toast("没有可导出的帧。", "warn"); return; }
   const n = v.frames.length, p0 = ctx.params(), g0 = sheetGrid(n, p0);
   let layout = g0.layout, cols = g0.cols;
@@ -110,14 +116,15 @@ defineNode({
   title: "导出",
   category: "输出",
   icon: "⇩",
-  help: "把序列帧导出为 GIF、动画 WebP（可无损、支持半透明）、新的序列帧整图（附 JSON）或逐帧 PNG 压缩包。可以设定输出单帧尺寸，按等比缩放、裁切填满、拉伸或 1:1 裁切。",
-  inputs: [{ name: "src", label: "序列帧", accepts: ["frames"] }],
+  help: "图片可直接导出为 PNG，保留透明背景；序列帧也可选一帧导出单图，或导出 GIF、动画 WebP、序列帧整图（附 JSON）和逐帧 PNG 压缩包。支持自定义输出尺寸。",
+  inputs: [{ name: "src", label: "图片 / 序列帧", accepts: ["image", "frames"] }],
   size: { w: 300, h: 280 },
-  defaults: () => ({ name: "animation", custom: false, w: 0, h: 0, mode: "contain", anchor: "1,1", layout: "row", perRow: 0, fps: 12, webpQuality: 1 }),
+  defaults: () => ({ name: "animation", frame: 1, custom: false, w: 0, h: 0, mode: "contain", anchor: "1,1", layout: "row", perRow: 0, fps: 12, webpQuality: 1 }),
 
   mount(ctx) {
     const stage = makeStage();
-    const bar = el("div", { class: "transport" },
+    const bar = el("div", { class: "transport export-actions" },
+      el("button", { class: "btn small primary", onclick: () => actions.png(ctx) }, "PNG 图片"),
       el("button", { class: "btn small primary", onclick: () => gifDialog(ctx) }, "GIF"),
       el("button", { class: "btn small primary", onclick: () => actions.webp(ctx) }, "WebP"),
       el("button", { class: "btn small", onclick: () => sheetDialog(ctx) }, "序列图"),
@@ -127,8 +134,8 @@ defineNode({
     let lastKey = null;
     return {
       render() {
-        const v = ctx.input("src");
-        if (!v || !v.frames.length) { lastKey = null; stage.message("连接序列帧"); return; }
+        const v = asFrames(ctx.input("src"));
+        if (!v || !v.frames.length) { lastKey = null; stage.message("连接图片或序列帧"); return; }
         const p = ctx.params();
         const key = v.ver + JSON.stringify(p);
         if (key === lastKey) return;
@@ -141,11 +148,17 @@ defineNode({
 
   inspector(ctx, f) {
     f.text("文件名", "name");
+    f.buttons(["导出 PNG 图片", () => actions.png(ctx), { primary: true }]);
+    f.number("单图导出第几帧", "frame", { min: 1, format: (val) => {
+      const v = asFrames(ctx.input("src"));
+      return Math.max(1, Math.min(val || 1, v ? v.frames.length || 1 : 1));
+    } });
+    f.hint("单张图片直接导出；序列帧默认导出第 1 帧，可在上方指定。PNG 保留去背景后的透明区域。");
     const size = f.section("输出单帧尺寸");
     size.check("自定义输出尺寸", "custom");
     // until a size is typed, the fields show the incoming frame size
     const shown = (axis) => (val) => {
-      const v = ctx.input("src");
+      const v = asFrames(ctx.input("src"));
       return ctx.params().custom || !v ? val : v[axis];
     };
     size.pair(
@@ -163,21 +176,21 @@ defineNode({
       ["2,1", "右中"], ["0,2", "左下"], ["1,2", "下中"], ["2,2", "右下"],
     ]);
     size.hint(() => {
-      const v = ctx.input("src");
+      const v = asFrames(ctx.input("src"));
       if (!v) return "";
       const p = ctx.params();
       const o = outputSize(p, v);
       return "原始单帧 " + v.w + "×" + v.h + " → 输出 " + o.w + "×" + o.h + "（" + describeOutput(v.w, v.h, o.w, o.h, p.mode) + "）";
     });
     size.buttons(["重置为原始尺寸", () => {
-      const v = ctx.input("src");
+      const v = asFrames(ctx.input("src"));
       ctx.set({ custom: false, w: v ? v.w : 0, h: v ? v.h : 0 });
     }]);
 
     const out = f.section("排版与时间");
     // sheet layout: the column count always shows what the layout comes to;
     // typing one switches to 自定列数
-    const frames = () => { const v = ctx.input("src"); return v ? v.frames.length : 0; };
+    const frames = () => { const v = asFrames(ctx.input("src")); return v ? v.frames.length : 0; };
     out.pair(
       (s) => s.select("序列图排列", "layout", SHEET_LAYOUTS),
       (s) => s.number("列数", "perRow", { min: 1, extra: { layout: "cols" }, format: () => sheetGrid(frames() || 1, ctx.params()).cols }),

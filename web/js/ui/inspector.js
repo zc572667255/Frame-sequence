@@ -119,7 +119,11 @@ export class Inspector {
         sync: (b) => { const c = ctx.card(); b.classList.toggle("primary", !!(c && c.bypass)); b.textContent = c && c.bypass ? "已旁路 · 点击恢复" : "旁路（跳过这一步）"; },
       });
     }
-    if (this.app.canBake(id)) actions.button("烘焙为动画卡片", () => this.app.bake(id), { title: "把当前结果的每一帧存进项目，得到可以逐帧编辑的动画" });
+    if (this.app.canBake(id)) {
+      actions.button("打开像素编辑器", () => this.app.openEditor(id), { title: "把当前图片或序列帧保存为可编辑副本，然后进入像素编辑器", primary: true });
+      actions.button("烘焙为动画卡片", () => this.app.bake(id), { title: "把当前图片或序列帧存进项目，得到可以逐帧编辑的动画" });
+    }
+    if (card.type !== "export" && (this.app.canBake(id) || card.type === "animation")) actions.button("导出 PNG 图片", () => this.app.exportImage(id), { title: "直接导出当前图片；序列帧默认导出首帧" });
     actions.buttons(
       ["复制", () => board.duplicate()],
       ["删除", () => board.deleteSelection(), { danger: true }],

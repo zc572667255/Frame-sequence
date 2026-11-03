@@ -1,6 +1,7 @@
 import { defineNode } from "../registry.js";
 import { makeStage, makePlayer } from "../view.js";
 import { el } from "../../core/util.js";
+import { asFrames } from "../data.js";
 
 const BGS = [["checker", "棋盘格"], ["#0d0d0f", "黑"], ["#ffffff", "白"], ["#6f9a5b", "草地绿"], ["#4a6fa5", "天空蓝"]];
 
@@ -9,8 +10,8 @@ defineNode({
   title: "播放预览",
   category: "输出",
   icon: "▶",
-  help: "循环播放接入的序列帧。可以同时放好几个预览，对比不同处理参数的效果。",
-  inputs: [{ name: "src", label: "序列帧", accepts: ["frames"] }],
+  help: "预览单张图片或循环播放序列帧。可以同时放好几个预览，对比不同处理参数的效果。",
+  inputs: [{ name: "src", label: "图片 / 序列帧", accepts: ["image", "frames"] }],
   size: { w: 260, h: 300 },
   defaults: () => ({ fps: 12, bg: "checker", fit: "integer" }),
   persist: ["paused"],
@@ -50,7 +51,7 @@ defineNode({
         stage.setBg(p.bg);
         stage.setFit(p.fit || "integer");
         if (document.activeElement !== fpsIn) fpsIn.value = p.fps || 12;
-        player.setValue(ctx.input("src"));
+        player.setValue(asFrames(ctx.input("src")));
       },
       destroy() { player.destroy(); },
     };
@@ -61,7 +62,7 @@ defineNode({
     f.select("背景", "bg", BGS);
     f.select("缩放", "fit", [["integer", "整数倍（像素清晰）"], ["contain", "填满卡片"]]);
     f.readout(() => {
-      const v = ctx.input("src");
+      const v = asFrames(ctx.input("src"));
       if (!v) return null;
       const timed = v.frames.some((x) => x.duration);
       return [["帧数", String(v.frames.length)], ["单帧", v.w + " × " + v.h], ["时长", timed ? "逐帧时长" : "按帧率"]];

@@ -9,6 +9,13 @@ export function framesValue(frames, w, h, extra) {
   return { kind: "frames", w, h, frames, ...extra };
 }
 
+// Adapt a still image for tools that work on frames, without changing the value
+// flowing through the graph. Keep its version so preview caches still work.
+export function asFrames(v) {
+  if (!v || v.kind === "frames") return v;
+  return framesValue([{ canvas: v.canvas, index: 0 }], v.canvas.width, v.canvas.height, { ver: v.ver });
+}
+
 // the canvas to show as a still for any value: an image, or a sequence's first frame
 export function stillOf(v) {
   if (!v) return null;

@@ -4,7 +4,7 @@ import "./nodes/types/index.js";
 import { Store, migrate } from "./core/store.js";
 import { api } from "./core/api.js";
 import { putBlobAsset, putCanvasAsset } from "./core/assets.js";
-import { el, uid, blobToCanvas, fmtBytes } from "./core/util.js";
+import { el, uid, blobToCanvas, fmtBytes, downloadBlob } from "./core/util.js";
 import { Engine } from "./nodes/engine.js";
 import { nodeType, allNodeTypes, CATEGORIES, outputKinds, inputAccepts } from "./nodes/registry.js";
 import { Board, HEAD_H } from "./board/board.js";
@@ -17,6 +17,8 @@ import { newAnim, normalizeCharacter, calibrate } from "./tuner/model.js";
 import { resolveSources } from "./tuner/tuner.js";
 import { parseFrameJson, framesFromSpec, readZipFile, findFrameJson, importCharacterPackage } from "./tuner/import.js";
 import { isImageFile, naturalSort, decodeFiles, decodeAnimated, importDialog, normalizeFrames, sheetDialog } from "./ui/importer.js";
+import { asFrames } from "./nodes/data.js";
+import { exportPng } from "./nodes/exporters.js";
 
 const THEME = "gt.theme";
 
@@ -371,6 +373,7 @@ class App {
   }
 
   async addImageCards(images, at) {
+    at = at || this.board.centerWorld();
     let off = 0;
     for (const f of images) {
       try {
@@ -545,12 +548,12 @@ class App {
     if (!def) return null;
     for (const o of def.outputs) {
       const v = this.engine.outputOf(id, o.name);
-      if (v && v.kind === "frames") return v;
+      if (v && (v.kind === "frames" || v.kind === "image")) return asFrames(v);
     }
     if (!def.evaluate) {
       for (const i of def.inputs) {
         const v = this.engine.input(id, i.name);
-        if (v && v.kind === "frames") return v;
+        if (v && (v.kind === "frames" || v.kind === "image")) return asFrames(v);
       }
     }
     return null;
@@ -560,38 +563,58 @@ class App {
     const card = this.store.cards[id];
     const def = card && nodeType(card.type);
     if (!def || card.type === "animation") return false;
-    return def.outputs.some((o) => outputKinds(def, o.name).includes("frames")) || (!def.evaluate && def.inputs.some((i) => i.accepts.includes("frames")));
+    return def.outputs.some((o) => outputKinds(def, o.name).some((k) => k === "image" || k === "frames")) || (!def.evaluate && def.inputs.some((i) => i.accepts.some((k) => k === "image" || k === "frames")));
   }
 
-  async bake(id) {
+  async exportImage(id) {
     const v = this.framesToBake(id);
-    if (!v || !v.frames.length) { this.toast("这个节点现在还没有可烘焙的序列帧。", "warn"); return; }
+    if (!v || !v.frames.length) { this.toast("这个节点现在还没有可导出的图片。", "warn"); return; }
+    const card = this.store.cards[id];
+    const name = card.params.name || card.title || "image";
+    try {
+      const blob = await exportPng(v, card.type === "export" ? card.params : {});
+      downloadBlob(blob, name.replace(/\.png$/i, "") + ".png");
+      this.toast("已导出 PNG 图片，保留透明背景。", "ok");
+    } catch (err) { this.toast("导出失败：" + err.message, "error"); }
+  }
+
+  async bake(id, opts = {}) {
+    const v = this.framesToBake(id);
+    if (!v || !v.frames.length) { this.toast("这个节点现在还没有可编辑的图片或序列帧。", "warn"); return null; }
     const card = this.store.cards[id];
     const def = nodeType(card.type);
+    const pid = this.store.projectId;
     this.toast("正在烘焙 " + v.frames.length + " 帧…");
     try {
       const assets = [];
-      for (const f of v.frames) assets.push(await putCanvasAsset(this.store.projectId, f.canvas));
+      for (const f of v.frames) assets.push(await putCanvasAsset(pid, f.canvas));
+      if (this.store.projectId !== pid || !this.store.cards[id]) return null;
       const s = this.imageCardSize(v.w, v.h);
       const size = { w: Math.max(240, s.w), h: s.h + 10 };
       const at = this.freeSpot(card.x + card.w + 80, card.y, size.w, size.h);
-      this.addCard("animation", at.x, at.y, {
+      const baked = this.addCard("animation", at.x, at.y, {
         w: v.w, h: v.h, fps: v.fps || 12,
         layers: [{ id: "L1", name: "图层 1", visible: true, opacity: 100 }],
         frames: assets.map((a, i) => ({ id: "F" + (i + 1), duration: v.frames[i].duration || null, cels: { L1: a } })),
         palette: [],
-      }, { size, title: (card.title || def.title) + " · 动画", select: true });
-      this.toast("已烘焙为动画卡片，双击它可以打开像素编辑器。", "ok");
+      }, { size, title: (card.title || card.params.name || def.title) + (opts.edit ? " · 编辑" : " · 动画"), select: true });
+      this.toast(opts.edit ? "已生成可编辑副本，修改后保存到此卡片，可直接导出 PNG。" : "已烘焙为动画卡片，双击它可以打开像素编辑器。", "ok");
+      return baked;
     } catch (err) {
       this.toast("烘焙失败：" + err.message, "error");
+      return null;
     }
   }
 
   // ---------- the classic pipeline, as nodes ----------
-  buildPipeline(imageId) {
+  buildPipeline(imageId, single = false) {
     const img = this.store.cards[imageId];
     if (!img) return;
-    const steps = [
+    const steps = single ? [
+      ["removeBg"],
+      ["depixel", { bypass: true }],
+      ["recolor"],
+    ] : [
       ["removeBg"],
       ["depixel", { bypass: true }],
       ["slice"],
@@ -617,7 +640,7 @@ class App {
         x += c.w + gap;
       }
       const pv = this.makeCard("preview", x, y);
-      const ex = this.makeCard("export", x, y + pv.h + 40);
+      const ex = this.makeCard("export", x, y + pv.h + 40, { name: img.params.name || (single ? "image" : "animation") });
       d.board.cards[pv.id] = pv;
       d.board.cards[ex.id] = ex;
       link(prev, pv.id);
@@ -626,7 +649,7 @@ class App {
     });
     this.board.setSelection([imageId, ...made]);
     this.board.fitView([imageId, ...made]);
-    this.toast("已生成流程。「完美像素」和「主体对齐」默认旁路，需要时点卡片标题栏的「旁路」开启。", "ok");
+    this.toast(single ? "已生成单图流程：去背景 → 完美像素 → 调色 → 预览 / 导出 PNG。「完美像素」默认旁路。" : "已生成流程。「完美像素」和「主体对齐」默认旁路，需要时点卡片标题栏的「旁路」开启。", "ok");
   }
 
   // ---------- menus ----------
@@ -656,6 +679,7 @@ class App {
     const ids = this.board.selectedIds();
     const items = [];
     if (card.type === "image") {
+      items.push({ label: "生成单图处理流程", hint: "去背景 / 导出 PNG", action: () => this.buildPipeline(id, true) });
       items.push({ label: "生成标准处理流程", action: () => this.buildPipeline(id) });
       items.push({ label: "切成动画…", hint: "整图多帧", action: () => {
         const v = this.engine.outputOf(id, "out");
@@ -664,6 +688,8 @@ class App {
       } });
     }
     if (def && def.open) items.push({ label: "打开编辑器", action: () => def.open(this.board.ctxOf(id)) });
+    else if (this.canBake(id)) items.push({ label: "打开像素编辑器", hint: "创建可编辑副本", action: () => this.openEditor(id) });
+    if (card.type === "animation" || this.canBake(id)) items.push({ label: "导出 PNG 图片", hint: "序列帧取首帧", action: () => this.exportImage(id) });
     if (this.canBake(id)) items.push({ label: "烘焙为动画卡片", action: () => this.bake(id) });
     if (card.type === "animation") items.push({ label: "分层导出（Godot）…", action: () => import("./godot/layers.js").then((m) => m.openLayeredExport(this, id)) });
     if (card.type === "animation" || this.canBake(id)) {
@@ -726,11 +752,22 @@ class App {
   }
 
   // ---------- pixel editor (phase 2) ----------
-  openEditor(id) {
-    if (this.modalOpen()) return;
-    import("./editor/editor.js")
-      .then((m) => m.openEditor(this, id))
-      .catch((err) => { console.error(err); this.toast("编辑器打开失败：" + err.message, "error"); });
+  async openEditor(id) {
+    if (this.modalOpen() || this.openingEditor) return;
+    this.openingEditor = true;
+    try {
+      const card = this.store.cards[id];
+      if (!card) return;
+      if (card.type !== "animation") {
+        id = await this.bake(id, { edit: true });
+        if (!id) return;
+      }
+      const m = await import("./editor/editor.js");
+      return await m.openEditor(this, id);
+    } catch (err) {
+      console.error(err);
+      this.toast("编辑器打开失败：" + err.message, "error");
+    } finally { this.openingEditor = false; }
   }
 
   // ---------- scenes ----------

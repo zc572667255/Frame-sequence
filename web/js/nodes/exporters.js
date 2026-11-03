@@ -1,5 +1,6 @@
 // Turning a frames value into files.
 import { createCanvas, canvasToBlob } from "../core/util.js";
+import { asFrames } from "./data.js";
 import { drawFrameInto } from "../imaging/output.js";
 import { quantizeFrame, encodeGIF } from "../imaging/gif.js";
 import { makeZip } from "../imaging/zip.js";
@@ -13,12 +14,22 @@ export function outputSize(p, v) {
 }
 
 export function renderFrame(v, i, p) {
+  v = asFrames(v);
   const s = outputSize(p, v);
   const c = createCanvas(s.w, s.h);
   const ctx = c.getContext("2d");
   ctx.imageSmoothingEnabled = p.smooth === true;
   drawFrameInto(ctx, v.frames[i].canvas, 0, 0, s.w, s.h, p.mode, p.anchor);
   return c;
+}
+
+// A standalone PNG, including alpha; sequences use the selected frame (first by
+// default). The same sizing and anchoring rules apply as for animation exports.
+export function exportPng(v, p = {}) {
+  v = asFrames(v);
+  if (!v || !v.frames.length) throw new Error("没有可导出的图片");
+  const i = Math.max(0, Math.min(v.frames.length - 1, (p.frame || 1) - 1));
+  return canvasToBlob(renderFrame(v, i | 0, p));
 }
 
 // How a sheet of n frames is laid out. p.layout: "row" (one row), "column" (one

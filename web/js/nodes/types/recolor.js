@@ -1,17 +1,11 @@
 import { defineNode } from "../registry.js";
 import { makeStage, readPixel, toolButton, makePlayer } from "../view.js";
-import { framesValue } from "../data.js";
+import { asFrames, framesValue } from "../data.js";
 import { applyRecolor, buildConvertMap, encodeMask, decodeMask } from "../../imaging/recolor.js";
 import { countColors } from "../../imaging/color.js";
 import { el, imageDataOf, canvasFromImageData, rgbToHex } from "../../core/util.js";
 
 const TOOLS = { brush: "画笔", erase: "橡皮", wand: "魔棒" };
-
-function asFrames(v) {
-  if (!v) return null;
-  if (v.kind === "frames") return v;
-  return framesValue([{ canvas: v.canvas, index: 0 }], v.canvas.width, v.canvas.height);
-}
 
 defineNode({
   type: "recolor",
@@ -20,7 +14,7 @@ defineNode({
   icon: "◐",
   help: "两层调色：①把整段动画就近转成 64 色；②在卡片上用画笔涂出局部（例如服饰），只调整涂中的像素。"
     + "选区按帧内位置同步到所有帧，魔棒会选中所有帧里的同一种颜色。",
-  inputs: [{ name: "src", label: "序列帧", accepts: ["frames", "image"] }],
+  inputs: [{ name: "src", label: "图片 / 序列帧", accepts: ["frames", "image"] }],
   outputs: [{ name: "out", label: "序列帧", kind: "frames" }],
   size: { w: 300, h: 300 },
   defaults: () => ({ convert: "none", mask: null, wand: [], hue: 0, sat: 100, lit: 0, contrast: 100 }),
@@ -163,7 +157,7 @@ defineNode({
     const player = makePlayer(stage, {
       fps: () => 8,
       autoplay: false,
-      emptyText: "连接序列帧",
+      emptyText: "连接图片或序列帧",
       overlay: (c, w, h, idx) => { if (ctx.local.mode || ctx.local.showMask) overlay(c, w, h, idx); },
       onFrame: (i, n) => { frameLabel.textContent = n > 1 ? (i + 1) + "/" + n : ""; },
     });
@@ -183,7 +177,7 @@ defineNode({
         const key = (v ? v.ver : "-") + ":" + (ctx.local.mode || "") + ":" + !!ctx.local.showMask;
         if (key === lastKey) return;
         lastKey = key;
-        player.setValue(v || null);
+        player.setValue(asFrames(v));
         // paint on a still pose; play the result whenever no tool is active
         if (ctx.local.mode) { if (player.playing) player.pause(); else player.redraw(); }
         else if (!player.playing) player.play();

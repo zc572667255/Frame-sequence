@@ -4,7 +4,7 @@
 // (bottom: layers are rows, frames are columns, like Aseprite). Edits stay local
 // until 保存, which uploads the changed cels and updates the card as one undo step
 // on the board.
-import { el, clamp, createCanvas, canvasFromImageData, blobToCanvas } from "../core/util.js";
+import { el, clamp, createCanvas, canvasFromImageData, blobToCanvas, canvasToBlob, downloadBlob } from "../core/util.js";
 import { getAssetCanvas, putCanvasAsset } from "../core/assets.js";
 import { EditorDoc } from "./doc.js";
 import * as R from "./raster.js";
@@ -304,6 +304,17 @@ class Editor {
     }
   }
 
+  async exportImage() {
+    this.commitFloat();
+    try {
+      const blob = await canvasToBlob(this.composite(this.fi));
+      const card = this.app.store.cards[this.cardId];
+      const name = (card && (card.title || card.params.name)) || "image";
+      downloadBlob(blob, name.replace(/\.png$/i, "") + (this.doc.frames.length > 1 ? "_" + (this.fi + 1) : "") + ".png");
+      this.app.toast("已导出当前帧 PNG 图片，保留透明背景。", "ok");
+    } catch (err) { this.app.toast("导出失败：" + err.message, "error"); }
+  }
+
   // ---------- DOM ----------
   build() {
     const card = this.app.store.cards[this.cardId];
@@ -321,6 +332,7 @@ class Editor {
       this.saveState,
       el("button", { class: "icon-btn", title: "快捷键", onclick: () => this.showHelp() }, "?"),
       el("button", { class: "btn primary", onclick: () => this.save() }, "保存"),
+      el("button", { class: "btn", title: "导出当前帧，保留透明背景", onclick: () => this.exportImage() }, "导出 PNG"),
       el("button", { class: "btn", onclick: () => this.close() }, "关闭"),
     );
 
