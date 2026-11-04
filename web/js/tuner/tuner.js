@@ -52,6 +52,7 @@ class Tuner {
     this.fi = 0;
     this.tool = "frame";
     this.zoom = 3; this.panX = 0; this.panY = 0;
+    this.autoFit = true;
     this.playing = false;
     this.sound = true;
     this.onion = true;
@@ -99,9 +100,10 @@ class Tuner {
       const srcs = this.sources();
       if (srcs.has(id)) this.refresh();
     });
-    this.ro = new ResizeObserver(() => this.requestRender());
+    this.ro = new ResizeObserver(() => { if (this.autoFit && !this.drag) this.fit(); else this.requestRender(); });
     this.ro.observe(this.stage);
     this.refresh(true);
+    this.updateBounds();
     this.fit();
   }
 
@@ -163,6 +165,7 @@ class Tuner {
       el("button", { class: "tool-btn", title: "放大当前帧（]）", onclick: () => this.scaleFrame(0.01) }, "本帧 ＋"));
     const onionBox = el("input", { type: "checkbox", checked: this.onion, onchange: () => { this.onion = onionBox.checked; this.requestRender(); } });
     this.toolBar.append(el("label", { class: "tn-check" }, onionBox, "上一帧虚影"));
+    this.toolBar.append(el("button", { class: "tool-btn", title: "完整显示输出画布，并自动适应之后的尺寸变化（F）", onclick: () => { this.updateBounds(); this.fit(); } }, "适应视图"));
     this.stage = el("div", { class: "ed-stage tn-stage" }, this.canvas, this.toolBar, this.statusEl);
     this.bindStage();
 
@@ -328,12 +331,20 @@ class Tuner {
     sb.append(el("button", { class: "btn small", onclick: () => this.pickSound(fi) }, "绑定音效…"));
 
     // export
-    const fe = this.formFor(section("导出设置", "所有动画共用一块画布和同一个原点。"), (pp) => pp.export, (pp) => pp.export, "export");
-    fe.pair((s) => s.number("四周留边", "margin", { min: 0, max: 256 }), (s) => s.select("尺寸取整", "roundTo", [[1, "不取整"], [2, "2 的倍数"], [4, "4 的倍数"], [8, "8 的倍数"], [16, "16 的倍数"]]));
+    const fe = this.formFor(section("导出设置", "先应用各帧、整组和角色的缩放，再按实际像素范围计算输出尺寸。透明边裁切，有像素超出时扩边，不拉伸图片。"), (pp) => pp.export, (pp) => pp.export, "export");
+    fe.select("画布尺寸", "canvasMode", [["auto", "自适应"], ["manual", "手动宽高"]]);
+    const canvasSize = (key) => ({
+      min: 1, max: 8192, extra: { canvasMode: "manual" },
+      format: (v) => this.p.export.canvasMode === "manual" && v > 0 ? v : this.bounds?.[key] || 1,
+    });
+    fe.pair((s) => s.number("画布宽 px", "w", canvasSize("w")), (s) => s.number("画布高 px", "h", canvasSize("h")));
+    fe.readout(() => this.bounds ? [["实际输出", this.bounds.w + " × " + this.bounds.h]] : null);
+    fe.hint("直接填写宽高会切换为手动。改大补透明边；改小裁掉透明边，有像素超出时仍自动扩边。切回「自适应」可恢复自动尺寸。");
     fe.select("格式", "format", [["sheet", "序列图 + JSON"], ["png", "PNG 序列"]]);
     fe.pair((s) => s.select("序列图排列", "layout", SHEET_LAYOUTS), (s) => s.number("列数", "perRow", { min: 1, extra: { layout: "cols" } }));
     fe.hint("每个动画一张序列图。「一行」「一列」「接近正方形」按各动画的帧数自动排；「自定列数」所有动画都用同一个列数。");
     fe.hint("当前动画也会从角色卡片右侧的「序列帧」端口输出，关闭调帧台后可连到「导出」卡片。");
+    fe.hint("连线输出和烘焙按当前动画计算尺寸；角色包按全部动画计算共用画布和原点。");
   }
 
   // ---------- adding things ----------
@@ -521,14 +532,21 @@ class Tuner {
   // ---------- export bounds ----------
   scheduleBounds() {
     clearTimeout(this.boundsTimer);
-    this.boundsTimer = setTimeout(() => {
-      if (!this.card) return;
-      const char = normalizeCharacter(this.p);
-      if (!char.anims.length) { this.bounds = null; this.boundsEl.textContent = ""; this.requestRender(); return; }
-      this.bounds = exportCanvas(char, this.sources());
-      this.boundsEl.textContent = "导出画布 " + this.bounds.w + " × " + this.bounds.h + " · 原点 (" + this.bounds.ox + ", " + this.bounds.oy + ")";
-      this.requestRender();
-    }, 250);
+    this.boundsTimer = setTimeout(() => this.updateBounds(), 250);
+  }
+
+  updateBounds() {
+    clearTimeout(this.boundsTimer);
+    if (!this.card) return;
+    const char = normalizeCharacter(this.p), previous = this.bounds;
+    const anim = char.anims.find((a) => a.id === this.anim()?.id) || char.anims[0];
+    this.bounds = anim ? exportCanvas(char, this.sources(), [anim]) : null;
+    this.boundsEl.textContent = this.bounds
+      ? (char.export.canvasMode === "manual" ? "手动画布 " : "自适应画布 ") + this.bounds.w + " × " + this.bounds.h + " · 原点 (" + this.bounds.ox + ", " + this.bounds.oy + ")" : "";
+    if (this.forms) for (const form of this.forms) form.sync();
+    const changed = this.bounds && (!previous || ["w", "h", "ox", "oy"].some((k) => previous[k] !== this.bounds[k]));
+    if (changed && this.autoFit && !this.drag) this.fit();
+    this.requestRender();
   }
 
   // ---------- tools & stage input ----------
@@ -599,11 +617,16 @@ class Tuner {
 
   fit() {
     const W = this.stage.clientWidth, H = this.stage.clientHeight;
-    const src = this.src();
-    const size = this.bounds ? Math.max(this.bounds.w, this.bounds.h) : src ? Math.max(src.w, src.h) * 1.4 : 64;
-    this.zoom = clamp(Math.floor(Math.min(W, H) * 0.7 / size) || 1, 1, 16);
-    this.panX = Math.round(W / 2);
-    this.panY = Math.round(H * 0.72);
+    if (!W || !H) return;
+    this.autoFit = true;
+    const b = this.bounds || { w: 32, h: 32, ox: 16, oy: 32 };
+    const top = this.toolBar.offsetTop + this.toolBar.offsetHeight + 16;
+    const bottom = this.statusEl.offsetHeight + 24;
+    const availableH = Math.max(1, H - top - bottom);
+    this.zoom = clamp(Math.min(Math.max(1, W - 48) / b.w, availableH / b.h), 0.001, 32);
+    this.panX = W / 2 - (b.w / 2 - b.ox) * this.zoom;
+    this.panY = top + availableH / 2 - (b.h / 2 - b.oy) * this.zoom;
+    this.updateStatus();
     this.requestRender();
   }
 
@@ -637,6 +660,7 @@ class Tuner {
       this.root.focus();
       if (e.button === 1 || (e.button === 0 && this.space)) {
         e.preventDefault();
+        this.autoFit = false;
         this.drag = { type: "pan", sx: e.clientX, sy: e.clientY, px: this.panX, py: this.panY };
         c.setPointerCapture(e.pointerId);
         return;
@@ -679,14 +703,19 @@ class Tuner {
       this.updateStatus();
       this.requestRender();
     });
-    const up = () => { this.drag = null; c.style.cursor = ""; };
+    const up = () => {
+      const edited = this.drag && this.drag.type !== "pan";
+      this.drag = null; c.style.cursor = "";
+      if (edited) { this.updateBounds(); if (this.autoFit) this.fit(); }
+    };
     c.addEventListener("pointerup", up);
     c.addEventListener("pointercancel", up);
     this.stage.addEventListener("wheel", (e) => {
       e.preventDefault();
       if (!e.deltaY || this.drag) return;
+      this.autoFit = false;
       const w = this.toWorld(e);
-      const z = clamp(this.zoom * (e.deltaY < 0 ? 1.25 : 0.8), 0.25, 32);
+      const z = clamp(this.zoom * (e.deltaY < 0 ? 1.25 : 0.8), 0.001, 32);
       this.panX = w.sx - w.x * z;
       this.panY = w.sy - w.y * z;
       this.zoom = z;
@@ -725,7 +754,7 @@ class Tuner {
     else if (k === "," ) this.step(-1);
     else if (k === ".") this.step(1);
     else if (k === "enter") this.togglePlay();
-    else if (k === "f") this.fit();
+    else if (k === "f") { this.updateBounds(); this.fit(); }
     else if (k === "[") this.scaleFrame(-0.01);
     else if (k === "]") this.scaleFrame(0.01);
     else if (["1", "2", "3"].includes(k)) this.setTool(TOOLS[+k - 1].id);

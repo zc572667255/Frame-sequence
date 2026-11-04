@@ -56,10 +56,12 @@ try {
     pending.set(id, { resolve, reject, timeout });
     socket.send(JSON.stringify({ id, method, params, sessionId }));
   });
-  const { targetId } = await call("Target.createTarget", { url: "http://127.0.0.1:" + server.address().port + "/" });
+  const { targetId } = await call("Target.createTarget", { url: "about:blank" });
   const { sessionId } = await call("Target.attachToTarget", { targetId, flatten: true });
   await call("Page.bringToFront", {}, sessionId);
   await call("Runtime.enable", {}, sessionId);
+  await call("Page.enable", {}, sessionId);
+  await call("Page.navigate", { url: "http://127.0.0.1:" + server.address().port + "/" }, sessionId);
   const evaluate = async (expression) => {
     const result = await call("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true }, sessionId);
     if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception.description);
@@ -101,7 +103,7 @@ try {
     await engine.run();
     let out = engine.input('e', 'src');
     ok(out.frames.length === 2 && out.frames[0].duration === 123 && out.frames[1].index === 2, 'Output skips disabled frames and retains durations/source indices');
-    ok(out.w === 54 && (out.h === 41 || out.h === 42), 'Per-frame scale is applied to shared export bounds: ' + out.w + 'x' + out.h);
+    ok(out.w === 50 && (out.h === 37 || out.h === 38), 'Transformed pixels set output size without source padding: ' + out.w + 'x' + out.h);
     const sheet = await exportSheet(out, { layout: 'row', fps: 12 });
     ok(sheet.png.size > 0 && sheet.json.frames[0].duration === 123, 'Sheet exports tuned frames/timing');
     ok((await exportGif(out, { fps: 12 })).size > 0, 'GIF export');
@@ -119,10 +121,31 @@ try {
     window.frame = () => store.cards.c.params.anims[0].frames[0];
     const scaleInput = [...tuner.props.querySelectorAll('label')].find((el) => el.querySelector('.f-label')?.textContent === '缩放').querySelector('input');
     ok(scaleInput.value === '1.25' && scaleInput.step === '0.01', 'Two decimal scale field');
+    const initialBounds = { ...tuner.bounds };
+    ok(tuner.boundsEl.textContent.includes('自适应画布'), 'Adaptive canvas is the visible default');
+    const field = (label, tag) => [...tuner.props.querySelectorAll('label')].find((el) => el.querySelector('.f-label')?.textContent === label).querySelector(tag);
+    const width = field('画布宽 px', 'input'), height = field('画布高 px', 'input');
+    width.value = '160'; width.dispatchEvent(new Event('input', { bubbles: true }));
+    height.value = '120'; height.dispatchEvent(new Event('input', { bubbles: true }));
+    tuner.updateBounds(); await engine.run();
+    ok(store.cards.c.params.export.canvasMode === 'manual' && tuner.bounds.w === 160 && tuner.bounds.h === 120, 'Typing width/height enables manual canvas');
+    ok(engine.input('e', 'src').w === 160 && engine.input('e', 'src').h === 120, 'Manual size reaches connected export');
+    width.value = '1'; width.dispatchEvent(new Event('input', { bubbles: true }));
+    height.value = '1'; height.dispatchEvent(new Event('input', { bubbles: true }));
+    tuner.updateBounds();
+    ok(tuner.bounds.w === initialBounds.w && tuner.bounds.h === initialBounds.h, 'Manual shrink keeps overflowing painted pixels');
+    const mode = field('画布尺寸', 'select'); mode.value = 'auto'; mode.dispatchEvent(new Event('change', { bubbles: true }));
+    tuner.updateBounds(); await engine.run();
+    ok(store.cards.c.params.export.canvasMode === 'auto' && engine.input('e', 'src').w === initialBounds.w, 'Switching back restores adaptive output');
+    tuner.bounds = { w: 10000, h: 8000, ox: 5000, oy: 8000 }; tuner.fit();
+    const left = tuner.panX - tuner.bounds.ox * tuner.zoom, top = tuner.panY - tuner.bounds.oy * tuner.zoom;
+    ok(tuner.zoom < 1 && left >= 0 && top >= 0 && left + 10000 * tuner.zoom <= tuner.stage.clientWidth && top + 8000 * tuner.zoom <= tuner.stage.clientHeight, 'Large canvas fully fits the stage without stretching');
+    tuner.bounds = initialBounds;
     const next = tuner.animList.children[1]; next.click(); await engine.run();
     ok(store.cards.c.params.outputAnim === 'a2' && engine.input('e', 'src').frames.length === 3, 'Tuner animation selection drives output');
     store.undo(); await engine.run();
     ok(tuner.anim().id === 'a1' && engine.input('e', 'src').frames.length === 2, 'Undo restores selection and output');
+    tuner.autoFit = false;
     tuner.zoom = 5; tuner.panX = 350; tuner.panY = 300; tuner.onion = false; tuner.render();
     window.dragPoint = (hx, hy) => { const p = tuner.frameBox().point(hx, hy), r = tuner.canvas.getBoundingClientRect(); return { x: p.x + r.left, y: p.y + r.top }; };
     return true;
@@ -154,7 +177,7 @@ try {
     near(frame().scale, 1.50, 'Right edge increases scale');
     near(frame().x, 5, 'Opposite edge stays fixed');
     ok(store.cards.c.params.anims[0].frames[2] == null, 'Other frame unchanged');
-    await engine.run(); ok(engine.input('e', 'src').w > 54, 'Drag updates downstream canvas');
+    await engine.run(); ok(engine.input('e', 'src').w > 50, 'Drag updates downstream canvas');
     store.undo(); near(frame().scale, 1.25, 'One undo restores whole drag');
     store.redo(); near(frame().scale, 1.50, 'Redo restores drag');
     store.undo();
@@ -191,6 +214,125 @@ try {
     store._save.cancel();
   })()`);
   console.log("调帧台浏览器检查通过：两位小数、真实鼠标边缘/四角缩放、旋转/翻转、撤销/重做、连线输出、四种导出、来源更新与缺失。");
+  await evaluate(`(async () => {
+    const model = await import('/js/tuner/model.js');
+    const { createCanvas } = await import('/js/core/util.js');
+    const { nodeType } = await import('/js/nodes/registry.js');
+    const { exportCharacterZip, bakeAnimation } = await import('/js/tuner/export.js');
+    const { readZipFile } = await import('/js/tuner/import.js');
+    const big = createCanvas(100, 80), small = createCanvas(100, 80);
+    big.getContext('2d').fillStyle = '#f08030'; big.getContext('2d').fillRect(0, 0, 100, 80);
+    const sg = small.getContext('2d'); sg.fillStyle = '#10b0f0'; sg.fillRect(10, 10, 20, 20);
+    const a = model.newAnim('a', 'sized', { card: 'test-source' });
+    a.frames[1] = { scale: 0.5, x: 40 };
+    const char = { ...model.defaultCharacter(), anims: [a], outputAnim: a.id };
+    const source = { kind: 'frames', w: 100, h: 80, frames: [{ canvas: big, index: 0 }, { canvas: small, index: 1 }], ver: 1 };
+    const sources = new Map([['test-source', source]]);
+    const size = () => model.exportCanvas(char, sources, [a]);
+    let canvas = size();
+    ok(canvas.w === 100 && canvas.h === 80, 'Largest painted frame after scaling sets output dimensions');
+    ok(canvas.ox === 50 && canvas.oy === 80, 'Transparent overflow does not move the origin');
+    // A faint pixel at the far edge must extend the output instead of disappearing.
+    sg.fillStyle = 'rgba(255,0,0,0.004)'; sg.fillRect(98, 78, 2, 2);
+    canvas = size();
+    ok(canvas.w === 115 && canvas.h === 80, 'Painted right overflow adds only the required transparent space');
+    const rendered = model.renderExportFrame(char, a, 1, sources, canvas);
+    ok(rendered.getContext('2d').getImageData(114, 79, 1, 1).data[3] > 0, 'Faint overflowing edge pixel is retained');
+    const preserved = model.renderExportFrame(char, a, 0, sources, canvas).getContext('2d').getImageData(0, 0, 100, 80).data;
+    const original = big.getContext('2d').getImageData(0, 0, 100, 80).data;
+    ok(preserved.every((v, i) => v === original[i]), 'Largest frame pixels remain unchanged after expansion');
+    a.frames[1].disabled = true; ok(size().w === 100, 'Disabled overflow does not expand output');
+    delete a.frames[1].disabled;
+    sg.clearRect(0, 0, 100, 80); sg.fillStyle = '#10b0f0'; sg.fillRect(0, 0, 100, 80);
+    for (const [x, y, w, h] of [[40, 0, 115, 80], [-40, 0, 115, 80], [0, -50, 100, 90], [0, 20, 100, 100], [-40, -50, 115, 90]]) {
+      a.frames[1] = { scale: 0.5, x, y }; canvas = size();
+      ok(canvas.w === w && canvas.h === h, 'Painted overflow expands correct edge: ' + x + ',' + y);
+    }
+    // Rotated/flipped overflow is compared with an independently large render.
+    a.frames[1] = { scale: 0.5, x: 80, y: -25, rot: 37, flip: true };
+    canvas = size();
+    const actual = model.renderExportFrame(char, a, 1, sources, canvas);
+    const reference = createCanvas(600, 600), rg = reference.getContext('2d');
+    rg.imageSmoothingEnabled = false; rg.setTransform(new DOMMatrix().translateSelf(canvas.ox, canvas.oy));
+    model.drawAnimFrame(rg, char, a, 1, sources);
+    const referencePixels = reference.getContext('2d').getImageData(0, 0, 600, 600).data;
+    ok(referencePixels.every((alpha, i) => i % 4 !== 3 || !alpha || ((i >> 2) % 600 < canvas.w && Math.floor((i >> 2) / 600) < canvas.h)), 'No rotated or flipped pixels fall outside the output canvas');
+    ok(actual.width === canvas.w && actual.height === canvas.h, 'Rotated output uses the expanded canvas without resizing');
+    a.frames[1] = { scale: 0.5, x: 5000 };
+    sg.clearRect(0, 0, 100, 80); ok(size().w === 100, 'Distant fully transparent frame does not create extra padding');
+    a.frames[1] = { scale: 0.5 };
+    const other = model.newAnim('other', 'large-group', { card: 'other-source' });
+    const otherCanvas = createCanvas(200, 160); otherCanvas.getContext('2d').fillRect(0, 0, 200, 160);
+    sources.set('other-source', { kind: 'frames', w: 200, h: 160, frames: [{ canvas: otherCanvas, index: 0 }], ver: 2 });
+    char.anims.push(other);
+    const ctx = { store: { cards: { 'test-source': { type: 'test-source' }, 'other-source': { type: 'test-source' } } }, engine: { result: (id) => ({ outputs: { out: sources.get(id) } }) } };
+    const out = nodeType('character').evaluate(char, {}, ctx).outputs.out;
+    ok(out.w === 100 && out.h === 80, 'Connected output sizes only the selected animation');
+    const zip = await exportCharacterZip({ store: { projectId: null } }, char, sources, 'test');
+    const files = await readZipFile(zip), json = JSON.parse(new TextDecoder().decode(files.get('character.json')));
+    ok(json.frameSize.w === 200 && json.frameSize.h === 160, 'Character package shares maximum canvas across animations');
+    const { api } = await import('/js/core/api.js'); const upload = api.uploadAsset;
+    let baked, serial = 0; api.uploadAsset = async () => 'sizing-test-' + ++serial;
+    try {
+      await bakeAnimation({ store: { projectId: null, cards: { c: { x: 0, y: 0, w: 10, title: 'test' } } },
+        toast: () => ({ remove() {} }), imageCardSize: () => ({ w: 100, h: 80 }), freeSpot: () => ({ x: 0, y: 0 }),
+        addCard: (_type, _x, _y, p) => { baked = p; return 'baked'; },
+      }, 'c', char, a, sources);
+      ok(baked.w === 100 && baked.h === 80, 'Baking uses the selected animation canvas');
+    } finally { api.uploadAsset = upload; }
+  })()`);
+  console.log("输出尺寸浏览器检查通过：缩放后的实际像素、透明溢出裁切、半透明像素扩边、四边扩展、原像素不变、旋转翻转、连线/角色包/烘焙尺寸。");
+  await evaluate(`(async () => {
+    const model = await import('/js/tuner/model.js');
+    const { createCanvas } = await import('/js/core/util.js');
+    const { nodeType } = await import('/js/nodes/registry.js');
+    const { exportSheet } = await import('/js/nodes/exporters.js');
+    // Imported/processed frames share a large canvas even when their contents
+    // differ in size. Shrinking the big drawing must make the other frame win.
+    const small = createCanvas(1000, 1000), large = createCanvas(1000, 1000);
+    small.getContext('2d').fillRect(460, 940, 80, 60);
+    large.getContext('2d').fillRect(300, 600, 400, 400);
+    const source = { kind: 'frames', w: 1000, h: 1000, frames: [{ canvas: small, index: 0 }, { canvas: large, index: 1 }] };
+    const sources = new Map([['padded', source]]);
+    const a = model.newAnim('padded', 'padded', { card: 'padded' });
+    a.frames[1] = { scale: 0.1 };
+    const char = { ...model.defaultCharacter(), anims: [a] };
+    const size = () => model.exportCanvas(char, sources);
+    let canvas = size();
+    ok(canvas.w === 80 && canvas.h === 60, '400x400 frame shrunk to 40x40 cannot enlarge the 80x60 frame');
+    ok(source.w === 1000 && source.frames[1].canvas.width === 1000, 'Shared original canvas stays intact');
+    const actual = model.renderExportFrame(char, a, 0, sources, canvas).getContext('2d').getImageData(0, 0, 80, 60).data;
+    const expected = small.getContext('2d').getImageData(460, 940, 80, 60).data;
+    ok(actual.every((v, i) => v === expected[i]), 'Unscaled frame remains pixel-identical after transparent padding is cropped');
+    const ctx = { store: { cards: { padded: { type: 'test-source' } } }, engine: { result: () => ({ outputs: { out: source } }) } };
+    let out = nodeType('character').evaluate(char, {}, ctx).outputs.out;
+    ok(out.w === 80 && out.h === 60 && out.frames.every((f) => f.canvas.width === 80 && f.canvas.height === 60), 'Node outputs use actual scaled dimensions for every cell');
+    const sheet = await exportSheet(out, { layout: 'row' });
+    ok(sheet.json.frameSize.w === 80 && sheet.json.frameSize.h === 60 && sheet.json.size.w === 160, 'Export sheet and JSON retain scaled output dimensions');
+    a.frames[0] = { scale: 0.25 };
+    canvas = size(); ok(canvas.w === 40 && canvas.h === 40, 'Shrinking a former maximum frame recomputes the winner');
+    a.frames[1].scale = 0.05;
+    canvas = size(); ok(canvas.w === 20 && canvas.h === 20, 'Repeated shrinking never keeps the original canvas minimum');
+    a.frames = { 1: { scale: 0.1 } };
+    a.transform.scale = 0.8; char.transform.scale = 0.5;
+    canvas = size(); ok(canvas.w === 32 && canvas.h === 24, 'Frame, group and character scaling all contribute to output dimensions');
+    out = nodeType('character').evaluate(char, {}, ctx).outputs.out;
+    ok(out.w === 32 && out.h === 24, 'Connected output follows all three scale levels');
+    const autoCanvas = canvas, autoFrame = model.renderExportFrame(char, a, 0, sources, autoCanvas);
+    char.export.canvasMode = 'manual'; char.export.w = 100; char.export.h = 80;
+    const manualCanvas = size(), manualFrame = model.renderExportFrame(char, a, 0, sources, manualCanvas);
+    ok(manualCanvas.w === 100 && manualCanvas.h === 80, 'Manual dimensions add transparent space');
+    const manualPixels = manualFrame.getContext('2d').getImageData(manualCanvas.ox - autoCanvas.ox, manualCanvas.oy - autoCanvas.oy, 32, 24).data;
+    const autoPixels = autoFrame.getContext('2d').getImageData(0, 0, 32, 24).data;
+    ok(manualPixels.every((v, i) => v === autoPixels[i]), 'Manual canvas padding keeps scaled pixels unchanged');
+    char.export.w = 1; char.export.h = 1;
+    canvas = size(); ok(canvas.w === 32 && canvas.h === 24, 'Manual dimensions cannot clip actual pixels');
+    char.export.canvasMode = 'auto'; char.export.w = 100; char.export.h = 80;
+    canvas = size(); ok(canvas.w === 32 && canvas.h === 24, 'Adaptive mode ignores remembered manual dimensions');
+    a.frames[0] = { disabled: true }; a.frames[1] = { disabled: true };
+    canvas = size(); ok(canvas.w === 1 && canvas.h === 1, 'No enabled pixels do not resurrect source dimensions');
+  })()`);
+  console.log("缩小尺寸回归通过：1000×1000 共用画布不撑大输出，400×400 缩至 40×40 后按 40×40 计算，最大帧切换与三级缩放正常。");
   await evaluate(`(async () => {
     const { api } = await import('/js/core/api.js');
     const { putCanvasAsset, getAssetCanvas } = await import('/js/core/assets.js');

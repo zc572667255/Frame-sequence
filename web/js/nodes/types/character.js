@@ -44,7 +44,7 @@ defineNode({
     if (!src) return { info: { waiting: "来源卡片还没有帧" } };
     const tl = timeline(anim, src);
     if (!tl.length) return { info: { waiting: "当前动画没有启用的帧" } };
-    const canvas = exportCanvas(char, srcs);
+    const canvas = exportCanvas(char, srcs, [anim]);
     return {
       outputs: { out: framesValue(tl.map((e) => ({ canvas: renderExportFrame(char, anim, e.i, srcs, canvas), index: e.i, duration: e.duration })), canvas.w, canvas.h, { fps: anim.fps || src.fps || 12 }) },
       info: { text: anim.name + " · " + tl.length + " 帧 · " + canvas.w + "×" + canvas.h },
@@ -103,6 +103,7 @@ defineNode({
       if (!char.anims.length) list.append(el("p", { class: "f-hint" }, "还没有动画。双击卡片打开调帧台添加，或在动画卡片上右键选「加入角色」。"));
     });
     f.hint("连线导出：从右侧「序列帧」端口连接「导出」卡片，可导出当前动画的 GIF / WebP / 序列图 / PNG 包。点击动画组切换输出；保留调帧后的缩放、位置、逐帧时长，并跳过禁用帧。");
+    f.hint("输出按每帧缩放、旋转后的实际像素范围计算，不沿用原图画布尺寸。透明边裁切；有像素超出时增加透明边缘，保留比例和帧间偏移。");
     f.hint("导出：所有动画用同一块画布、同一个原点（脚底），每组一张序列图（或一组 PNG），附 character.json（尺寸、原点、逐帧时长、音效），音频文件一起打包。");
   },
 });

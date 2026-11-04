@@ -1,7 +1,7 @@
 // Character output: a zip package (per-animation sheets or PNG sequences plus
 // character.json and the sound files), or one animation baked back into an
-// animation card. Everything is rendered on the character's shared canvas, so
-// every animation has the same size and the origin at the same pixel.
+// animation card. Packages share one canvas and origin across all animations;
+// baking a single animation uses that animation's own output canvas.
 import { canvasToBlob, createCanvas } from "../core/util.js";
 import { putCanvasAsset, assetUrl } from "../core/assets.js";
 import { makeZip } from "../imaging/zip.js";
@@ -89,7 +89,7 @@ export async function bakeAnimation(app, charCardId, char, anim, sources) {
   const src = sources.get(anim.source && anim.source.card);
   const tl = timeline(anim, src);
   if (!tl.length) { app.toast("这组动画没有可用的帧。", "warn"); return null; }
-  const canvas = exportCanvas(char, sources);
+  const canvas = exportCanvas(char, sources, [anim]);
   const t = app.toast("正在烘焙 " + tl.length + " 帧…");
   const assets = [];
   for (const e of tl) assets.push(await putCanvasAsset(app.store.projectId, renderExportFrame(char, anim, e.i, sources, canvas)));

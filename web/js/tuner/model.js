@@ -16,7 +16,7 @@ export function defaultCharacter() {
     transform: { ...IDENTITY },
     anims: [],
     outputAnim: null,
-    export: { margin: 2, roundTo: 1, format: "sheet", perRow: 0 },
+    export: { canvasMode: "auto", w: 0, h: 0, format: "sheet", perRow: 0 },
   };
 }
 
@@ -139,26 +139,35 @@ function alphaBox(c) {
   return x1 < 0 ? null : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
 }
 
-// generous world-space box a frame could cover, before measuring pixels
-function roughBox(char, anim, i, sources) {
+// Bounds of a full frame (including transparent pixels), or a source-space rect.
+function transformedFrameBox(char, anim, i, sources, rect) {
   const src = sources.get(anim.source && anim.source.card);
-  if (!src) return null;
+  const frame = src && src.frames[i];
+  if (!frame) return null;
+  const r = rect || { x: 0, y: 0, w: frame.canvas.width, h: frame.canvas.height };
   const pts = [];
-  const add = (m, w, h, p) => {
-    for (const [x, y] of [[0, 0], [w, 0], [0, h], [w, h]]) pts.push(m.transformPoint(new DOMPoint(x - p.x, y - p.y)));
-  };
-  const A = animMatrix(char, anim);
-  add(A.multiply(toMatrix(frameTransform(anim, i))), src.w, src.h, pivotOf(anim, src));
+  const m = animMatrix(char, anim).multiply(toMatrix(frameTransform(anim, i))), p = pivotOf(anim, src);
+  for (const [x, y] of [[r.x, r.y], [r.x + r.w, r.y], [r.x, r.y + r.h], [r.x + r.w, r.y + r.h]]) {
+    pts.push(m.transformPoint(new DOMPoint(x - p.x, y - p.y)));
+  }
   const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
-  return { x: Math.floor(Math.min(...xs)) - 1, y: Math.floor(Math.min(...ys)) - 1, x1: Math.ceil(Math.max(...xs)) + 1, y1: Math.ceil(Math.max(...ys)) + 1 };
+  // Ignore floating-point noise from rotations such as 90 degrees.
+  const x = Math.floor(Math.min(...xs) + 1e-8), y = Math.floor(Math.min(...ys) + 1e-8);
+  return { x, y, w: Math.ceil(Math.max(...xs) - 1e-8) - x, h: Math.ceil(Math.max(...ys) - 1e-8) - y };
 }
 
-// exact world-space box of the painted pixels of one frame
+// World-space painted bounds; very large transforms use a conservative box.
 export function frameBounds(char, anim, i, sources) {
-  const r = roughBox(char, anim, i, sources);
-  if (!r) return null;
-  const w = Math.min(4096, r.x1 - r.x), h = Math.min(4096, r.y1 - r.y);
+  const full = transformedFrameBox(char, anim, i, sources);
+  if (!full) return null;
+  const r = { x: full.x - 1, y: full.y - 1 };
+  const w = full.w + 2, h = full.h + 2;
   if (w <= 0 || h <= 0) return null;
+  // Avoid a huge scratch canvas without silently losing pixels beyond 4096.
+  if (w > 4096 || h > 4096) {
+    const sourceBox = alphaBox(sources.get(anim.source.card).frames[i].canvas);
+    return sourceBox ? transformedFrameBox(char, anim, i, sources, sourceBox) : null;
+  }
   const c = createCanvas(w, h);
   const g = c.getContext("2d", { willReadFrequently: true });
   g.imageSmoothingEnabled = false;
@@ -176,22 +185,30 @@ export function unionBox(boxes) {
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
-// Shared export canvas for the whole character: every visible pixel of every
-// enabled frame of every animation, plus margin, optionally rounded up.
-// Returns { w, h, ox, oy } — the canvas size and where the origin sits on it.
+// Measure painted pixels AFTER every authored transform. Source frames often
+// share a padded canvas, so its original size cannot determine the output size.
+// Their union preserves relative offsets, crops transparent overflow and adds
+// space only where transformed pixels need it. Export never scales to fit.
 export function exportCanvas(char, sources, anims) {
   const boxes = [];
   for (const a of anims || char.anims) {
     const src = sources.get(a.source && a.source.card);
-    for (const e of timeline(a, src)) boxes.push(frameBounds(char, a, e.i, sources));
+    for (const e of timeline(a, src)) {
+      boxes.push(frameBounds(char, a, e.i, sources));
+    }
   }
-  const U = unionBox(boxes) || { x: -16, y: -32, w: 32, h: 32 };
-  const m = Math.max(0, char.export.margin | 0), n = Math.max(1, char.export.roundTo | 0);
-  const w0 = U.w + m * 2, h0 = U.h + m * 2;
-  const w = Math.ceil(w0 / n) * n, h = Math.ceil(h0 / n) * n;
-  // rounding slack goes left/right evenly and on top, so the feet keep their place
-  const ox = -U.x + m + Math.floor((w - w0) / 2), oy = -U.y + m + (h - h0);
-  return { w, h, ox, oy, content: U };
+  const content = unionBox(boxes) || { x: 0, y: 0, w: 1, h: 1 };
+  let U = content;
+  if (char.export?.canvasMode === "manual") {
+    const width = Number(char.export.w), height = Number(char.export.h);
+    const w = Number.isFinite(width) && width > 0 ? Math.max(1, Math.min(8192, Math.round(width))) : content.w;
+    const h = Number.isFinite(height) && height > 0 ? Math.max(1, Math.min(8192, Math.round(height))) : content.h;
+    // Manual dimensions add transparent space around the bottom-centred image.
+    // Painted overflow still expands the canvas, preserving every tuned pixel.
+    const base = { x: content.x - Math.floor((w - content.w) / 2), y: content.y + content.h - h, w, h };
+    U = unionBox([content, base]);
+  }
+  return { w: U.w, h: U.h, ox: -U.x, oy: -U.y, content };
 }
 
 export function renderExportFrame(char, anim, i, sources, canvas) {
