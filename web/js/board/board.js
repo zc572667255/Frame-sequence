@@ -8,7 +8,7 @@
 import { Emitter } from "../core/events.js";
 import { el, uid, clamp, setPath } from "../core/util.js";
 import { nodeType, compatible } from "../nodes/registry.js";
-import { entriesFromDrop, filesFromEntries } from "../ui/importer.js";
+import { entriesFromDrop, filesFromEntries, isImageFile } from "../ui/importer.js";
 
 export const HEAD_H = 34;
 const PORT_Y0 = HEAD_H + 20;
@@ -452,6 +452,13 @@ export class Board extends Emitter {
   // is there a path a -> ... -> b along edges? (connecting b -> a would close a cycle)
   reaches(a, b) {
     const edges = Object.values(this.store.edges);
+    const dependents = new Map();
+    for (const card of Object.values(this.store.cards)) {
+      for (const ref of this.engine.refsOf(card)) {
+        if (!dependents.has(ref)) dependents.set(ref, []);
+        dependents.get(ref).push(card.id);
+      }
+    }
     const seen = new Set();
     const stack = [a];
     while (stack.length) {
@@ -460,6 +467,7 @@ export class Board extends Emitter {
       if (seen.has(n)) continue;
       seen.add(n);
       for (const e of edges) if (e.from.card === n) stack.push(e.to.card);
+      for (const id of dependents.get(n) || []) stack.push(id);
     }
     return false;
   }
@@ -698,6 +706,12 @@ export class Board extends Emitter {
   onDrop(e) {
     this.root.classList.remove("drop-target");
     const at = this.toWorld(e.clientX, e.clientY);
+    const targetId = e.target.closest && e.target.closest(".card")?.dataset.id;
+    const appendTo = this.store.cards[targetId]?.type === "animation" ? targetId : null;
+    const importFiles = (files, opts) => {
+      if (appendTo && files.length && files.every(isImageFile)) this.app.appendAnimationFrames(appendTo, files);
+      else this.app.addFiles(files, at, opts);
+    };
     const nodeTypeName = e.dataTransfer.getData("application/x-guangtai-node");
     if (nodeTypeName) {
       e.preventDefault();
@@ -709,14 +723,14 @@ export class Board extends Emitter {
     if (entries) {
       e.preventDefault();
       filesFromEntries(entries)
-        .then((files) => this.app.addFiles(files, at, { folder: true }))
+        .then((files) => importFiles(files, { folder: true }))
         .catch((err) => this.app.toast("读取文件夹失败：" + err.message, "error"));
       return;
     }
     const files = [...(e.dataTransfer.files || [])];
     if (files.length) {
       e.preventDefault();
-      this.app.addFiles(files, at);
+      importFiles(files);
     }
   }
 

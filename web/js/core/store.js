@@ -167,6 +167,7 @@ export function migrate(doc) {
     if (c.type === "vfx" && isRemoteKind(c.params.kind)) c.type = "remote";
     if (c.type === "remote" && c.params.flightPath == null) c.params.flightPath = "sprite";
     c.ui = c.ui || {};
+    if (c.type === "character" && !("outputAnim" in c.params)) c.params.outputAnim = c.ui.current || null;
   }
   return doc;
 }

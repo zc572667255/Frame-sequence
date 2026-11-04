@@ -5,13 +5,9 @@ import { defineNode } from "../registry.js";
 import { makeStage, makePlayer, toolButton } from "../view.js";
 import { framesValue } from "../data.js";
 import { el, downloadBlob, fmtBytes } from "../../core/util.js";
-import { defaultCharacter, normalizeCharacter, timeline, exportCanvas, renderExportFrame } from "../../tuner/model.js";
-import { resolveSources, cardTitle } from "../../tuner/tuner.js";
+import { defaultCharacter, normalizeCharacter, currentAnimation, resolveSources, timeline, exportCanvas, renderExportFrame } from "../../tuner/model.js";
+import { cardTitle } from "../../tuner/tuner.js";
 import { exportCharacterZip } from "../../tuner/export.js";
-
-function sourceVersions(srcs) {
-  return [...srcs].map(([id, v]) => id + ":" + (v ? v.ver : "-")).join(",");
-}
 
 async function exportZip(ctx) {
   const char = normalizeCharacter(ctx.params());
@@ -35,10 +31,25 @@ defineNode({
   category: "输出",
   icon: "♞",
   help: "把多组动画（待机、跑、攻击…）对齐到同一个原点，逐帧调偏移 / 缩放 / 旋转 / 时长、绑定音效，"
-    + "再导出成共用画布和原点的角色包。双击打开调帧台。刀光等特效在像素编辑器里用「拖尾」笔画。",
+    + "再导出成共用画布和原点的角色包。右侧「序列帧」输出当前动画，可连接预览或导出卡片。双击打开调帧台。",
+  outputs: [{ name: "out", label: "序列帧", kind: "frames" }],
   size: { w: 280, h: 320 },
   defaults: () => defaultCharacter(),
-  persist: ["current"],
+  refs: (p) => [...new Set((p.anims || []).map((a) => a.source && a.source.card).filter(Boolean))],
+
+  evaluate(p, _inputs, ctx) {
+    const char = normalizeCharacter(p), anim = currentAnimation(char);
+    if (!anim) return { info: { waiting: "双击打开调帧台添加动画" } };
+    const srcs = resolveSources(ctx, char), src = srcs.get(anim.source && anim.source.card);
+    if (!src) return { info: { waiting: "来源卡片还没有帧" } };
+    const tl = timeline(anim, src);
+    if (!tl.length) return { info: { waiting: "当前动画没有启用的帧" } };
+    const canvas = exportCanvas(char, srcs);
+    return {
+      outputs: { out: framesValue(tl.map((e) => ({ canvas: renderExportFrame(char, anim, e.i, srcs, canvas), index: e.i, duration: e.duration })), canvas.w, canvas.h, { fps: anim.fps || src.fps || 12 }) },
+      info: { text: anim.name + " · " + tl.length + " 帧 · " + canvas.w + "×" + canvas.h },
+    };
+  },
 
   mount(ctx) {
     const stage = makeStage({ fit: "integer" });
@@ -46,43 +57,25 @@ defineNode({
     const pick = (d) => {
       const anims = ctx.params().anims || [];
       if (!anims.length) return;
-      const k = Math.max(0, anims.findIndex((a) => a.id === ctx.local.current));
-      ctx.setLocal({ current: anims[(k + d + anims.length) % anims.length].id });
+      const k = Math.max(0, anims.findIndex((a) => a.id === ctx.params().outputAnim));
+      ctx.set({ outputAnim: anims[(k + d + anims.length) % anims.length].id });
     };
     const bar = el("div", { class: "transport" },
       toolButton("◀", "上一组动画", () => pick(-1)), label, toolButton("▶", "下一组动画", () => pick(1)),
       el("span", { class: "spacer" }),
       toolButton("调帧台", "打开调帧台", () => ctx.app.openTuner(ctx.id)));
     ctx.body.append(stage.el, bar);
-    let cur = null;
-    const player = makePlayer(stage, { fps: () => (cur && (cur.fps || 12)) || 12, emptyText: "双击打开调帧台添加动画" });
-
-    // re-render when any animation this character uses gets a new result
-    const off = ctx.engine.on("result", (id) => {
-      const p = ctx.params();
-      if ((p.anims || []).some((a) => a.source && a.source.card === id)) view.render();
-    });
-
-    let lastKey = null;
+    const player = makePlayer(stage, { fps: () => (ctx.output("out") || {}).fps || 12, emptyText: "双击打开调帧台添加动画" });
     const view = {
       render() {
         const char = normalizeCharacter(ctx.params());
-        const srcs = resolveSources(ctx.app, char);
-        const anim = char.anims.find((a) => a.id === ctx.local.current) || char.anims[0];
-        cur = anim || null;
+        const anim = currentAnimation(char);
         label.textContent = anim ? anim.name + "（" + (char.anims.indexOf(anim) + 1) + "/" + char.anims.length + "）" : "还没有动画";
-        const key = JSON.stringify(ctx.params()) + "|" + sourceVersions(srcs) + "|" + (anim && anim.id);
-        if (key === lastKey) return;
-        lastKey = key;
-        if (!anim) { player.setValue(null); return; }
-        const src = srcs.get(anim.source && anim.source.card);
-        const tl = timeline(anim, src);
-        if (!tl.length) { player.setValue(null); stage.message("来源卡片还没有帧"); return; }
-        // exactly what the export will contain: shared canvas, origin, durations
-        const canvas = exportCanvas(char, srcs);
-        player.setValue(framesValue(tl.map((e) => ({ canvas: renderExportFrame(char, anim, e.i, srcs, canvas), index: e.i, duration: e.duration })), canvas.w, canvas.h));
+        player.setValue(ctx.output("out"));
+        const result = ctx.result();
+        if (!ctx.output("out") && result && result.info && result.info.waiting) stage.message(result.info.waiting);
       },
-      destroy() { off(); player.destroy(); },
+      destroy() { player.destroy(); },
     };
     return view;
   },
@@ -101,14 +94,15 @@ defineNode({
       list.replaceChildren(...char.anims.map((a) => {
         const src = srcs.get(a.source && a.source.card);
         const extras = Object.keys(a.sounds || {}).length ? Object.keys(a.sounds).length + " 处音效" : "";
-        const row = el("div", { class: "tn-row" + (a.id === ctx.local.current ? " on" : ""), title: "来源：" + cardTitle(ctx.app, a.source && a.source.card) },
+        const row = el("div", { class: "tn-row" + (a === currentAnimation(char) ? " on" : ""), title: "来源：" + cardTitle(ctx.app, a.source && a.source.card) },
           el("span", { class: "tn-row-name" }, a.name),
           el("span", { class: "tn-row-meta mono" }, (src ? timeline(a, src).length + " 帧" : "无来源") + (extras ? " · " + extras : "")));
-        row.onclick = () => ctx.setLocal({ current: a.id });
+        row.onclick = () => ctx.set({ outputAnim: a.id });
         return row;
       }));
       if (!char.anims.length) list.append(el("p", { class: "f-hint" }, "还没有动画。双击卡片打开调帧台添加，或在动画卡片上右键选「加入角色」。"));
     });
+    f.hint("连线导出：从右侧「序列帧」端口连接「导出」卡片，可导出当前动画的 GIF / WebP / 序列图 / PNG 包。点击动画组切换输出；保留调帧后的缩放、位置、逐帧时长，并跳过禁用帧。");
     f.hint("导出：所有动画用同一块画布、同一个原点（脚底），每组一张序列图（或一组 PNG），附 character.json（尺寸、原点、逐帧时长、音效），音频文件一起打包。");
   },
 });

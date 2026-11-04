@@ -2,10 +2,10 @@
 // can be edited in the pixel editor and survive independently of the pipeline that
 // produced them. The card outputs every frame with its visible layers composited.
 import { defineNode } from "../registry.js";
-import { makeStage, makePlayer, makeFilmstrip } from "../view.js";
+import { makeStage, makePlayer, makeFilmstrip, toolButton } from "../view.js";
 import { framesValue } from "../data.js";
 import { normalizeAnim } from "../../editor/doc.js";
-import { createCanvas } from "../../core/util.js";
+import { createCanvas, el } from "../../core/util.js";
 import { loadTextures, drawFrameStack } from "../../trails/composite.js";
 import { prefetchVfxLayer, layerBBox } from "../../vfx/layer.js";
 import { prefetchStrokeLayer } from "../../trails/stroke.js";
@@ -55,7 +55,8 @@ defineNode({
 
   mount(ctx) {
     const stage = makeStage({ fit: "integer" });
-    ctx.body.append(stage.el);
+    ctx.body.append(stage.el, el("div", { class: "transport" },
+      toolButton("＋ 添加帧图片", "选择一张或多张图片，追加到这张动画卡片", () => ctx.app.appendAnimationFrames(ctx.id))));
     const player = makePlayer(stage, { fps: () => ctx.params().fps || 12, emptyText: "双击打开像素编辑器" });
     return {
       render() { player.setValue(ctx.output("out")); },
@@ -72,6 +73,7 @@ defineNode({
       return [["尺寸", n.w + " × " + n.h], ["帧数", String(n.frames.length)], ["图层", String(n.layers.length)], ["色板", n.palette.length + " 色"]];
     });
     f.buttons(["打开像素编辑器", () => ctx.app.openEditor(ctx.id), { primary: true }],
+      ["添加帧图片…", () => ctx.app.appendAnimationFrames(ctx.id)],
       ["分层导出（Godot）…", () => openLayeredExport(ctx.app, ctx.id), { title: "每个图层单独导出成序列图，并生成叠好的 Godot 4 场景；攻击拖尾可以导出成运行时脚本" }]);
     const strip = makeFilmstrip();
     let key = null;
@@ -82,6 +84,6 @@ defineNode({
       key = v.ver;
       strip.set(v.frames.map((fr, i) => ({ src: fr.canvas, label: i + 1 + (fr.duration ? " · " + fr.duration + "ms" : "") })));
     });
-    f.hint("双击卡片也能打开编辑器。新建的空动画默认 32×32，可以在编辑器里用「画布尺寸」修改。");
+    f.hint("「添加帧图片」可把一张或多张图片追加到原动画，也可直接拖图片到卡片上；按文件名数字排序，底部居中，超出画布时等比缩小。双击进入编辑器可在当前帧后插入图片。空动画默认 32×32，可用「画布尺寸」修改。");
   },
 });

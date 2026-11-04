@@ -13,8 +13,7 @@ import { showMenu, showAddMenu, closeMenu } from "./ui/menu.js";
 import { openModal } from "./ui/modal.js";
 import { dockSplit } from "./ui/dock.js";
 import { TRIM, trimBlank } from "./nodes/types/reframe.js";
-import { newAnim, normalizeCharacter, calibrate } from "./tuner/model.js";
-import { resolveSources } from "./tuner/tuner.js";
+import { newAnim, normalizeCharacter, calibrate, resolveSources } from "./tuner/model.js";
 import { parseFrameJson, framesFromSpec, readZipFile, findFrameJson, importCharacterPackage } from "./tuner/import.js";
 import { isImageFile, naturalSort, decodeFiles, decodeAnimated, importDialog, normalizeFrames, sheetDialog } from "./ui/importer.js";
 import { asFrames } from "./nodes/data.js";
@@ -395,6 +394,7 @@ class App {
       const input = el("input", { type: "file", accept, multiple: !!opts.multiple });
       if (opts.directory) input.webkitdirectory = true;
       input.addEventListener("change", () => resolve([...(input.files || [])]));
+      input.addEventListener("cancel", () => resolve([]));
       input.click();
     });
   }
@@ -494,6 +494,19 @@ class App {
       progress.remove();
       this.toast("导入失败：" + err.message, "error");
     }
+  }
+
+  async appendAnimationFrames(id, files) {
+    files = files || await this.pickFiles("image/*", { multiple: true });
+    if (!files.length) return;
+    const progress = this.toast("正在添加帧图片…");
+    try {
+      const { appendFrameImages } = await import("./editor/import.js");
+      const count = await appendFrameImages(this, id, files);
+      if (count) this.toast("已向原动画末尾添加 " + count + " 帧，可撤销。图片按原画布底部居中放置，超出时等比缩小。", "ok");
+      else this.toast("没有添加帧，请选择图片并保持原项目打开。", "warn");
+    } catch (err) { this.toast("添加帧失败：" + err.message, "error"); }
+    finally { progress.remove(); }
   }
 
   async pickAndUploadImage() {
@@ -691,7 +704,9 @@ class App {
     else if (this.canBake(id)) items.push({ label: "打开像素编辑器", hint: "创建可编辑副本", action: () => this.openEditor(id) });
     if (card.type === "animation" || this.canBake(id)) items.push({ label: "导出 PNG 图片", hint: "序列帧取首帧", action: () => this.exportImage(id) });
     if (this.canBake(id)) items.push({ label: "烘焙为动画卡片", action: () => this.bake(id) });
-    if (card.type === "animation") items.push({ label: "分层导出（Godot）…", action: () => import("./godot/layers.js").then((m) => m.openLayeredExport(this, id)) });
+    if (card.type === "animation") items.push(
+      { label: "添加帧图片…", hint: "追加到原动画，可多选", action: () => this.appendAnimationFrames(id) },
+      { label: "分层导出（Godot）…", action: () => import("./godot/layers.js").then((m) => m.openLayeredExport(this, id)) });
     if (card.type === "animation" || this.canBake(id)) {
       const chars = Object.values(this.store.cards).filter((c) => c.type === "character");
       items.push({ label: "加入角色…", action: () => {
@@ -796,6 +811,7 @@ class App {
       const at = this.freeSpot(src.x + src.w + 80, src.y, def.size.w, def.size.h);
       charId = this.addCard("character", at.x, at.y, null, { title: "角色", select: false });
     }
+    if (this.board.reaches(charId, srcId)) { this.toast("不能引用自己或依赖本角色的卡片。", "warn"); return; }
     const name = src.title || (nodeType(src.type) || {}).title || "动画";
     const a = newAnim(uid("A"), name, { card: srcId });
     const char = normalizeCharacter(this.store.cards[charId].params);

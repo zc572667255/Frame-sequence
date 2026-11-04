@@ -14,7 +14,7 @@ import { openModal } from "../ui/modal.js";
 import { nodeType } from "../nodes/registry.js";
 import {
   IDENTITY, normalizeCharacter, newAnim, toMatrix, animMatrix, frameTransform, timeline,
-  drawAnimFrame, exportCanvas, calibrate,
+  drawAnimFrame, exportCanvas, calibrate, pivotOf, frameResizeState, resizeFrameTransform, resolveSources,
 } from "./model.js";
 import { exportCharacterZip, bakeAnimation } from "./export.js";
 import { SHEET_LAYOUTS } from "../nodes/exporters.js";
@@ -25,17 +25,11 @@ const TOOLS = [
   { id: "char", label: "拖角色", key: "3", tip: "拖动移动整个角色（所有动画）" },
 ];
 
-export function resolveSources(app, p) {
-  const m = new Map();
-  const add = (s) => { if (s && s.card && !m.has(s.card)) m.set(s.card, app.framesToBake(s.card)); };
-  for (const a of p.anims || []) {
-    add(a.source);
-  }
-  return m;
-}
+export { resolveSources } from "./model.js";
 
-export function frameSourceCards(app) {
-  return Object.values(app.store.cards).filter((c) => c.type === "animation" || app.canBake(c.id));
+export function frameSourceCards(app, characterId) {
+  return Object.values(app.store.cards).filter((c) => (c.type === "animation" || app.canBake(c.id))
+    && (!characterId || !app.board.reaches(characterId, c.id)));
 }
 
 export function cardTitle(app, id) {
@@ -54,8 +48,7 @@ class Tuner {
     this.app = app;
     this.store = app.store;
     this.id = id;
-    const ui = (this.card && this.card.ui) || {};
-    this.curId = ui.current || null;
+    this.curId = this.p.outputAnim || null;
     this.fi = 0;
     this.tool = "frame";
     this.zoom = 3; this.panX = 0; this.panY = 0;
@@ -101,7 +94,7 @@ class Tuner {
     document.body.append(this.root);
     this.root.focus();
     this.offChange = this.store.on("change", () => this.refresh());
-    this.offReset = this.store.on("reset", () => { if (!this.card) { this.close(); return; } this.refresh(true); });
+    this.offReset = this.store.on("reset", () => { if (!this.card) { this.close(); return; } this.curId = this.p.outputAnim; this.refresh(true); });
     this.offResult = this.app.engine.on("result", (id) => {
       const srcs = this.sources();
       if (srcs.has(id)) this.refresh();
@@ -114,6 +107,8 @@ class Tuner {
 
   close() {
     this.playing = false;
+    clearTimeout(this.boundsTimer); clearTimeout(this.thumbTimer);
+    cancelAnimationFrame(this.raf);
     this.offChange(); this.offReset(); this.offResult();
     this.ro.disconnect();
     this.root.remove();
@@ -121,11 +116,9 @@ class Tuner {
   }
 
   remember() {
-    const c = this.card;
-    if (!c) return;
-    c.ui = c.ui || {};
+    if (!this.card) return;
     const a = this.anim();
-    if (a && c.ui.current !== a.id) { c.ui.current = a.id; this.store.scheduleSave(); }
+    if (a && this.p.outputAnim !== a.id) this.set((p) => { p.outputAnim = a.id; });
   }
 
   // ---------- DOM ----------
@@ -163,6 +156,11 @@ class Tuner {
       b.dataset.tool = t.id;
       this.toolBar.append(b);
     }
+    this.frameScaleEl = el("span", { class: "mono", title: "当前单帧的缩放倍数" });
+    this.toolBar.append(
+      el("button", { class: "tool-btn", title: "缩小当前帧（[）", onclick: () => this.scaleFrame(-0.01) }, "本帧 −"),
+      this.frameScaleEl,
+      el("button", { class: "tool-btn", title: "放大当前帧（]）", onclick: () => this.scaleFrame(0.01) }, "本帧 ＋"));
     const onionBox = el("input", { type: "checkbox", checked: this.onion, onchange: () => { this.onion = onionBox.checked; this.requestRender(); } });
     this.toolBar.append(el("label", { class: "tn-check" }, onionBox, "上一帧虚影"));
     this.stage = el("div", { class: "ed-stage tn-stage" }, this.canvas, this.toolBar, this.statusEl);
@@ -195,6 +193,7 @@ class Tuner {
   // ---------- refresh ----------
   refresh(full) {
     if (!this.card) return;
+    if (this.p.anims.some((a) => a.id === this.p.outputAnim)) this.curId = this.p.outputAnim;
     const a = this.anim();
     if (a && this.curId !== a.id) this.curId = a.id;
     const src = this.src();
@@ -206,6 +205,7 @@ class Tuner {
     this.buildStrip();
     this.scheduleBounds();
     this.syncTools();
+    this.updateStatus();
     this.requestRender();
   }
 
@@ -274,12 +274,12 @@ class Tuner {
     };
     const transform = (f) => {
       f.pair((s) => s.number("X", "x", { integer: false, step: 1 }), (s) => s.number("Y", "y", { integer: false, step: 1 }));
-      f.pair((s) => s.number("缩放", "scale", { min: 0.05, max: 20, step: 0.05, integer: false }), (s) => s.number("旋转 °", "rot", { min: -360, max: 360, step: 1, integer: false }));
+      f.pair((s) => s.number("缩放", "scale", { min: 0.05, max: 20, step: 0.01, integer: false, format: (v) => Number(v).toFixed(2) }), (s) => s.number("旋转 °", "rot", { min: -360, max: 360, step: 1, integer: false }));
       f.check("水平翻转", "flip");
     };
 
     // frame
-    const ff = this.formFor(section("第 " + (fi + 1) + " 帧", "只影响这一帧，叠加在整组和角色之上。"),
+    const ff = this.formFor(section("第 " + (fi + 1) + " 帧", "只影响这一帧。选「拖单帧」后拖动边缘或四角等比缩放；缩放精确到 0.01。"),
       (pp) => { const x = findA(pp); return x ? { ...IDENTITY, ...(x.frames[fi] || {}) } : null; },
       (pp) => { const x = findA(pp); if (!x) return null; x.frames[fi] = x.frames[fi] || {}; return x.frames[fi]; }, "frame" + fi);
     transform(ff);
@@ -301,7 +301,7 @@ class Tuner {
     // animation group
     const fa = this.formFor(section("动画组 · " + a.name, "整组所有帧一起变换。"), findA, findA, "anim");
     fa.pair((s) => s.number("X", "transform.x", { integer: false }), (s) => s.number("Y", "transform.y", { integer: false }));
-    fa.pair((s) => s.number("缩放", "transform.scale", { min: 0.05, max: 20, step: 0.05, integer: false }), (s) => s.number("旋转 °", "transform.rot", { min: -360, max: 360, integer: false }));
+    fa.pair((s) => s.number("缩放", "transform.scale", { min: 0.05, max: 20, step: 0.01, integer: false, format: (v) => Number(v).toFixed(2) }), (s) => s.number("旋转 °", "transform.rot", { min: -360, max: 360, integer: false }));
     fa.check("水平翻转", "transform.flip");
     fa.pair(
       (s) => s.number("帧率（空 = 跟随来源）", "fps", { min: 1, max: 60, allowEmpty: true, placeholder: String((src && src.fps) || 12) }),
@@ -333,12 +333,13 @@ class Tuner {
     fe.select("格式", "format", [["sheet", "序列图 + JSON"], ["png", "PNG 序列"]]);
     fe.pair((s) => s.select("序列图排列", "layout", SHEET_LAYOUTS), (s) => s.number("列数", "perRow", { min: 1, extra: { layout: "cols" } }));
     fe.hint("每个动画一张序列图。「一行」「一列」「接近正方形」按各动画的帧数自动排；「自定列数」所有动画都用同一个列数。");
+    fe.hint("当前动画也会从角色卡片右侧的「序列帧」端口输出，关闭调帧台后可连到「导出」卡片。");
   }
 
   // ---------- adding things ----------
   addAnimMenu(e, replaceId) {
     const r = e.currentTarget && e.currentTarget.getBoundingClientRect ? e.currentTarget.getBoundingClientRect() : { left: e.clientX, bottom: e.clientY };
-    const cards = frameSourceCards(this.app);
+    const cards = frameSourceCards(this.app, this.id);
     if (!cards.length) { this.app.toast("画布上还没有能输出序列帧的卡片。先导入或烘焙一个动画。", "warn"); return; }
     showMenu(r.left, r.bottom + 4, [
       { heading: replaceId ? "换成哪张卡片的帧" : "选一张卡片作为这组动画的来源" },
@@ -351,6 +352,7 @@ class Tuner {
   }
 
   addAnim(cardId) {
+    if (this.app.board.reaches(this.id, cardId)) { this.app.toast("不能引用自己或依赖本角色的卡片。", "warn"); return; }
     const a = newAnim(uid("A"), cardTitle(this.app, cardId), { card: cardId });
     const pos = calibrate(normalizeCharacter(this.p), a, resolveSources(this.app, { anims: [a] }));
     if (pos) { a.transform.x = pos.x; a.transform.y = pos.y; }
@@ -537,6 +539,53 @@ class Tuner {
 
   syncTools() {
     for (const b of this.toolBar.querySelectorAll("[data-tool]")) b.classList.toggle("active", b.dataset.tool === this.tool);
+    this.requestRender();
+  }
+
+  scaleFrame(delta) {
+    const a = this.anim(), fi = this.fi;
+    if (!a || !this.src()) return;
+    if (this.playing) this.togglePlay();
+    this.set((p) => {
+      const anim = p.anims.find((x) => x.id === a.id);
+      const frame = anim.frames[fi] = anim.frames[fi] || {};
+      frame.scale = round2(clamp((frame.scale ?? 1) + delta, 0.05, 20));
+    }, "scale:" + a.id + ":" + fi);
+  }
+
+  frameBox() {
+    const a = this.anim(), src = this.src();
+    if (this.tool !== "frame" || this.playing || !a || !src || !src.frames[this.fi]) return null;
+    const p = pivotOf(a, src);
+    const matrix = this.view().multiply(animMatrix(normalizeCharacter(this.p), a)).multiply(toMatrix(frameTransform(a, this.fi)));
+    const point = (x, y) => matrix.transformPoint(new DOMPoint(x * src.w - p.x, y * src.h - p.y));
+    return { point, handles: [[0, 0], [1, 0], [1, 1], [0, 1], [0.5, 0], [1, 0.5], [0.5, 1], [0, 0.5]] };
+  }
+
+  resizeHit(w) {
+    const box = this.frameBox();
+    if (!box) return null;
+    // Corners first, then the entire four edges (not only their midpoint handles).
+    for (const [hx, hy] of box.handles.slice(0, 4)) {
+      const p = box.point(hx, hy);
+      if (Math.hypot(w.sx - p.x, w.sy - p.y) <= 9) return { hx, hy };
+    }
+    for (const [hx, hy] of box.handles.slice(4)) {
+      const a = box.point(hx === 0.5 ? 0 : hx, hy === 0.5 ? 0 : hy);
+      const b = box.point(hx === 0.5 ? 1 : hx, hy === 0.5 ? 1 : hy);
+      const dx = b.x - a.x, dy = b.y - a.y, length2 = dx * dx + dy * dy;
+      const t = length2 ? clamp(((w.sx - a.x) * dx + (w.sy - a.y) * dy) / length2, 0, 1) : 0;
+      if (Math.hypot(w.sx - a.x - t * dx, w.sy - a.y - t * dy) <= 6) return { hx, hy };
+    }
+    return null;
+  }
+
+  resizeCursor(hit) {
+    const box = this.frameBox();
+    if (!box || !hit) return "";
+    const a = box.point(hit.hx, hit.hy), b = box.point(1 - hit.hx, 1 - hit.hy);
+    const angle = (Math.atan2(a.y - b.y, a.x - b.x) * 180 / Math.PI + 180) % 180;
+    return ["ew-resize", "nwse-resize", "ns-resize", "nesw-resize", "ew-resize"][Math.round(angle / 45)];
   }
 
   view() {
@@ -596,7 +645,13 @@ class Tuner {
       if (this.playing) this.togglePlay();
       c.setPointerCapture(e.pointerId);
       const w = this.toWorld(e);
-      this.drag = { type: "move", last: w, n: Math.random() };
+      const hit = this.resizeHit(w), a = this.anim();
+      if (hit) {
+        const inverse = animMatrix(normalizeCharacter(this.p), a).inverse();
+        const pointer = inverse.transformPoint(w);
+        this.drag = { type: "resize", aid: a.id, fi: this.fi, inverse, state: frameResizeState(a, this.fi, this.src(), hit.hx, hit.hy, pointer), n: Math.random() };
+        c.style.cursor = this.resizeCursor(hit);
+      } else this.drag = { type: "move", last: w, n: Math.random() };
     });
     c.addEventListener("pointermove", (e) => {
       const d = this.drag;
@@ -604,6 +659,12 @@ class Tuner {
       if (d && d.type === "pan") {
         this.panX = d.px + e.clientX - d.sx;
         this.panY = d.py + e.clientY - d.sy;
+      } else if (d && d.type === "resize") {
+        const transform = resizeFrameTransform(d.state, d.inverse.transformPoint(this.toWorld(e)));
+        this.set((p) => {
+          const a = p.anims.find((x) => x.id === d.aid);
+          if (a) Object.assign(a.frames[d.fi] = a.frames[d.fi] || {}, transform);
+        }, "resize:" + d.n);
       } else if (d && d.type === "move") {
         const w = this.toWorld(e);
         const dx = w.x - d.last.x, dy = w.y - d.last.y;
@@ -614,14 +675,16 @@ class Tuner {
           this.nudge(ix, iy, "drag" + d.n);
         }
       }
+      if (!d) c.style.cursor = this.space ? "grab" : this.resizeCursor(this.resizeHit(this.hover));
       this.updateStatus();
       this.requestRender();
     });
-    const up = () => { this.drag = null; };
+    const up = () => { this.drag = null; c.style.cursor = ""; };
     c.addEventListener("pointerup", up);
     c.addEventListener("pointercancel", up);
     this.stage.addEventListener("wheel", (e) => {
       e.preventDefault();
+      if (!e.deltaY || this.drag) return;
       const w = this.toWorld(e);
       const z = clamp(this.zoom * (e.deltaY < 0 ? 1.25 : 0.8), 0.25, 32);
       this.panX = w.sx - w.x * z;
@@ -638,6 +701,7 @@ class Tuner {
     if (h) parts.push("世界坐标 " + Math.floor(h.x) + ", " + Math.floor(h.y));
     parts.push(Math.round(this.zoom * 100) + "%");
     const a = this.anim(), ft = a && a.frames[this.fi];
+    this.frameScaleEl.textContent = Number((ft && ft.scale) ?? 1).toFixed(2) + "×";
     if (ft && (ft.x || ft.y)) parts.push("本帧偏移 " + (ft.x || 0) + ", " + (ft.y || 0));
     this.statusEl.textContent = parts.join("  ·  ");
   }
@@ -662,6 +726,8 @@ class Tuner {
     else if (k === ".") this.step(1);
     else if (k === "enter") this.togglePlay();
     else if (k === "f") this.fit();
+    else if (k === "[") this.scaleFrame(-0.01);
+    else if (k === "]") this.scaleFrame(0.01);
     else if (["1", "2", "3"].includes(k)) this.setTool(TOOLS[+k - 1].id);
     else if (k.startsWith("arrow")) {
       const s = e.shiftKey ? 10 : 1;
@@ -740,6 +806,21 @@ class Tuner {
         }
       }
     }
+    const box = this.frameBox();
+    if (box) {
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.strokeStyle = "#59c9ef";
+      g.lineWidth = 1;
+      g.beginPath();
+      box.handles.slice(0, 4).forEach(([x, y], i) => { const p = box.point(x, y); if (i) g.lineTo(p.x, p.y); else g.moveTo(p.x, p.y); });
+      g.closePath(); g.stroke();
+      for (const [x, y] of box.handles) {
+        const p = box.point(x, y);
+        g.fillStyle = "#162b38";
+        g.fillRect(p.x - 4, p.y - 4, 8, 8);
+        g.strokeRect(p.x - 4, p.y - 4, 8, 8);
+      }
+    }
     g.setTransform(1, 0, 0, 1, 0, 0);
   }
 
@@ -776,6 +857,8 @@ class Tuner {
     m.body.append(el("dl", { class: "shortcuts" }, ...[
       ["1 / 2 / 3", "拖单帧 / 拖整组 / 拖角色"],
       ["方向键", "按当前工具微调 1px，Shift 10px"],
+      ["拖动单帧边缘 / 四角", "等比缩放当前帧，固定对侧边或角；精确到 0.01"],
+      ["[ / ]", "缩小 / 放大当前帧 0.01 倍"],
       [", / .", "上一帧 / 下一帧（跳过禁用的帧）"],
       ["Enter", "播放 / 暂停"],
       ["滚轮 / 空格拖动", "缩放 / 平移；F 适应"],

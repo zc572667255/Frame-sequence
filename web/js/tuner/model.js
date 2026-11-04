@@ -6,6 +6,8 @@
 // bottom-centre of the source canvas) placed on the origin. Because all
 // animations share that origin, exports of different animations line up exactly.
 import { createCanvas } from "../core/util.js";
+import { nodeType } from "../nodes/registry.js";
+import { asFrames } from "../nodes/data.js";
 
 export const IDENTITY = { x: 0, y: 0, scale: 1, rot: 0, flip: false };
 
@@ -13,6 +15,7 @@ export function defaultCharacter() {
   return {
     transform: { ...IDENTITY },
     anims: [],
+    outputAnim: null,
     export: { margin: 2, roundTo: 1, format: "sheet", perRow: 0 },
   };
 }
@@ -30,9 +33,49 @@ export function normalizeCharacter(p) {
   const d = defaultCharacter();
   return {
     transform: { ...d.transform, ...(p.transform || {}) },
+    outputAnim: p.outputAnim || null,
     anims: (p.anims || []).map((a) => ({ ...newAnim(a.id, a.name, a.source), ...a, transform: { ...IDENTITY, ...(a.transform || {}) } })),
     export: { ...d.export, ...(p.export || {}) },
   };
+}
+
+export function currentAnimation(char) {
+  return char.anims.find((a) => a.id === char.outputAnim) || char.anims[0] || null;
+}
+
+export function resolveSources(app, p) {
+  const sources = new Map();
+  for (const a of p.anims || []) {
+    const id = a.source && a.source.card;
+    if (!id || sources.has(id)) continue;
+    const card = app.store.cards[id], def = card && nodeType(card.type);
+    const result = app.engine.result(id);
+    const values = result ? Object.values(result.outputs || {}) : [];
+    if (def && !def.evaluate && result) values.push(...Object.values(result.inputs || {}));
+    const value = values.find((v) => v && (v.kind === "frames" || v.kind === "image"));
+    sources.set(id, value ? asFrames(value) : null);
+  }
+  return sources;
+}
+
+// Uniform scaling around the handle opposite the dragged edge/corner. Work in
+// the animation's space so character/group rotation, scale and flips all apply.
+export function frameResizeState(anim, i, src, hx, hy, pointer) {
+  const frame = frameTransform(anim, i), pivot = pivotOf(anim, src);
+  const anchor = { x: (1 - hx) * src.w - pivot.x, y: (1 - hy) * src.h - pivot.y };
+  const handle = { x: hx * src.w - pivot.x, y: hy * src.h - pivot.y };
+  const m = toMatrix(frame), fixed = m.transformPoint(anchor), moving = m.transformPoint(handle);
+  return { frame, anchor, fixed, pointer, vector: { x: moving.x - fixed.x, y: moving.y - fixed.y } };
+}
+
+export function resizeFrameTransform(state, pointer) {
+  const { frame, anchor, fixed, vector } = state;
+  const length2 = vector.x ** 2 + vector.y ** 2;
+  if (!length2) return { x: frame.x, y: frame.y, scale: frame.scale };
+  const factor = 1 + ((pointer.x - state.pointer.x) * vector.x + (pointer.y - state.pointer.y) * vector.y) / length2;
+  const scale = Math.round(Math.min(20, Math.max(0.05, frame.scale * factor)) * 100) / 100;
+  const offset = toMatrix({ ...frame, x: 0, y: 0, scale }).transformPoint(anchor);
+  return { x: fixed.x - offset.x, y: fixed.y - offset.y, scale };
 }
 
 export function toMatrix(t) {

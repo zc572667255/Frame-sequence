@@ -7,6 +7,8 @@
 import { el, clamp, createCanvas, canvasFromImageData, blobToCanvas, canvasToBlob, downloadBlob } from "../core/util.js";
 import { getAssetCanvas, putCanvasAsset } from "../core/assets.js";
 import { EditorDoc } from "./doc.js";
+import { readFrameImages, importLayer } from "./import.js";
+import { isImageFile, entriesFromDrop, filesFromEntries } from "../ui/importer.js";
 import * as R from "./raster.js";
 import { PALETTES, colorCounts, unpackRGB } from "../imaging/color.js";
 import { openModal } from "../ui/modal.js";
@@ -304,6 +306,32 @@ class Editor {
     }
   }
 
+  async importFrameImages(files) {
+    if (this.importingFrames) return;
+    this.importingFrames = true;
+    try {
+      files = files || await this.app.pickFiles("image/*", { multiple: true });
+      if (!files.length || !this.root.isConnected) return;
+      const images = await readFrameImages(files, this.doc.w, this.doc.h);
+      if (!images.length || !this.root.isConnected) return;
+      if (images[0].canvas.width !== this.doc.w || images[0].canvas.height !== this.doc.h) throw new Error("画布尺寸已改变，请重新添加图片。");
+      if (this.playing) this.togglePlay();
+      this.change(() => {
+        if (!importLayer(this.doc.layers[this.li])) this.li = this.doc.addLayer(this.li + 1, "导入图片");
+        let at = this.fi + 1;
+        for (const image of images) {
+          const fi = this.doc.addFrame(at++, null);
+          this.doc.frames[fi].duration = image.duration || null;
+          this.doc.setCel(fi, this.li, image.canvas.getContext("2d").getImageData(0, 0, this.doc.w, this.doc.h));
+        }
+        this.fi++;
+        this.sel = null;
+      });
+      this.app.toast("已在当前帧后插入 " + images.length + " 帧图片，保存后更新原动画卡片。", "ok");
+    } catch (err) { this.app.toast("添加帧失败：" + err.message, "error"); }
+    finally { this.importingFrames = false; }
+  }
+
   async exportImage() {
     this.commitFloat();
     try {
@@ -326,6 +354,7 @@ class Editor {
     const top = el("div", { class: "ed-top" },
       el("span", { class: "ed-badge" }, "像素编辑器"), this.titleEl, this.sizeEl,
       el("button", { class: "btn small", onclick: () => this.resizeDialog() }, "画布尺寸…"),
+      el("button", { class: "btn small", title: "选择一张或多张图片，在当前帧后插入", onclick: () => this.importFrameImages() }, "添加帧图片…"),
       this.trailBtn = el("button", { class: "btn small", title: "攻击拖尾模式：在开始帧画一根棍子，逐帧移动 / 拉伸它，自动生成每帧的拖尾", onclick: () => this.tm.toggle() }, "攻击拖尾"),
       this.undoBtn, this.redoBtn,
       el("span", { class: "spacer" }),
@@ -426,6 +455,18 @@ class Editor {
     this.root.addEventListener("keydown", (e) => this.onKey(e, true));
     this.root.addEventListener("keyup", (e) => this.onKey(e, false));
     this.root.addEventListener("contextmenu", (e) => { if (e.target === this.canvas) e.preventDefault(); });
+    this.root.addEventListener("dragover", (e) => {
+      if ([...(e.dataTransfer.types || [])].includes("Files")) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }
+    });
+    this.root.addEventListener("drop", (e) => {
+      const entries = entriesFromDrop(e.dataTransfer);
+      const files = [...(e.dataTransfer.files || [])];
+      if (!entries && !files.length) return;
+      e.preventDefault(); e.stopPropagation();
+      if (entries) filesFromEntries(entries).then((fs) => this.importFrameImages(fs)).catch((err) => this.app.toast("读取图片失败：" + err.message, "error"));
+      else if (files.some(isImageFile)) this.importFrameImages(files);
+      else this.app.toast("请拖入单帧图片或序列帧图片。", "warn");
+    });
   }
 
   updateTitle() {

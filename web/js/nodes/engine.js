@@ -75,6 +75,7 @@ export class Engine extends Emitter {
   isUsed(id) {
     const edges = this.store.edges;
     for (const k in edges) if (edges[k].from.card === id) return true;
+    for (const card of Object.values(this.store.cards)) if (this.refsOf(card).includes(id)) return true;
     return false;
   }
 
@@ -127,7 +128,10 @@ export class Engine extends Emitter {
       // works when something takes its output (def.whenUsed), whether anything does
       for (const r of this.refsOf(card)) {
         const rr = this.results.get(r);
-        parts.push(r + "@" + (rr && rr.outputs ? Object.values(rr.outputs).map((o) => (o ? o.ver : "-")).join(",") : "-"));
+        const refDef = nodeType(this.store.cards[r].type);
+        const values = rr ? Object.values(rr.outputs || {}) : [];
+        if (rr && refDef && !refDef.evaluate) values.push(...Object.values(rr.inputs || {}));
+        parts.push(r + "@" + (values.map((o) => (o ? o.ver : "-")).join(",") || "-"));
       }
       const used = def.whenUsed ? this.isUsed(id) : true;
       if (def.whenUsed) parts.push(used ? "used" : "unused");
