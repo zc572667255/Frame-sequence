@@ -4,7 +4,7 @@
 import { el, downloadBlob } from "../core/util.js";
 import { VFX_KINDS, VFX_DEFAULTS, VFX_PALETTES, VFX_EDGES as EDGES, hasSide, effectKinds } from "../vfx/effects.js";
 import { isRemoteKind } from "../vfx/catalog.js";
-import { remoteSettings, hasFlight, FLIGHT_FIELDS, flightFieldVisible } from "../vfx/remote.js";
+import { remoteSettings, fitRemoteFrames, hasFlight, FLIGHT_FIELDS, flightFieldVisible, flightFieldRange } from "../vfx/remote.js";
 import { prepareVfxCore } from "../vfx/effects.js";
 import { PROJECTILES, SPINS } from "../vfx/kinds/arrow.js";
 import { pickCoreImage } from "../vfx/coreimg.js";
@@ -71,7 +71,11 @@ export class VfxPanel {
     const ed = this.ed, layers = this.doc.layers;
     const l = this.layer(), li = ed.li;
     ed.change(() => {
-      const v = { ...l.vfx, kind: k.id, ...k.defaults };
+      let v = { ...l.vfx, kind: k.id, ...k.defaults };
+      if (isRemoteKind(k.id)) {
+        const start = Math.max(0, this.doc.frames.findIndex(f => f.id === v.start));
+        v = fitRemoteFrames({ ...v, remoteFrameBudget: undefined }, this.doc.frames.length - start);
+      }
       if (!k.side) v.view = "front";
       // a layer still named after its type takes the new type's name
       if (VFX_KINDS.some((x) => l.name === x.name || l.name.startsWith(x.name + " "))) l.name = k.name;
@@ -247,15 +251,13 @@ export class VfxPanel {
       P.append(el("div", { class: "ed-panel-title" }, "路径 · 拖尾 · 命中"));
       for (const d of FLIGHT_FIELDS) if (flightFieldVisible(d, s)) {
         if (d.options) choose(d.label, d.key, d.options);
-        else slider(d.label, d.key, d.min, d.max, d.unit);
+        else { const range = flightFieldRange(d, s); slider(d.label, d.key, range.min, range.max, d.unit); }
       }
       if (s.kind === "arrow") P.append(el("p", { class: "ed-hint" }, "包裹光覆盖整个箭身，并随核心大小自动适配。头部宽度独立于拖尾宽度；头部弧度从 0 的尖头逐渐变为 100 的圆钝头。拖尾保留为 0 时仍保留箭身包裹光。"));
       P.append(el("p", { class: "ed-hint" }, hasFlight(s)
-        ? "画布上的绿点是起点，红点是命中点；自定义曲线还有蓝色控制点，都可以直接拖动。拖尾沿实际轨迹生成，命中后继续消散。起终点按特效画幅百分比定位；连发总长最多 64 帧。"
+        ? "画布上的绿点是起点，红点是命中点；自定义曲线还有蓝色控制点，都可以直接拖动。新建时按当前帧到动画末尾的帧数分配蓄力、飞行与命中，不增加动画帧。"
         : "原地模式保留循环精灵。选择移动路径后可设置蓄力、飞行、拖尾、连发和命中效果。"));
-      if (hasFlight(s) && st + s.frames > ids.length) row("", btn("补足动画帧", "在动画末尾补空帧，让这次发射可以完整播放", () => this.ed.change(() => {
-        while (this.doc.frames.length < st + s.frames) this.doc.addFrame(this.doc.frames.length);
-      })), el("span"));
+      if (hasFlight(s) && st + s.frames !== ids.length) row("", btn("适配动画帧数", "将整次发射适配到现有动画末尾", () => this.edit(fitRemoteFrames(s, ids.length - st))), el("span"));
     }
 
     // look

@@ -156,7 +156,7 @@ export function drawPuff(g, x, y, r, angle, color, alpha, seed, stretch = 1) {
 function shed(g, c, s, state, index, r) {
   if (c.kind === "ice" || c.amount <= 0 || s.trailFrames <= 0 || s.trailWidth <= 0) return;
   const life = Math.min(12, Math.max(4, s.trailFrames)), rate = Math.max(0.25, Math.min(3, c.amount * (c.kind === "sand" ? 2 : 1.5)));
-  const postFade = 1 - smooth(0, Math.min(life, s.impactFrames), Math.max(0, state.time - s.chargeFrames - s.travelFrames));
+  const postFade = 1 - smooth(0, Math.max(1, Math.min(life, s.impactFrames)), Math.max(0, state.time - s.chargeFrames - s.travelFrames));
   const oldest = Math.max(s.chargeFrames, state.time - life), newest = Math.min(state.time, s.chargeFrames + s.travelFrames);
   for (let j = Math.ceil(oldest * rate); j <= Math.floor(newest * rate); j++) {
     const P = rng(c.seed * 179 + j * 541 + index * 31), born = j / rate, age = state.time - born, span = life * (0.6 + P() * 0.4);

@@ -43,16 +43,45 @@ const mix = (a, b, t) => a + (b - a) * t;
 const smooth = (t) => t * t * (3 - 2 * t);
 export const hasFlight = (s) => isRemoteKind(s.kind) && !!s.flightPath && s.flightPath !== "sprite";
 
+// Animation layers use their existing frame budget; standalone cards keep 64.
+export const remoteFrameLimit = (s) => Math.max(1, Math.round(Number(s.remoteFrameBudget) || 64));
+export const flightFieldRange = (f, s) => s.remoteFrameBudget > 0 && ["chargeFrames", "travelFrames", "impactFrames"].includes(f.key)
+  ? { min: f.key === "travelFrames" ? 1 : 0, max: remoteFrameLimit(s) } : { min: f.min, max: f.max };
+
+function fitFlightStages(r, frames) {
+  const gaps = r.flightCount - 1;
+  r.flightInterval = Math.min(r.flightInterval, gaps ? Math.floor((frames - 1) / gaps) : 6);
+  const available = frames - gaps * r.flightInterval;
+  const total = r.chargeFrames + r.travelFrames + r.impactFrames;
+  const charge = Math.min(available - 1, Math.round(available * r.chargeFrames / total));
+  const impact = Math.min(available - charge - 1, Math.round(available * r.impactFrames / total));
+  r.chargeFrames = charge;
+  r.impactFrames = impact;
+  r.travelFrames = available - charge - impact;
+  r.frames = frames;
+  return r;
+}
+
+// Fit a complete launch into existing animation frames, including a single frame.
+export function fitRemoteFrames(s, frames) {
+  const r = remoteSettings(s), budget = Math.max(1, Math.round(Number(frames) || 1));
+  if (!hasFlight(r)) return { ...r, remoteFrameBudget: budget, frames: budget };
+  return fitFlightStages({ ...r, remoteFrameBudget: budget }, budget);
+}
+
 // Old sprites keep their original time/appearance. New flights have an explicit
-// charge → travel → impact timeline, capped at the renderer's 64-frame limit.
+// charge → travel → impact timeline, constrained by their available frames.
 export function remoteSettings(s) {
   if (!hasFlight(s)) return s;
   const r = { ...REMOTE_DEFAULTS, ...s };
-  r.chargeFrames = Math.round(clamp(r.chargeFrames, 0, 12));
-  r.travelFrames = Math.round(clamp(r.travelFrames, 2, 32));
-  r.impactFrames = Math.round(clamp(r.impactFrames, 2, 20));
+  const limit = remoteFrameLimit(r), fitted = r.remoteFrameBudget > 0;
+  r.chargeFrames = Math.round(clamp(r.chargeFrames, 0, fitted ? limit : 12));
+  r.travelFrames = Math.round(clamp(r.travelFrames, fitted ? 1 : 2, fitted ? limit : 32));
+  r.impactFrames = Math.round(clamp(r.impactFrames, fitted ? 0 : 2, fitted ? limit : 20));
   r.flightCount = Math.round(clamp(r.flightCount, 1, 5));
-  const budget = 64 - r.chargeFrames - r.travelFrames - r.impactFrames;
+  r.flightInterval = Math.round(clamp(r.flightInterval, 0, 6));
+  if (fitted && r.chargeFrames + r.travelFrames + r.impactFrames > limit) return fitFlightStages(r, limit);
+  const budget = limit - r.chargeFrames - r.travelFrames - r.impactFrames;
   r.flightInterval = Math.round(clamp(r.flightInterval, 0, r.flightCount > 1 ? Math.min(6, Math.floor(budget / (r.flightCount - 1))) : 6));
   r.frames = r.chargeFrames + r.travelFrames + r.impactFrames + (r.flightCount - 1) * r.flightInterval;
   return r;
@@ -93,20 +122,21 @@ export function flightState(s, w, h, frame, index = 0) {
   const p = remoteSettings(s), time = frame - index * p.flightInterval;
   const born = time >= 0, launched = time >= p.chargeFrames;
   const u = pathProgress(p, (time - p.chargeFrames) / p.travelFrames);
-  const hit = (time - p.chargeFrames - p.travelFrames) / p.impactFrames;
+  const hit = (time - p.chargeFrames - p.travelFrames) / Math.max(1, p.impactFrames);
   const at = pathAt(p, w, h, u, index);
   const a = pathAt(p, w, h, Math.max(0, u - 0.005), index), b = pathAt(p, w, h, Math.min(1, u + 0.005), index);
   return { at, angle: Math.atan2(b[1] - a[1], b[0] - a[0]), time, u, hit,
     charge: p.chargeFrames ? clamp(time / p.chargeFrames, 0, 1) : 1,
-    body: born && hit < 0, born, launched, finished: hit >= 1 };
+    body: born && hit < 0, born, launched, finished: time >= p.chargeFrames + p.travelFrames + p.impactFrames };
 }
 
 export function flightTrailWindow(s, frame, index = 0) {
   const p = remoteSettings(s), span = clamp(p.trailFrames, 0, 24);
   const time = frame - index * p.flightInterval, arrival = p.chargeFrames + p.travelFrames;
   const newest = Math.min(time, arrival);
+  if (time >= arrival + p.impactFrames) return { oldest: newest, newest, span };
   // A short impact phase must still finish the wake before the sequence loops.
-  const catchup = Math.max(0, time - arrival) * Math.max(0, span / p.impactFrames - 1);
+  const catchup = Math.max(0, time - arrival) * Math.max(0, span / Math.max(1, p.impactFrames) - 1);
   const oldest = Math.max(p.chargeFrames, time - span + catchup);
   return { oldest, newest, span };
 }

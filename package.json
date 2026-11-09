@@ -9,6 +9,7 @@
     "serve": "node server/server.js",
     "check": "node scripts/check.js",
     "check:remote": "node scripts/check-remote.js",
+    "check:remote-frames": "node scripts/check-remote-frames.js",
     "check:tuner": "node scripts/check-tuner.js"
   },
   "engines": {

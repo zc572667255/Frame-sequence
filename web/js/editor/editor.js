@@ -27,7 +27,7 @@ import { strokePath, strokeMid, bendAt, strokeLen, strokePlane, strokeCircle, sl
 import { VfxPanel } from "./vfxpanel.js";
 import { effectKinds } from "../vfx/effects.js";
 import { isRemoteKind } from "../vfx/catalog.js";
-import { hasFlight } from "../vfx/remote.js";
+import { fitRemoteFrames } from "../vfx/remote.js";
 import { pathHandle, pathPatch, drawRemotePath } from "./remotepath.js";
 import { VFX_LAYER_DEFAULTS, vfxSettings, vfxFrame, vfxRegion, vfxRect, drawVfxLayer, layerBBox, prefetchVfxLayer, onVfxReady, vfxFrameReady } from "../vfx/layer.js";
 
@@ -1498,15 +1498,15 @@ class Editor {
     const k = kinds.find((q) => q.id === v.kind) || kinds[0];
     const cur = this.doc.layers[this.li];
     const follow = k.around && cur && !cur.trail && !cur.ghost && !cur.vfx && !cur.stroke && this.hasContent(this.fi, this.li) ? cur.id : null;
-    const vfx = {
+    let vfx = {
       ...VFX_LAYER_DEFAULTS, ...k.defaults, kind: k.id, palette: v.palette || k.defaults.palette, style: v.style,
       w: Math.round(w), h: Math.round(h), x: Math.round(x), y: Math.round(y), start: this.doc.frames[this.fi].id,
       follow, seed: 1 + Math.floor(Math.random() * 9973),
     };
     if (isRemoteKind(k.id)) for (const key of ["w", "h", "x", "y", "box", "follow", "pad", "perFrame", "keys"]) delete vfx[key];
+    if (isRemoteKind(k.id)) vfx = fitRemoteFrames(vfx, this.doc.frames.length - this.fi);
     if (this.tm.active) this.tm.toggle(false);
     this.change(() => {
-      if (hasFlight(vfx)) while (this.doc.frames.length < this.fi + vfx.frames) this.doc.addFrame(this.doc.frames.length);
       this.li = this.doc.addVfxLayer(this.li, vfx, k.name, !!follow);
     });
     this.goLayer(this.li);

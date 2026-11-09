@@ -13,7 +13,7 @@ import { GROUND_AURAS } from "../../vfx/kinds/auras.js";
 import { PROJECTILES, SPINS } from "../../vfx/kinds/arrow.js";
 import { pickCoreImage } from "../../vfx/coreimg.js";
 import { spriteOf } from "../../vfx/projectiles.js";
-import { remoteSettings, hasFlight, FLIGHT_FIELDS, flightFieldVisible } from "../../vfx/remote.js";
+import { remoteSettings, hasFlight, remoteFrameLimit, FLIGHT_FIELDS, flightFieldVisible } from "../../vfx/remote.js";
 
 const GROUND = new Set(["shock", "dust", "circle", "heal"]);
 
@@ -35,7 +35,7 @@ function registerEffectNode(remote) {
   // the frames rendered in the background, all at once
   async evaluate(p) {
     const s = remoteSettings({ ...VFX_DEFAULTS, ...p });
-    const n = Math.max(1, Math.min(64, s.frames | 0));
+    const n = Math.max(1, Math.min(remoteFrameLimit(s), s.frames | 0));
     const canvases = await Promise.all(Array.from({ length: n }, (_, i) => renderVfxAsync(s, i)));
     const frames = canvases.map((canvas, i) => ({ canvas, index: i, duration: null }));
     const kind = VFX_KINDS.find((k) => k.id === s.kind);

@@ -33,7 +33,7 @@ import { cloud, cloudColors } from "./kinds/cloud.js";
 import { arrow } from "./kinds/arrow.js";
 import { fireball } from "./kinds/fireball.js";
 import { isRemoteKind } from "./catalog.js";
-import { REMOTE_DEFAULTS, remoteSettings, hasFlight } from "./remote.js";
+import { REMOTE_DEFAULTS, remoteSettings, hasFlight, remoteFrameLimit } from "./remote.js";
 import { remote } from "./kinds/remote.js";
 import { coreImage, loadCoreImage } from "./coreimg.js";
 import { spriteOf, spriteUrl } from "./projectiles.js";
@@ -121,7 +121,7 @@ const BLOOM = { hit: 1, shock: 0.8, charge: 1, heal: 0.7, circle: 0, explosion: 
 export function renderVfx(p, i) {
   const s = remoteSettings({ ...VFX_DEFAULTS, ...p });
   const w = Math.max(8, Math.min(2048, s.w | 0)), h = Math.max(8, Math.min(1024, s.h | 0));
-  const n = Math.max(1, Math.min(64, s.frames | 0));
+  const n = Math.max(1, Math.min(remoteFrameLimit(s), s.frames | 0));
   // a loop runs 0 → (n − 1) / n so the last frame leads into the first; a
   // one-shot samples the middle of each frame's slot, so it starts just after
   // the hit and ends just before it is gone
@@ -284,6 +284,6 @@ function fadeEdges(cv) {
 
 export function renderVfxFrames(p) {
   p = remoteSettings({ ...VFX_DEFAULTS, ...p });
-  const n = Math.max(1, Math.min(64, (p.frames ?? VFX_DEFAULTS.frames) | 0));
+  const n = Math.max(1, Math.min(remoteFrameLimit(p), (p.frames ?? VFX_DEFAULTS.frames) | 0));
   return Array.from({ length: n }, (_, i) => renderVfx(p, i));
 }

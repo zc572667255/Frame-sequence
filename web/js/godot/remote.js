@@ -1,12 +1,13 @@
-import { REMOTE_DEFAULTS } from "../vfx/remote.js";
+import { REMOTE_DEFAULTS, remoteFrameLimit } from "../vfx/remote.js";
 
-export const remoteParams = (s) => Object.fromEntries(Object.entries(REMOTE_DEFAULTS).map(([k, v]) => [k, s[k] ?? v]));
+export const remoteParams = (s) => ({ ...Object.fromEntries(Object.entries(REMOTE_DEFAULTS).map(([k, v]) => [k, s[k] ?? v])), remoteFrameBudget: remoteFrameLimit(s) });
 function properties(p) {
   return {
     flight_path: JSON.stringify(p.flightPath), flight_start: `Vector2(${+p.startX}, ${+p.startY})`, flight_end: `Vector2(${+p.endX}, ${+p.endY})`, flight_control: `Vector2(${+p.controlX}, ${+p.controlY})`,
     path_bend: +p.pathBend, path_wave: +p.pathWave, path_turns: +p.pathTurns, flight_ease: JSON.stringify(p.flightEase),
     charge_frames: p.chargeFrames | 0, travel_frames: p.travelFrames | 0, impact_frames: p.impactFrames | 0,
     flight_count: p.flightCount | 0, flight_interval: p.flightInterval | 0, flight_spread: +p.flightSpread,
+    flight_frame_budget: p.remoteFrameBudget ?? 64,
     body_size: +p.bodySize, trail_frames: +p.trailFrames, trail_width: +p.trailWidth,
     head_width: +p.headWidth, head_curve: +p.headCurve,
     impact_kind: JSON.stringify(p.impactKind), impact_size: +p.impactSize,
@@ -14,7 +15,7 @@ function properties(p) {
 }
 export const remoteProps = (p) => Object.entries(properties(p)).map(([k, v]) => `${k} = ${v}`);
 export const remoteExports = (p) => '@export_group("远程特效：路径、拖尾、命中")\n' + Object.entries(properties(p)).map(([k, v]) => {
-  const type = typeof v === "number" && !["charge_frames", "travel_frames", "impact_frames", "flight_count", "flight_interval"].includes(k) ? ': float = ' : ' := ';
+  const type = typeof v === "number" && !["charge_frames", "travel_frames", "impact_frames", "flight_count", "flight_interval", "flight_frame_budget"].includes(k) ? ': float = ' : ' := ';
   const setter = k === "head_width" || k === "head_curve" ? `:\n\tset(value):\n\t\t${k} = clampf(value, ${k === "head_width" ? "20.0, 250.0" : "0.0, 100.0"})\n\t\tif is_inside_tree(): refresh()` : "";
   return `@export var ${k}${type}${v}${setter}`;
 }).join('\n');
@@ -84,7 +85,7 @@ func _remote_active() -> bool:
 	return kind >= 12 and kind <= 17 and flight_path != "sprite"
 
 func _remote_interval() -> int:
-	return mini(flight_interval, maxi(0, int((64 - charge_frames - travel_frames - impact_frames) / maxi(1, flight_count - 1))))
+	return mini(flight_interval, maxi(0, int((flight_frame_budget - charge_frames - travel_frames - impact_frames) / maxi(1, flight_count - 1))))
 
 func _remote_duration() -> int:
 	return charge_frames + travel_frames + impact_frames + (flight_count - 1) * _remote_interval()
@@ -128,13 +129,14 @@ func _remote_state(frame: float, index: int) -> Dictionary:
 	var hit := (time - charge_frames - travel_frames) / maxf(1.0, impact_frames)
 	var a := _remote_path(maxf(0.0, u - 0.005), index)
 	var b := _remote_path(minf(1.0, u + 0.005), index)
-	return {"at": _remote_path(u, index), "angle": (b - a).angle(), "time": time, "u": u, "hit": hit, "charge": clampf(time / maxf(1.0, charge_frames), 0.0, 1.0) if charge_frames > 0 else 1.0, "body": time >= 0.0 and hit < 0.0, "born": time >= 0.0, "launched": time >= charge_frames, "finished": hit >= 1.0}
+	return {"at": _remote_path(u, index), "angle": (b - a).angle(), "time": time, "u": u, "hit": hit, "charge": clampf(time / maxf(1.0, charge_frames), 0.0, 1.0) if charge_frames > 0 else 1.0, "body": time >= 0.0 and hit < 0.0, "born": time >= 0.0, "launched": time >= charge_frames, "finished": time >= charge_frames + travel_frames + impact_frames}
 
 func _remote_window(frame: float, index: int) -> Vector2:
 	var time := frame - index * _remote_interval()
 	var span := clampf(trail_frames, 0.0, 24.0)
 	var arrival := charge_frames + travel_frames
 	var newest := minf(time, arrival)
+	if time >= arrival + impact_frames: return Vector2(newest, newest)
 	var catchup := maxf(0.0, time - arrival) * maxf(0.0, span / maxf(1.0, impact_frames) - 1.0)
 	var oldest := maxf(charge_frames, time - span + catchup)
 	return Vector2(oldest, newest)
