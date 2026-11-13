@@ -6,7 +6,7 @@ import { ribbonSections, materialAt, flameFlow } from "../web/js/vfx/remotetrail
 import { flightTrailWindow } from "../web/js/vfx/remote.js";
 import { alongPath, iceSwirl, iceLance, iceColors } from "../web/js/vfx/kinds/ice.js";
 import { iceBurst } from "../web/js/vfx/kinds/icehit.js";
-import { slashRuns, slashFrame, slashFade, slashCopies, slashLines, slashEnds, slashDepth } from "../web/js/vfx/kinds/slash.js";
+import { slashRuns, slashFrame, slashFade, slashCopies, slashLines, slashEnds, slashDepth, slashSpan, SLASH_SPAN } from "../web/js/vfx/kinds/slash.js";
 import { paletteOf } from "../web/js/vfx/common.js";
 import { shapeOf } from "../web/js/vfx/catalog.js";
 import { thunderDischarge } from "../web/js/vfx/kinds/thunderhit.js";
@@ -263,7 +263,7 @@ for (const width of [0.5, 1, 2.5]) {
 // 剑气 (2D): a crescent whose bulge leads and tips trail, two-tipped or half,
 // laid down from upright towards parallel to the ground, either way
 const slashWidth = q => Math.hypot(q.a[0] - q.b[0], q.a[1] - q.b[1]);
-for (const ground of [-90, -60, -30, -1, 0, 30, 60, 90]) for (const travel of [0, Math.PI, 0.3]) for (const shape of ["full", "half"]) {
+for (const ground of [0, 30, 60, 90]) for (const travel of [0, Math.PI, 0.3]) for (const shape of ["full", "half"]) {
   const runs = slashRuns([100, 100], travel, 40, 20, ground, shape), { x: X, y: Y } = slashFrame(travel);
   assert.equal(runs.length, 1, "one run, never pieced together");
   const run = runs[0], n = run.length;
@@ -289,19 +289,64 @@ for (const ground of [-90, -60, -30, -1, 0, 30, 60, 90]) for (const travel of [0
     }
     if (ground === 90) { assert.ok(Math.abs(height - 80) < 1e-6, "upright: the whole crescent, as tall as its chord"); assert.ok(Math.abs(along(bottom) - along(top)) < 1e-6, "upright: both tips level"); }
     if (ground === 0) { assert.ok(Math.abs(height - 24) < 1e-6, "parallel to the ground: flattened, seen from the side"); assert.ok(along(bottom) < along(top) - 1, "lying down, the lower tip trails further back"); }
-    if (ground === -1) { assert.ok(height < 26, "nearly flat the other way: flattened too"); assert.ok(along(top) < along(bottom) - 1, "laid down the other way, the upper tip trails further back"); }
-    if (ground === -90) { assert.ok(Math.abs(height - 80) < 1e-6 && Math.abs(along(bottom) - along(top)) < 1e-6, "-90: upright as at 90"); }
   }
-  if (ground < 0) {
-    // the other way is the same crescent upside down: as tall, leaning back where +|ground| leans forward
-    const pos = slashRuns([100, 100], travel, 40, 20, -ground, shape)[0];
-    const lean = (r) => along(r.at(-1).b) - along(r[0].b), tall = (r) => across(r.at(-1).b) - across(r[0].b);
-    assert.ok(Math.abs(tall(run) - tall(pos)) < 1e-6, "as tall as at " + -ground + "°");
-    if (shape === "full") {
-      assert.ok(Math.abs(lean(run) + lean(pos)) < 1e-6, "leaning the other way to " + -ground + "°");
-      for (let i = 0; i < n; i++) assert.ok(Math.abs(along(run[i].b) - along(pos[n - 1 - i].b)) < 1e-6 && Math.abs(across(run[i].b) + across(pos[n - 1 - i].b)) < 1e-6, "two-tipped: " + -ground + "° upside down");
-    }
+}
+// turned all the way round its line of flight, 0 … 360, smoothly: no jump
+// from one degree to the next, 360 the same as 0, upside down at 270
+for (const shape of ["full", "half"]) for (const travel of [0, Math.PI]) {
+  const { x: X, y: Y } = slashFrame(travel);
+  const along = p => (p[0] - 100) * X[0] + (p[1] - 100) * X[1], across = p => (p[0] - 100) * Y[0] + (p[1] - 100) * Y[1];
+  const at = (g) => slashRuns([100, 100], travel, 40, 20, g, shape)[0];
+  let prev = at(0);
+  for (let g = 1; g <= 360; g++) {
+    const run = at(g);
+    assert.ok(run.every(q => [...q.a, ...q.b].every(Number.isFinite)), g + "°: drawn");
+    const jump = Math.max(...run.map((q, i) => Math.hypot(q.b[0] - prev[i].b[0], q.b[1] - prev[i].b[1])));
+    assert.ok(jump < 1.5, g + "°: turns on smoothly from " + (g - 1) + "° (moved " + jump.toFixed(2) + " px)");
+    prev = run;
   }
+  const same = (r, o) => r.every((q, i) => Math.hypot(q.b[0] - o[i].b[0], q.b[1] - o[i].b[1]) < 1e-6);
+  assert.ok(same(at(360), at(0)) && same(at(450), at(90)), "360° is 0° again");
+  const up = at(90), down = at(270);
+  if (shape === "half") assert.ok(across(up[0].b) < -30 && across(down[0].b) > 30, "半头 upside down at 270°: below the flight line");
+  else {
+    assert.ok(Math.abs(across(down[0].b) - 40) < 1e-6 && Math.abs(across(down.at(-1).b) + 40) < 1e-6, "upside down at 270°, as tall as upright");
+    const tips = (r) => { const [a, b] = [r[0].b, r.at(-1).b]; return across(a) < across(b) ? [a, b] : [b, a]; }; // [upper, lower] on screen
+    const [u0, l0] = tips(at(30)), [u1, l1] = tips(at(135));
+    assert.ok(along(l0) < along(u0) - 1, "30°: its top leans forward");
+    assert.ok(along(u1) < along(l1) - 1, "135°: its top leans back");
+    assert.ok(same(at(200), [...at(20)].reverse()), "two-tipped, half a turn on looks the same (its tips swapped)");
+  }
+  const edge = at(163.3);
+  assert.ok(Math.max(...edge.map(q => Math.abs(across(q.b)))) < 2, "edge on near 163°: a thin streak");
+}
+// 月牙弧度: how far round its arc it reaches. The tips stay as far apart;
+// more is deeper (past 180° it bows out wider and the tips curl in), and however
+// curved the hollow stays hollow and both ends still fade
+{
+  assert.equal(slashSpan({}), SLASH_SPAN, "170° by default: the crescent as before");
+  assert.equal(slashSpan({ slashCurve: 10 }), 60 * Math.PI / 180);
+  assert.equal(slashSpan({ slashCurve: 999 }), 240 * Math.PI / 180);
+  assert.deepEqual(slashRuns([100, 100], 0, 40, 20, 90, "full"), slashRuns([100, 100], 0, 40, 20, 90, "full", slashSpan({ slashCurve: 170 })));
+  let lastDepth = 0;
+  for (const curve of [60, 100, 140, 170, 200, 240]) {
+    const span = slashSpan({ slashCurve: curve }), depth = slashDepth(40, span);
+    const run = slashRuns([0, 0], 0, 40, depth * 0.6, 90, "full", span)[0], mid = run[16], top = run[0].b, bottom = run.at(-1).b;
+    assert.ok(run.every(q => [...q.a, ...q.b].every(Number.isFinite)), curve + "°: drawn");
+    assert.ok(Math.abs(bottom[1] - top[1] - 80) < 1e-6, curve + "°: its tips as far apart as ever");
+    assert.ok(Math.abs(mid.b[0] - top[0] - depth) < 1e-6, curve + "°: as deep as slashDepth");
+    assert.ok(depth > lastDepth, curve + "°: deeper the more it curves");
+    lastDepth = depth;
+    const wide = Math.max(...run.map(q => Math.abs(q.b[1])));
+    assert.ok(curve > 180 ? wide > 40.3 : wide < 40 + 1e-6, curve + "°: " + (curve > 180 ? "past half a circle it bows out wider than its tips, which curl in" : "no wider than its tips"));
+    assert.ok(mid.a[0] > top[0], curve + "°: the inner edge's middle ahead of the tips, hollow");
+    assert.ok(slashWidth(run[0]) < 1.5 && slashWidth(run.at(-1)) < 1.5, curve + "°: pointed at both tips");
+    const ends = slashEnds([0, 0], 0, 40, 90, "full", span), m = q => [(q.a[0] + q.b[0]) / 2, (q.a[1] + q.b[1]) / 2];
+    assert.ok(ends(m(mid)) > 0.99 && ends(m(run[1])) < 0.2 && ends(m(run[31])) < 0.2, curve + "°: whole in the middle, both ends fading");
+    assert.ok(slashLines([0, 0], 0, 40, depth * 0.6, 90, "full", 0.35, 7, 3, 1, span).every(l => l.pts.every(q => q.p.every(Number.isFinite))), curve + "°: the strands follow it");
+  }
+  assert.ok(FLIGHT_FIELDS.some(f => f.key === "slashCurve" && f.min === 60 && f.max === 240 && flightFieldVisible(f, { kind: "slash", flightPath: "straight" })), "月牙弧度 is offered for 剑气");
+  assert.equal(VFX_KINDS.find(k => k.id === "slash").defaults.slashCurve, 170);
 }
 for (const travel of [0, Math.PI, 0.3, -0.4]) assert.ok(slashFrame(travel).y[1] > 0, "up stays up whichever way it flies");
 for (const k of [0.1, 0.6, 0.9, 1.5]) {
@@ -352,7 +397,7 @@ assert.equal(slashFade(0), 1); assert.equal(slashFade(1), 0);
   assert.ok(last < 0.2, "almost gone by the last frame");
   assert.deepEqual(at(s.frames + 1), [], "gone once its frames are over");
   assert.equal(s.frames, s.chargeFrames + s.travelFrames + s.impactFrames, "the animation is charge + flight + fade");
-  assert.ok(FLIGHT_FIELDS.some(f => f.key === "slashAngle" && f.min === -90 && f.max === 90 && flightFieldVisible(f, { kind: "slash", flightPath: "sprite" })), "the ground angle is always offered for 剑气");
+  assert.ok(FLIGHT_FIELDS.some(f => f.key === "slashAngle" && f.min === 0 && f.max === 360 && flightFieldVisible(f, { kind: "slash", flightPath: "sprite" })), "the ground angle is always offered for 剑气");
   assert.ok(FLIGHT_FIELDS.some(f => f.key === "slashThick" && flightFieldVisible(f, { kind: "slash", flightPath: "sprite" })), "剑气 has its own thickness");
   assert.ok(!FLIGHT_FIELDS.some(f => f.key === "trailWidth" && flightFieldVisible(f, { kind: "slash", flightPath: "straight" })), "the trail width is not offered for 剑气");
   assert.ok(FLIGHT_FIELDS.some(f => f.key === "slashShape" && f.options.map(o => o[0]).join() === "full,half" && flightFieldVisible(f, { kind: "slash", flightPath: "arc" })), "两头尖 / 半头 is offered for 剑气");
@@ -360,7 +405,7 @@ assert.equal(slashFade(0), 1); assert.equal(slashFade(1), 0);
   const k = VFX_KINDS.find(x => x.id === "slash");
   assert.ok(k.defaults.startX < k.defaults.endX && k.defaults.startY === k.defaults.endY && k.defaults.slashAngle === 90, "剑气 flies left to right, upright, by default");
 }
-console.log("剑气两头尖 / 半头、鼓面朝前、-90°~90° 两个方向的地面夹角、横向飞行与消失检查通过");
+console.log("剑气两头尖 / 半头、鼓面朝前、0°~360° 连续旋转的地面夹角、60°~240° 月牙弧度、横向飞行与消失检查通过");
 
 // 攻击拖尾 两头尖: drawn once, whole (no end is the trail's own tail), both ends faded
 {

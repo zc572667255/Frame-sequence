@@ -9,12 +9,17 @@ import { pathAt } from "../remote.js";
 // at the far end.
 //   外形: 两头尖 — the whole crescent, pointed at both tips; 半头 — only its
 //         upper half, cut off flat at its thick middle, which rides the path.
-//   地面夹角: 90° stands it upright; laying it down towards 0° (parallel to
-//         the ground) flattens it into a thin ">" seen from the side, its
-//         lower tip trailing a little further back.
+//   地面夹角: 0 … 360°, turned round its line of flight (slashTilt): 90°
+//         upright, 0° flat on the ground, a thin ">" seen from the side.
+//   月牙弧度: how far round its arc it reaches, tip to tip (slashSpan).
 // godot/slash.js draws exactly the same.
 
-export const SLASH_SPAN = 170 * Math.PI / 180;
+// 月牙弧度: how far round its arc the crescent reaches, tip to tip (degrees,
+// 60 … 240; 170 by default). Its chord stays the same: less is a flatter,
+// shallower crescent, more a deeper one, its tips curling round into a "C"
+// past 180.
+export const SLASH_CURVE = [60, 240], SLASH_SPAN = 170 * Math.PI / 180;
+export const slashSpan = (s) => Math.max(SLASH_CURVE[0], Math.min(SLASH_CURVE[1], Number(s?.slashCurve ?? 170) || 170)) * Math.PI / 180;
 const HALF_SECTIONS = 16;
 // where along the trail a whole crescent starts: past the trail's faded tail
 export const SLASH_U0 = 0.35;
@@ -42,23 +47,27 @@ export function slashFrame(travel) {
 // (x forward, y down, its middle at the origin) on screen; its outer edge is
 // the circle of radius A round [cx, 0], at angle phi (0 its middle, -SPAN/2
 // its upper tip)
-// The ground angle, -90 … 90: how far it is laid down is |ground| (90 upright,
-// 0 flat, seen from the side squashed), which way the sign: above 0 the lower
-// tip trails back (its top leans forward), below 0 the upper tip does (its top
-// leans back) — the same crescent upside down.
+// The ground angle, 0 … 360: the crescent turned round its line of flight, as
+// seen from the side and a little above. 90 upright, 0 (and 180) flat on the
+// ground, squashed, its lower tip trailing; in between it turns smoothly —
+// edge on (a thin streak) about 163° and 343°, upside down at 270 — with no
+// jump anywhere, and 360 is 0 again. squash: how tall it shows (signed: below
+// 0 it is upside down), shear: how far its lower tip trails.
+export const SLASH_SKEW = 0.3, SLASH_LEAN = 0.25;
 export function slashTilt(ground) {
-  const g = Math.max(-90, Math.min(90, Number(ground) || 0)), th = Math.abs(g) * Math.PI / 180;
-  return { squash: 0.3 + 0.7 * Math.sin(th), shear: (g < 0 ? -0.25 : 0.25) * Math.cos(th) };
+  const th = (Number(ground) || 0) * Math.PI / 180, sq = Math.sin(th) + SLASH_SKEW * Math.cos(th);
+  // never quite 0: the way back from the screen (unplace) divides by it
+  return { squash: Math.abs(sq) < 0.001 ? (sq < 0 ? -0.001 : 0.001) : sq, shear: SLASH_LEAN * Math.cos(th) };
 }
 
-export function slashFrameOf(at, travel, half, ground) {
+export function slashFrameOf(at, travel, half, ground, span = SLASH_SPAN) {
   const { squash, shear } = slashTilt(ground);
   const { x: X, y: Y } = slashFrame(travel);
-  const A = half / Math.sin(SLASH_SPAN / 2), sag = A * (1 - Math.cos(SLASH_SPAN / 2));
+  const A = half / Math.sin(span / 2), sag = A * (1 - Math.cos(span / 2));
   const place = (x, y) => { const px = x - y * shear, py = y * squash; return [at[0] + X[0] * px + Y[0] * py, at[1] + X[1] * px + Y[1] * py]; };
   // and back: a point on screen in the upright crescent's own frame
   const unplace = ([qx, qy]) => { const dx = qx - at[0], dy = qy - at[1], py = dx * Y[0] + dy * Y[1], y = py / squash; return [dx * X[0] + dy * X[1] + y * shear, y]; };
-  return { place, unplace, A, sag, cx: -A * Math.cos(SLASH_SPAN / 2) - sag / 2 };
+  return { place, unplace, A, sag, cx: -A * Math.cos(span / 2) - sag / 2 };
 }
 
 // how far each end weakens: the share of its length over which a tip fades out
@@ -67,10 +76,10 @@ export const SLASH_END_FADE = 0.3;
 // there is kept (0 past a tip, rising smoothly to 1 in the middle). It goes by
 // where along the arc the point lies (its angle round the arc's centre), so
 // the glow round it fades with it; 半头 fades at its upper tip only
-export function slashEnds(at, travel, half, ground, shape = "full") {
-  const { unplace, cx } = slashFrameOf(at, travel, half, ground);
+export function slashEnds(at, travel, half, ground, shape = "full", span = SLASH_SPAN) {
+  const { unplace, cx } = slashFrameOf(at, travel, half, ground, span);
   return (p) => {
-    const [x, y] = unplace(p), s = (Math.atan2(y, x - cx) + SLASH_SPAN / 2) / SLASH_SPAN;
+    const [x, y] = unplace(p), s = (Math.atan2(y, x - cx) + span / 2) / span;
     return smooth(0, SLASH_END_FADE, s) * (shape === "half" ? 1 : smooth(0, SLASH_END_FADE, 1 - s));
   };
 }
@@ -90,23 +99,23 @@ function fadeEnds(cv, ends) {
 
 // how deep the crescent is (its outer arc's middle ahead of the line between
 // its tips), for half its chord: thickness is a share of this
-export const slashDepth = (half) => half / Math.sin(SLASH_SPAN / 2) * (1 - Math.cos(SLASH_SPAN / 2));
+export const slashDepth = (half, span = SLASH_SPAN) => half / Math.sin(span / 2) * (1 - Math.cos(span / 2));
 
 // The inner edge is an arc too — the circle through both tips whose middle is
 // `thick` inside the outer arc's — so the hollow is always hollow: thick is
 // kept under the crescent's depth. Its distance in from the outer arc along
 // the ray from the outer arc's centre at angle phi.
-export function slashInset(A, thick, phi) {
-  const a = A * Math.cos(SLASH_SPAN / 2), m = A - Math.min(thick, 0.95 * (A - a)), d = (m * m - A * A) / (2 * (m - a)), B = m - d;
+export function slashInset(A, thick, phi, span = SLASH_SPAN) {
+  const a = A * Math.cos(span / 2), m = A - Math.min(thick, 0.95 * (A - a)), d = (m * m - A * A) / (2 * (m - a)), B = m - d;
   const t = d * Math.cos(phi) + Math.sqrt(Math.max(0, d * d * Math.cos(phi) ** 2 - d * d + B * B));
   return Math.max(A - t, thick * 0.02);
 }
 
-export function slashRuns(at, travel, half, thick, ground, shape = "full") {
-  const { place, A, sag } = slashFrameOf(at, travel, half, ground);
+export function slashRuns(at, travel, half, thick, ground, shape = "full", span = SLASH_SPAN) {
+  const { place, A, sag } = slashFrameOf(at, travel, half, ground, span);
   const section = (s, u) => {
-    const phi = -SLASH_SPAN / 2 + SLASH_SPAN * s, W = slashInset(A, thick, phi);
-    const nx = Math.cos(phi), ny = Math.sin(phi), ox = A * nx - A * Math.cos(SLASH_SPAN / 2) - sag / 2, oy = A * ny;
+    const phi = -span / 2 + span * s, W = slashInset(A, thick, phi, span);
+    const nx = Math.cos(phi), ny = Math.sin(phi), ox = A * nx - A * Math.cos(span / 2) - sag / 2, oy = A * ny;
     return { a: place(ox - nx * W, oy - ny * W), b: place(ox, oy), u };
   };
   const run = [];
@@ -119,11 +128,11 @@ export function slashRuns(at, travel, half, thick, ground, shape = "full") {
 // along the crescent's arc towards a tip and a little past it, the way that
 // end points, bright at its start and fading out. amount: the palette's
 // speed lines (0..1); each line is a polyline of { p, a } and a width
-export function slashLines(at, travel, half, thick, ground, shape, amount, seed, frame, alpha) {
-  const { place, A, cx } = slashFrameOf(at, travel, half, ground), out = [];
+export function slashLines(at, travel, half, thick, ground, shape, amount, seed, frame, alpha, span = SLASH_SPAN) {
+  const { place, A, cx } = slashFrameOf(at, travel, half, ground, span), out = [];
   const S = rng(seed * 131 + 3), P = rng(seed * 131 + frame * 557 + 1), sides = shape === "half" ? [-1] : [-1, 1];
   for (let k = 0, N = Math.round(Math.max(0, amount) * 22); k < N; k++) {
-    const dir = sides[k % sides.length], from = (0.05 + 0.3 * S()) * SLASH_SPAN / 2, to = (1 + 0.1 + 0.3 * S()) * SLASH_SPAN / 2;
+    const dir = sides[k % sides.length], from = (0.05 + 0.3 * S()) * span / 2, to = (1 + 0.1 + 0.3 * S()) * span / 2;
     const depth = thick * (0.05 + 0.6 * S()), width = Math.max(0.6, thick / (30 + 50 * S())), a = alpha * (0.35 + 0.5 * P()), rad = A - depth, pts = [];
     for (let j = 0; j <= 16; j++) {
       const f = j / 16, phi = dir * (from + (to - from) * f);
@@ -137,11 +146,11 @@ export function slashLines(at, travel, half, thick, ground, shape, amount, seed,
 // one crescent, painted onto g (canvas coordinates)
 export function drawSlashAt(g, c, s, at, travel, r, scale, alpha, k) {
   if (alpha <= 0.01 || scale <= 0) return;
-  const half = r * 4 * scale, thick = slashDepth(half) * Math.max(10, Math.min(90, s.slashThick ?? 60)) / 100, ground = s.slashAngle ?? 90;
+  const span = slashSpan(s), half = r * 4 * scale, thick = slashDepth(half, span) * Math.max(10, Math.min(90, s.slashThick ?? 60)) / 100, ground = s.slashAngle ?? 90;
   // (the flowing-blade layer smears past a pointed tip; the straight speed
   // lines are drawn curving instead, below)
-  const look = glowStyle(c.pal.preset), style = { ...look, flow: 0, speedLines: 0 }, ends = slashEnds(at, travel, half, ground, s.slashShape);
-  slashRuns(at, travel, half, thick, ground, s.slashShape).forEach((run, side) => {
+  const look = glowStyle(c.pal.preset), style = { ...look, flow: 0, speedLines: 0 }, ends = slashEnds(at, travel, half, ground, s.slashShape, span);
+  slashRuns(at, travel, half, thick, ground, s.slashShape, span).forEach((run, side) => {
     const cv = renderGlow([run], style, c.w, c.h, { seed: c.seed * 4 + k * 2 + side, frame: c.i, alpha, fade: 0.3, fx: false });
     if (!cv) return;
     // both ends weaken and fade out, not just thin
@@ -151,7 +160,7 @@ export function drawSlashAt(g, c, s, at, travel, r, scale, alpha, k) {
   });
   g.globalCompositeOperation = c.pal.dark ? "source-over" : "lighter";
   g.lineCap = "round";
-  for (const line of slashLines(at, travel, half, thick, ground, s.slashShape, (+look.speedLines || 0) / 100, c.seed * 4 + k * 2, c.i, alpha)) {
+  for (const line of slashLines(at, travel, half, thick, ground, s.slashShape, (+look.speedLines || 0) / 100, c.seed * 4 + k * 2, c.i, alpha, span)) {
     g.lineWidth = line.width;
     for (let j = 1; j < line.pts.length; j++) {
       const p = line.pts[j - 1], q = line.pts[j], tone = j < 5 ? c.pal.core : c.pal.rim;

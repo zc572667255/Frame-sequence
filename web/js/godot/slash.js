@@ -9,18 +9,24 @@ var _tg_plain := false  # 剑气：完全照拖尾本身的画法（不用远程
 var _sm_on := false
 var _sm := {}
 
-# 和地面的夹角（度，-90 … 90）→ Vector2(squash, shear)：放倒多少看绝对值（90 竖直，0 平行地面，从侧面看越扁），
-# 正负决定往哪边倒：大于 0 下面的尖靠后（上端前倾），小于 0 上面的尖靠后（上端后仰），相当于上下翻过来
+# 和地面的夹角（度，0 … 360）→ Vector2(squash, shear)：月牙绕着飞行方向转，从侧面稍微偏上看。
+# 90 竖直，0（和 180）平行地面、扁扁的、下面的尖靠后；中间连续转过去，没有跳变：约 163° 和 343° 侧对（一道细线），
+# 270 倒过来，360 又回到 0。squash 显示多高（有正负，小于 0 是倒过来的），shear 下面的尖靠后多少
 func _slash_tilt(ground: float) -> Vector2:
-	var g := clampf(ground, -90.0, 90.0)
-	var th := absf(g) * PI / 180.0
-	return Vector2(0.3 + 0.7 * sin(th), (-0.25 if g < 0.0 else 0.25) * cos(th))
+	var th := ground * PI / 180.0
+	var sq := sin(th) + 0.3 * cos(th)
+	if absf(sq) < 0.001: sq = -0.001 if sq < 0.0 else 0.001  # 从屏幕换回月牙坐标要除以它
+	return Vector2(sq, 0.25 * cos(th))
+
+# 月牙弧度：从一个尖到另一个尖绕弧多少（度，60 … 240，默认 170）。弦长不变：小了更平、更浅，大了更深，过了 180 两个尖往回卷成「C」
+func _slash_span() -> float:
+	return clampf(slash_curve, 60.0, 240.0) * PI / 180.0
 
 # 画月牙的这一段时间里，按 at/travel/half/ground/shape 设好两头变淡
 func _slash_mask_begin(at: Vector2, travel: float, half: float, ground: float, shape: String) -> void:
 	var tilt := _slash_tilt(ground)
 	var fr := _slash_frame(travel)
-	var span := 170.0 * PI / 180.0
+	var span := _slash_span()
 	var A := half / sin(span / 2.0)
 	var sag := A * (1.0 - cos(span / 2.0))
 	_sm = {"at": at, "X": fr[0], "Y": fr[1], "squash": tilt.x, "shear": tilt.y, "cx": -A * cos(span / 2.0) - sag / 2.0, "span": span, "half": shape == "half"}
@@ -56,7 +62,7 @@ func _slash_frame(travel: float) -> Array:
 
 # 月牙是一整段拖尾：截面 {a 内侧, b 外侧（亮边）, u}。两头尖：从上尖一直画到下尖，两头尖完全靠厚度收出来，
 # u 从拖尾中段开始，两头都不会淡没；半头：从上尖画到正中平切处（拖尾最粗的头）。
-# ground 是和地面的夹角（度，-90 … 90，见 _slash_tilt）
+# ground 是和地面的夹角（度，0 … 360，见 _slash_tilt）
 func _slash_runs(at: Vector2, travel: float, half: float, thick: float, ground: float, shape: String) -> Array:
 	var tilt := _slash_tilt(ground)
 	var squash := tilt.x
@@ -64,7 +70,7 @@ func _slash_runs(at: Vector2, travel: float, half: float, thick: float, ground: 
 	var fr := _slash_frame(travel)
 	var X: Vector2 = fr[0]
 	var Y: Vector2 = fr[1]
-	var span := 170.0 * PI / 180.0
+	var span := _slash_span()
 	var A := half / sin(span / 2.0)
 	var sag := A * (1.0 - cos(span / 2.0))
 	var n := 16 if shape == "half" else 32
@@ -97,7 +103,7 @@ func _slash_inset(A: float, thick: float, phi: float, span: float) -> float:
 func _slash_at(at: Vector2, travel: float, r: float, scale0: float, alpha: float, k: int, key: int) -> void:
 	if alpha <= 0.01 or scale0 <= 0.0: return
 	var half := r * 4.0 * scale0
-	var span := 170.0 * PI / 180.0
+	var span := _slash_span()
 	var thick := half / sin(span / 2.0) * (1.0 - cos(span / 2.0)) * clampf(slash_thick, 10.0, 90.0) / 100.0
 	var runs := _slash_runs(at, travel, half, thick, slash_angle, slash_shape)
 	var frame := int(floor(_t * frames + 0.0001))
@@ -119,7 +125,7 @@ func _slash_lines(at: Vector2, travel: float, half: float, thick: float, ground:
 	var fr := _slash_frame(travel)
 	var X: Vector2 = fr[0]
 	var Y: Vector2 = fr[1]
-	var span := 170.0 * PI / 180.0
+	var span := _slash_span()
 	var A := half / sin(span / 2.0)
 	var sag := A * (1.0 - cos(span / 2.0))
 	var cx := -A * cos(span / 2.0) - sag / 2.0
