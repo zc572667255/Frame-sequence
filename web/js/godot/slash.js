@@ -9,14 +9,21 @@ var _tg_plain := false  # 剑气：完全照拖尾本身的画法（不用远程
 var _sm_on := false
 var _sm := {}
 
+# 和地面的夹角（度，-90 … 90）→ Vector2(squash, shear)：放倒多少看绝对值（90 竖直，0 平行地面，从侧面看越扁），
+# 正负决定往哪边倒：大于 0 下面的尖靠后（上端前倾），小于 0 上面的尖靠后（上端后仰），相当于上下翻过来
+func _slash_tilt(ground: float) -> Vector2:
+	var g := clampf(ground, -90.0, 90.0)
+	var th := absf(g) * PI / 180.0
+	return Vector2(0.3 + 0.7 * sin(th), (-0.25 if g < 0.0 else 0.25) * cos(th))
+
 # 画月牙的这一段时间里，按 at/travel/half/ground/shape 设好两头变淡
 func _slash_mask_begin(at: Vector2, travel: float, half: float, ground: float, shape: String) -> void:
-	var th := clampf(ground, 0.0, 90.0) * PI / 180.0
+	var tilt := _slash_tilt(ground)
 	var fr := _slash_frame(travel)
 	var span := 170.0 * PI / 180.0
 	var A := half / sin(span / 2.0)
 	var sag := A * (1.0 - cos(span / 2.0))
-	_sm = {"at": at, "X": fr[0], "Y": fr[1], "squash": 0.3 + 0.7 * sin(th), "shear": 0.25 * cos(th), "cx": -A * cos(span / 2.0) - sag / 2.0, "span": span, "half": shape == "half"}
+	_sm = {"at": at, "X": fr[0], "Y": fr[1], "squash": tilt.x, "shear": tilt.y, "cx": -A * cos(span / 2.0) - sag / 2.0, "span": span, "half": shape == "half"}
 	_sm_on = true
 
 # 屏幕上一点留下多少光：过了尖是 0，往中间平滑升到 1（按它在弧上的角度，所以周围的光晕跟着一起淡）
@@ -49,11 +56,11 @@ func _slash_frame(travel: float) -> Array:
 
 # 月牙是一整段拖尾：截面 {a 内侧, b 外侧（亮边）, u}。两头尖：从上尖一直画到下尖，两头尖完全靠厚度收出来，
 # u 从拖尾中段开始，两头都不会淡没；半头：从上尖画到正中平切处（拖尾最粗的头）。
-# ground 是和地面的夹角（度，90 竖直 … 0 平行地面，越放倒从侧面看越扁，下面的尖稍微更靠后）
+# ground 是和地面的夹角（度，-90 … 90，见 _slash_tilt）
 func _slash_runs(at: Vector2, travel: float, half: float, thick: float, ground: float, shape: String) -> Array:
-	var th := clampf(ground, 0.0, 90.0) * PI / 180.0
-	var squash := 0.3 + 0.7 * sin(th)
-	var shear := 0.25 * cos(th)
+	var tilt := _slash_tilt(ground)
+	var squash := tilt.x
+	var shear := tilt.y
 	var fr := _slash_frame(travel)
 	var X: Vector2 = fr[0]
 	var Y: Vector2 = fr[1]
@@ -106,9 +113,9 @@ func _slash_at(at: Vector2, travel: float, r: float, scale0: float, alpha: float
 
 # 光丝：配色里拖尾的速度线，但顺着月牙的弧线走：从正中附近沿着弧往一个尖去，过了尖再顺着弯一点，开头亮、往外淡去
 func _slash_lines(at: Vector2, travel: float, half: float, thick: float, ground: float, shape: String, quantity: float, key: int, frame: int, alpha: float) -> void:
-	var th := clampf(ground, 0.0, 90.0) * PI / 180.0
-	var squash := 0.3 + 0.7 * sin(th)
-	var shear := 0.25 * cos(th)
+	var tilt := _slash_tilt(ground)
+	var squash := tilt.x
+	var shear := tilt.y
 	var fr := _slash_frame(travel)
 	var X: Vector2 = fr[0]
 	var Y: Vector2 = fr[1]

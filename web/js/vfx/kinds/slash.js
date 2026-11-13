@@ -42,8 +42,17 @@ export function slashFrame(travel) {
 // (x forward, y down, its middle at the origin) on screen; its outer edge is
 // the circle of radius A round [cx, 0], at angle phi (0 its middle, -SPAN/2
 // its upper tip)
+// The ground angle, -90 … 90: how far it is laid down is |ground| (90 upright,
+// 0 flat, seen from the side squashed), which way the sign: above 0 the lower
+// tip trails back (its top leans forward), below 0 the upper tip does (its top
+// leans back) — the same crescent upside down.
+export function slashTilt(ground) {
+  const g = Math.max(-90, Math.min(90, Number(ground) || 0)), th = Math.abs(g) * Math.PI / 180;
+  return { squash: 0.3 + 0.7 * Math.sin(th), shear: (g < 0 ? -0.25 : 0.25) * Math.cos(th) };
+}
+
 export function slashFrameOf(at, travel, half, ground) {
-  const th = Math.max(0, Math.min(90, ground)) * Math.PI / 180, squash = 0.3 + 0.7 * Math.sin(th), shear = 0.25 * Math.cos(th);
+  const { squash, shear } = slashTilt(ground);
   const { x: X, y: Y } = slashFrame(travel);
   const A = half / Math.sin(SLASH_SPAN / 2), sag = A * (1 - Math.cos(SLASH_SPAN / 2));
   const place = (x, y) => { const px = x - y * shear, py = y * squash; return [at[0] + X[0] * px + Y[0] * py, at[1] + X[1] * px + Y[1] * py]; };

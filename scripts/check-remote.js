@@ -261,9 +261,9 @@ for (const width of [0.5, 1, 2.5]) {
 }
 
 // 剑气 (2D): a crescent whose bulge leads and tips trail, two-tipped or half,
-// laid down from upright towards parallel to the ground
+// laid down from upright towards parallel to the ground, either way
 const slashWidth = q => Math.hypot(q.a[0] - q.b[0], q.a[1] - q.b[1]);
-for (const ground of [0, 30, 60, 90]) for (const travel of [0, Math.PI, 0.3]) for (const shape of ["full", "half"]) {
+for (const ground of [-90, -60, -30, -1, 0, 30, 60, 90]) for (const travel of [0, Math.PI, 0.3]) for (const shape of ["full", "half"]) {
   const runs = slashRuns([100, 100], travel, 40, 20, ground, shape), { x: X, y: Y } = slashFrame(travel);
   assert.equal(runs.length, 1, "one run, never pieced together");
   const run = runs[0], n = run.length;
@@ -289,6 +289,18 @@ for (const ground of [0, 30, 60, 90]) for (const travel of [0, Math.PI, 0.3]) fo
     }
     if (ground === 90) { assert.ok(Math.abs(height - 80) < 1e-6, "upright: the whole crescent, as tall as its chord"); assert.ok(Math.abs(along(bottom) - along(top)) < 1e-6, "upright: both tips level"); }
     if (ground === 0) { assert.ok(Math.abs(height - 24) < 1e-6, "parallel to the ground: flattened, seen from the side"); assert.ok(along(bottom) < along(top) - 1, "lying down, the lower tip trails further back"); }
+    if (ground === -1) { assert.ok(height < 26, "nearly flat the other way: flattened too"); assert.ok(along(top) < along(bottom) - 1, "laid down the other way, the upper tip trails further back"); }
+    if (ground === -90) { assert.ok(Math.abs(height - 80) < 1e-6 && Math.abs(along(bottom) - along(top)) < 1e-6, "-90: upright as at 90"); }
+  }
+  if (ground < 0) {
+    // the other way is the same crescent upside down: as tall, leaning back where +|ground| leans forward
+    const pos = slashRuns([100, 100], travel, 40, 20, -ground, shape)[0];
+    const lean = (r) => along(r.at(-1).b) - along(r[0].b), tall = (r) => across(r.at(-1).b) - across(r[0].b);
+    assert.ok(Math.abs(tall(run) - tall(pos)) < 1e-6, "as tall as at " + -ground + "°");
+    if (shape === "full") {
+      assert.ok(Math.abs(lean(run) + lean(pos)) < 1e-6, "leaning the other way to " + -ground + "°");
+      for (let i = 0; i < n; i++) assert.ok(Math.abs(along(run[i].b) - along(pos[n - 1 - i].b)) < 1e-6 && Math.abs(across(run[i].b) + across(pos[n - 1 - i].b)) < 1e-6, "two-tipped: " + -ground + "° upside down");
+    }
   }
 }
 for (const travel of [0, Math.PI, 0.3, -0.4]) assert.ok(slashFrame(travel).y[1] > 0, "up stays up whichever way it flies");
@@ -340,7 +352,7 @@ assert.equal(slashFade(0), 1); assert.equal(slashFade(1), 0);
   assert.ok(last < 0.2, "almost gone by the last frame");
   assert.deepEqual(at(s.frames + 1), [], "gone once its frames are over");
   assert.equal(s.frames, s.chargeFrames + s.travelFrames + s.impactFrames, "the animation is charge + flight + fade");
-  assert.ok(FLIGHT_FIELDS.some(f => f.key === "slashAngle" && f.max === 90 && flightFieldVisible(f, { kind: "slash", flightPath: "sprite" })), "the ground angle is always offered for 剑气");
+  assert.ok(FLIGHT_FIELDS.some(f => f.key === "slashAngle" && f.min === -90 && f.max === 90 && flightFieldVisible(f, { kind: "slash", flightPath: "sprite" })), "the ground angle is always offered for 剑气");
   assert.ok(FLIGHT_FIELDS.some(f => f.key === "slashThick" && flightFieldVisible(f, { kind: "slash", flightPath: "sprite" })), "剑气 has its own thickness");
   assert.ok(!FLIGHT_FIELDS.some(f => f.key === "trailWidth" && flightFieldVisible(f, { kind: "slash", flightPath: "straight" })), "the trail width is not offered for 剑气");
   assert.ok(FLIGHT_FIELDS.some(f => f.key === "slashShape" && f.options.map(o => o[0]).join() === "full,half" && flightFieldVisible(f, { kind: "slash", flightPath: "arc" })), "两头尖 / 半头 is offered for 剑气");
@@ -348,7 +360,7 @@ assert.equal(slashFade(0), 1); assert.equal(slashFade(1), 0);
   const k = VFX_KINDS.find(x => x.id === "slash");
   assert.ok(k.defaults.startX < k.defaults.endX && k.defaults.startY === k.defaults.endY && k.defaults.slashAngle === 90, "剑气 flies left to right, upright, by default");
 }
-console.log("剑气两头尖 / 半头、鼓面朝前、竖直到平行地面的夹角、横向飞行与消失检查通过");
+console.log("剑气两头尖 / 半头、鼓面朝前、-90°~90° 两个方向的地面夹角、横向飞行与消失检查通过");
 
 // 攻击拖尾 两头尖: drawn once, whole (no end is the trail's own tail), both ends faded
 {

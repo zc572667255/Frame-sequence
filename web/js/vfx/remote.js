@@ -10,7 +10,7 @@ export const REMOTE_DEFAULTS = {
   flightCount: 1, flightInterval: 3, flightSpread: 12,
   bodySize: 7, trailFrames: 8, trailWidth: 70, impactKind: "auto", impactSize: 22,
   headWidth: 100, headCurve: 35,
-  slashAngle: 90, slashShape: "full", slashThick: 60, // 剑气: angle to the ground (90 upright … 0 parallel to it), 外形 (kinds/slash.js SLASH_SHAPES), thickness (% of how deep the crescent bows)
+  slashAngle: 90, slashShape: "full", slashThick: 60, // 剑气: angle to the ground (-90 … 90: 0 parallel to it, ±90 upright, the sign which way it leans), 外形 (kinds/slash.js SLASH_SHAPES), thickness (% of how deep the crescent bows)
 };
 export const FLIGHT_FIELDS = [
   { label: "移动路径", key: "flightPath", options: FLIGHT_PATHS, always: true },
@@ -36,7 +36,7 @@ export const FLIGHT_FIELDS = [
   { label: "头部宽度", key: "headWidth", min: 20, max: 250, unit: "%", kind: "arrow", always: true },
   { label: "头部弧度", key: "headCurve", min: 0, max: 100, unit: "%", kind: "arrow", always: true },
   { label: "剑气外形", key: "slashShape", options: [["full", "两头尖"], ["half", "半头"]], kind: "slash", always: true },
-  { label: "地面夹角", key: "slashAngle", min: 0, max: 90, unit: "°", kind: "slash", always: true },
+  { label: "地面夹角", key: "slashAngle", min: -90, max: 90, unit: "°", kind: "slash", always: true },
   { label: "剑气厚度", key: "slashThick", min: 10, max: 90, unit: "%", kind: "slash", always: true },
   { label: "命中效果", key: "impactKind", options: FLIGHT_IMPACTS },
   { label: "命中范围", key: "impactSize", min: 5, max: 40, unit: "%" },
