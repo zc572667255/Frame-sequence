@@ -11,6 +11,7 @@ import { projectile, projectileBounds } from "./kinds/arrow.js";
 import { arrowSections } from "./arrowhead.js";
 import { flameUV } from "./ribbonmesh.js";
 import { drawIceTail, iceColors, chipPoints } from "./kinds/ice.js";
+import { drawSlashFlight } from "./kinds/slash.js";
 
 export function ribbonSections(points, radius, kind, strength = 1, headRadius = radius) {
   const pts = [];
@@ -176,6 +177,8 @@ function shed(g, c, s, state, index, r) {
 
 export function drawRemoteTrail(g, c, s, state, frame, index, r) {
   shed(g, c, s, state, index, r);
+  // 剑气: the crescent itself and its after-images, drawn as attack trails
+  if (c.kind === "slash") return void drawSlashFlight(g, c, s, state, index, r);
   const pts = flightTrail(s, c.w, c.h, frame, index);
   const wrapping = c.kind === "arrow" && state.body;
   if (!wrapping && (pts.length < 2 || s.trailWidth <= 0)) return;

@@ -13,6 +13,7 @@ import { explosion } from "./explosion.js";
 import { shock } from "./shock.js";
 import { hit } from "./hit.js";
 import { accentAmounts, drawAccents } from "../accents.js";
+import { drawSlashAt } from "./slash.js";
 
 // Each material has its own geometry, independent of palette and flight path.
 export function remoteBody(g, c, r) {
@@ -62,6 +63,8 @@ function impact(g, c, s, atPoint, t, angle) {
   const radius = Math.min(c.w, c.h) * s.impactSize / 100;
   const local = { ...c, t, loop: false, cx: atPoint[0], cy: atPoint[1], R: radius, gy: atPoint[1], squash: 0.45 };
   const kind = s.impactKind;
+  // 剑气 simply fades out far away unless a hit is chosen
+  if (c.kind === "slash" && kind === "auto") return;
   if (c.kind === "ice" && (kind === "auto" || kind === "explosion")) return drawIceImpact(g, local, radius, angle);
   if (c.kind === "thunder" && (kind === "auto" || kind === "explosion")) return drawThunderImpact(g, local, radius);
   if (kind === "explosion" || (kind === "auto" && c.kind === "fireball")) return explosion(g, local);
@@ -87,6 +90,7 @@ export function remote(g, c, settings) {
   const s = remoteSettings({ ...REMOTE_DEFAULTS, ...settings });
   const radius = Math.min(c.w, c.h) * Math.max(2, Math.min(16, s.bodySize)) / 100 * s.size / 90;
   const frame = c.t * s.frames;
+  if (!hasFlight(s) && c.kind === "slash") return void drawSlashAt(g, c, s, [c.cx, c.cy], -Math.PI / 2, radius, 1, 1, 0);
   if (!hasFlight(s)) {
     g.save(); g.translate(c.cx, c.cy); remoteBody(g, { ...c, still: true }, radius); g.restore(); return;
   }

@@ -42,6 +42,7 @@ export const VFX_KINDS = [
   { id: "ice", name: "冰矛", help: "单尖冰锥，带碎裂断口、纵向冰纹与透光切面，使用拖尾特效的「冰晶」拖尾；命中时冰块翻滚碎裂，留下冰裂纹", defaults: { palette: "frost", loop: true, size: 90, glow: 30, acc: "none", flightPath: "straight" }, round: true },
   { id: "wind", name: "风刃", help: "白色翻滚气团、两端渐隐的细长流线与逐渐扩散的空气尾迹，命中时扩散", defaults: { palette: "air", loop: true, size: 90, glow: 20, acc: "none" }, round: true },
   { id: "sand", name: "沙流", help: "流动的沙粒与金色细丝，沿路径飞行，命中时扬起散沙", defaults: { palette: "sand", loop: true, size: 90, glow: 20, acc: "none", flightPath: "wave" }, round: true },
+  { id: "slash", name: "剑气", help: "一道月牙形的剑气，光效和配色与同名攻击拖尾一样（烈焰斩是火焰、冰晶带冰晶、雷光带闪电……）；从近处飞向远处，越飞越小、越淡，到终点消失。「地面夹角」0° 是贴地横扫，90° 是竖劈，「远处大小」是飞到终点时的大小", defaults: { palette: "blaze", loop: true, size: 90, glow: 40, acc: "none", flightPath: "straight", startX: 50, startY: 88, endX: 50, endY: 30, chargeFrames: 2, travelFrames: 16, impactFrames: 4 }, round: true },
   { id: "hit", name: "命中火花", help: "打中的一瞬间：白热闪光、尖刺和飞溅的火花", defaults: { palette: "radiant", frames: 7, loop: false, size: 80 } },
   { id: "fireball", name: "火球", help: "翻滚燃烧的火球：明亮火核、不规则火舌、向后撕开的火尾、烟和冷却的余烬。循环时原地燃烧供游戏移动；不循环时飞过画幅后消散。用旋转改变飞行方向", defaults: { palette: "blaze", frames: 24, loop: true, size: 90, glow: 35, acc: "none" }, round: true },
   { id: "explosion", name: "爆炸", help: "火球膨胀、冷却成烟往上飘，带飞散的火星", defaults: { palette: "inferno", frames: 12, loop: false, size: 80 } },
@@ -103,13 +104,13 @@ export const VFX_EDGES = [["auto", "自动（按配色）"], ["none", "无"], ["
 
 export const effectKinds = (remote = false) => {
   const kinds = VFX_KINDS.filter((k) => isRemoteKind(k.id) === remote);
-  return remote ? kinds.sort((a, b) => ["fireball", "thunder", "ice", "wind", "sand", "arrow"].indexOf(a.id) - ["fireball", "thunder", "ice", "wind", "sand", "arrow"].indexOf(b.id)) : kinds;
+  return remote ? kinds.sort((a, b) => ["fireball", "thunder", "ice", "wind", "sand", "slash", "arrow"].indexOf(a.id) - ["fireball", "thunder", "ice", "wind", "sand", "slash", "arrow"].indexOf(b.id)) : kinds;
 };
 
 const EFFECTS = { hit, explosion, shock, dust, charge, circle, heal, aura, ribbon, wings, burn, cloud, arrow, fireball };
 
 // how much bloom each kind gets on top of what it draws itself
-const BLOOM = { hit: 1, shock: 0.8, charge: 1, heal: 0.7, circle: 0, explosion: 0.7, dust: 0, aura: 0.9, burn: 0.9, ribbon: 1, wings: 1, cloud: 0, arrow: 0.4, fireball: 0.45, ice: 0.35 };
+const BLOOM = { hit: 1, shock: 0.8, charge: 1, heal: 0.7, circle: 0, explosion: 0.7, dust: 0, aura: 0.9, burn: 0.9, ribbon: 1, wings: 1, cloud: 0, arrow: 0.4, fireball: 0.45, ice: 0.35, slash: 0.6 };
 
 // one frame: a w×h canvas
 export function renderVfx(p, i) {
@@ -142,7 +143,7 @@ export function renderVfx(p, i) {
   const draw = EFFECTS[s.kind] || EFFECTS.hit;
   let base = createCanvas(w, h);
   const bg = base.getContext("2d");
-  if (hasFlight(s) || ["thunder", "ice", "wind", "sand"].includes(s.kind)) remote(bg, c, s);
+  if (hasFlight(s) || ["thunder", "ice", "wind", "sand", "slash"].includes(s.kind)) remote(bg, c, s);
   else draw(bg, c);
   // the trails' accents over it (光效点缀)
   if (!hasFlight(s)) drawAccents(bg, c, accentAmounts(s, pal.preset));

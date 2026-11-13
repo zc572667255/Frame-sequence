@@ -5,6 +5,7 @@ import { ribbonSections, materialAt, flameFlow } from "../web/js/vfx/remotetrail
 import { flightTrailWindow } from "../web/js/vfx/remote.js";
 import { alongPath, iceSwirl, iceLance, iceColors } from "../web/js/vfx/kinds/ice.js";
 import { iceBurst } from "../web/js/vfx/kinds/icehit.js";
+import { slashRun, slashScale, slashFade, slashCopies } from "../web/js/vfx/kinds/slash.js";
 import { paletteOf } from "../web/js/vfx/common.js";
 import { shapeOf } from "../web/js/vfx/catalog.js";
 import { thunderDischarge } from "../web/js/vfx/kinds/thunderhit.js";
@@ -31,7 +32,7 @@ for (const flightPath of ["straight", "arc", "wave", "spiral", "custom"]) {
       assert.ok(state.launched && state.body && state.hit < 0);
       close(flightTrail(s, width, height, frame, index).at(-1), state.at);
       const points = flightTrail(s, width, height, frame, index);
-      for (const kind of ["fireball", "thunder", "ice", "wind", "sand", "arrow"]) {
+      for (const kind of ["fireball", "thunder", "ice", "wind", "sand", "arrow", "slash"]) {
         const sections = ribbonSections(points, 12, kind);
         assert.ok(sections.length >= 2);
         assert.equal(sections[0].u, 0);
@@ -132,7 +133,7 @@ for (const field of FLIGHT_FIELDS.filter(f => f.key === "headWidth" || f.key ===
 console.log("箭身完整包裹、旋转与长宽适配、头部弧度和宽度独立控制检查通过");
 
 const frameIds = Array.from({ length: 36 }, (_, i) => 'C' + i);
-for (const kind of ["fireball", "thunder", "ice", "wind", "sand", "arrow"]) {
+for (const kind of ["fireball", "thunder", "ice", "wind", "sand", "arrow", "slash"]) {
   const layer = { name: kind, vfx: { ...REMOTE_DEFAULTS, kind, w: 900, h: 600, x: -200, y: -100, follow: "old", perFrame: true, keys: { C0: { w: 10, h: 10, x: 2, y: 2 } } } };
   const s = vfxSettings(layer);
   assert.equal(s.follow, null); assert.equal(s.perFrame, false); assert.equal(s.keys, null);
@@ -256,3 +257,31 @@ for (const width of [0.5, 1, 2.5]) {
   const body = 40, run = ribbonSections([[0, 0], [120, 0], [240, 0]], body * width, "fireball", 1, body);
   assert.ok(Math.hypot(run.at(-1).a[0] - run.at(-1).b[0], run.at(-1).a[1] - run.at(-1).b[1]) <= body * 1.7 + 1e-9, "wide flame joins remain inside the body's height");
 }
+
+// 剑气: a crescent whose bulge leads, near → far, turned by its angle to the ground
+for (const ground of [0, 30, 60, 90]) for (const travel of [-Math.PI / 2, 0, -2.4]) {
+  const run = slashRun([100, 100], travel, 40, 12, ground);
+  assert.equal(run.length, 33); assert.equal(run[0].u, 0); assert.equal(run.at(-1).u, 1);
+  assert.ok(run.every(q => [...q.a, ...q.b, q.u].every(Number.isFinite)));
+  const width = q => Math.hypot(q.a[0] - q.b[0], q.a[1] - q.b[1]);
+  assert.ok(width(run[0]) < 1 && width(run.at(-1)) < 1 && width(run[16]) > 3, "pointed at both tips, thick in the middle");
+  const tips = [(run[0].b[0] + run.at(-1).b[0]) / 2, (run[0].b[1] + run.at(-1).b[1]) / 2], apex = run[16].b;
+  const bulge = [apex[0] - tips[0], apex[1] - tips[1]];
+  assert.ok(bulge[0] * Math.cos(travel) + bulge[1] * Math.sin(travel) >= -1e-9, "the crescent's bulge leads the flight");
+  const chord = [run.at(-1).b[0] - run[0].b[0], run.at(-1).b[1] - run[0].b[1]];
+  if (ground === 0) assert.ok(Math.abs(chord[1]) < 1e-6, "flat on the ground: a level sweep");
+  if (ground === 90) assert.ok(Math.abs(chord[0]) < 1e-6, "upright: a vertical cut");
+}
+assert.equal(slashScale(0, 0.25), 1); assert.ok(Math.abs(slashScale(1, 0.25) - 0.25) < 1e-9); assert.ok(slashScale(0.5, 0.25) < 1 && slashScale(0.5, 0.25) > 0.25);
+assert.equal(slashFade(0), 1); assert.equal(slashFade(1), 0);
+{
+  const s = remoteSettings({ ...REMOTE_DEFAULTS, kind: "slash", flightPath: "straight", startX: 50, startY: 88, endX: 50, endY: 30 });
+  const early = slashCopies(s, 256, 200, flightState(s, 256, 200, s.chargeFrames + 2, 0), 0), late = slashCopies(s, 256, 200, flightState(s, 256, 200, s.chargeFrames + s.travelFrames - 1, 0), 0);
+  assert.ok(early.at(-1).scale > late.at(-1).scale, "it shrinks as it flies away");
+  assert.ok(early.at(-1).at[1] > late.at(-1).at[1], "it flies from near to far");
+  assert.ok(late.at(-1).alpha < early.at(-1).alpha, "it fades out far away");
+  assert.deepEqual(slashCopies(s, 256, 200, flightState(s, 256, 200, s.chargeFrames + s.travelFrames + 1, 0), 0), [], "gone after the flight");
+  assert.ok(FLIGHT_FIELDS.some(f => f.key === "slashAngle" && flightFieldVisible(f, { kind: "slash", flightPath: "sprite" })), "the ground angle is always offered for 剑气");
+  assert.ok(!FLIGHT_FIELDS.some(f => f.key === "slashAngle" && flightFieldVisible(f, { kind: "fireball", flightPath: "arc" })));
+}
+console.log("剑气的月牙形状、朝向、地面夹角、近大远小与消失检查通过");

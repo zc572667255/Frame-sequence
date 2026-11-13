@@ -1,5 +1,5 @@
 // Shared by project migration and the UI; no renderer or browser dependencies.
-export const isRemoteKind = (kind) => ["arrow", "fireball", "thunder", "ice", "wind", "sand"].includes(kind);
+export const isRemoteKind = (kind) => ["arrow", "fireball", "thunder", "ice", "wind", "sand", "slash"].includes(kind);
 export const isEffectCard = (type) => type === "vfx" || type === "remote";
 
 // 箭矢's 外观: shapes drawn in code (kinds/arrow.js)

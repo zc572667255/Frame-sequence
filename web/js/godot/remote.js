@@ -9,7 +9,7 @@ function properties(p) {
     flight_count: p.flightCount | 0, flight_interval: p.flightInterval | 0, flight_spread: +p.flightSpread,
     flight_frame_budget: p.remoteFrameBudget ?? 64,
     body_size: +p.bodySize, trail_frames: +p.trailFrames, trail_width: +p.trailWidth,
-    head_width: +p.headWidth, head_curve: +p.headCurve,
+    head_width: +p.headWidth, head_curve: +p.headCurve, slash_angle: +p.slashAngle, slash_far: +p.slashFar,
     impact_kind: JSON.stringify(p.impactKind), impact_size: +p.impactSize,
   };
 }
@@ -80,7 +80,7 @@ export const REMOTE_FIELD = `
 
 export const REMOTE_GD = `
 func _remote_active() -> bool:
-	return kind >= 12 and kind <= 17 and flight_path != "sprite"
+	return kind >= 12 and kind <= 18 and flight_path != "sprite"
 
 func _remote_interval() -> int:
 	return mini(flight_interval, maxi(0, int((flight_frame_budget - charge_frames - travel_frames - impact_frames) / maxi(1, flight_count - 1))))
@@ -203,6 +203,9 @@ func _remote_body(r: float) -> void:
 					points.append(Vector2.from_angle(angle) * radius)
 				_bolt(points, maxf(0.55, r * 0.04), 0.8)
 			_blob(Vector2.ZERO, r * 0.65, [[0.0, core_color, 1.0], [0.5, core_color, 0.95], [1.0, rim_color, 0.0]])
+		18:
+			if not _remote_active():
+				_slash_at(Vector2.ZERO, -PI / 2.0, r, 1.0, 1.0, 0, random_seed)
 		15:
 			_remote_ice(r, random_seed + _remote_shot * 31, not _remote_active())
 		16:
@@ -228,6 +231,10 @@ func _remote_body(r: float) -> void:
 
 func _remote_trail(state: Dictionary, frame: float, index: int, r: float) -> Array:
 	_remote_shed(state, index, r)
+	# 剑气：剑气本身和残影，照拖尾的画法
+	if kind == 18:
+		_remote_slash(state, index, r)
+		return []
 	var pts := _remote_points(frame, index)
 	var wrapping: bool = kind == 12 and state.body
 	if not wrapping and (pts.size() < 2 or trail_width <= 0.0): return []
@@ -259,6 +266,8 @@ func _remote_trail(state: Dictionary, frame: float, index: int, r: float) -> Arr
 
 func _remote_impact(at0: Vector2, t: float, angle: float) -> void:
 	if impact_kind == "none" or t < 0.0 or t >= 1.0: return
+	# 剑气没选命中效果时，飞到远处消失就结束
+	if kind == 18 and impact_kind == "auto": return
 	var radius := minf(_w, _h) * impact_size / 100.0
 	if kind == 15 and impact_kind in ["auto", "explosion"]:
 		_remote_ice_hit(at0, t, angle, random_seed + _remote_shot * 31, radius)

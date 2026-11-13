@@ -35,12 +35,13 @@ import { REMOTE_TRAIL_SHADER, REMOTE_TRAIL_GD } from "./remotetrail.js";
 import { ICE_GD } from "./ice.js";
 import { ICE_HIT_GD } from "./icehit.js";
 import { THUNDER_HIT_GD } from "./thunderhit.js";
+import { SLASH_GD } from "./slash.js";
 
-export const CODE_KINDS = ["hit", "shock", "charge", "heal", "ribbon", "wings", "circle", "aura", "burn", "explosion", "dust", "cloud", "arrow", "fireball", "thunder", "ice", "wind", "sand"];
+export const CODE_KINDS = ["hit", "shock", "charge", "heal", "ribbon", "wings", "circle", "aura", "burn", "explosion", "dust", "cloud", "arrow", "fireball", "thunder", "ice", "wind", "sand", "slash"];
 const PATTERNS = { hex: 0, penta: 1, square: 2, taiji: 3, burst: 4, holy: 5, whirl: 6, stars: 7, wisp: 8, arrows: 9 };
 // how much bloom each kind gets (vfx/effects.js BLOOM); 箭矢 more, standing in
 // for the bloom its trail glow adds to itself in the editor
-const BLOOM = { hit: 1, shock: 0.8, charge: 1, heal: 0.7, circle: 0, ribbon: 1, wings: 1, aura: 0.9, burn: 0.9, explosion: 0.7, dust: 0, cloud: 0, arrow: 1, fireball: 0.45, ice: 0.35 };
+const BLOOM = { hit: 1, shock: 0.8, charge: 1, heal: 0.7, circle: 0, ribbon: 1, wings: 1, aura: 0.9, burn: 0.9, explosion: 0.7, dust: 0, cloud: 0, arrow: 1, fireball: 0.45, ice: 0.35, slash: 0.6 };
 // 箭矢's glow: the trail look's amounts the script reads, in this order
 // (strands is a count, the rest 0..1) — GDScript TG_KEYS
 const TG_KEYS = ["strands", "core", "haze", "glow", "flow", "flames", "bolts", "crystal", "speedLines", "curls", "rays", "serrate", "rocks", "shadow", "snow", "dust", "sparkles", "sparkleSize"];
@@ -150,7 +151,7 @@ export function codeGodot(p) {
 # 特效（纯代码）—— 由「光台 · 序列帧工作室」导出：${d.name}
 # Godot 4.x。不用任何图片：特效的每一帧都由本脚本实时画出来，形状、随机细节、节奏和编辑器里一样，
 # 任意放大都清晰，类型、颜色、大小、速度都能随时改。编辑器里也会动（@tool），可以直接在 2D 视图里看效果。
-# 支持：命中火花、冲击波、蓄力、治疗光圈、流光、翅膀、魔法阵（含火焰边缘和六种地面光环）、环绕光、燃烧、爆炸、烟尘、云朵、箭矢（外面的光照拖尾的画法），以及光效点缀
+# 支持：命中火花、冲击波、蓄力、治疗光圈、流光、翅膀、魔法阵（含火焰边缘和六种地面光环）、环绕光、燃烧、爆炸、烟尘、云朵、箭矢（外面的光照拖尾的画法）、远程特效（火球、雷电、冰矛、风刃、沙流、剑气），以及光效点缀
 #（星光、粉尘、余烬、雪花、碎片、闪电、光芒、气泡、水滴、落叶、碎石）。
 # 两种用法：
 #   单独播放（mode = 单独播放，默认）：新建一个 Node2D 挂上本脚本，节点位置是特效画幅的中心。
@@ -177,7 +178,7 @@ signal finished
 ## 空闲时把还没画过的帧提前一帧一帧画好（第一遍播放也不卡）
 @export var prewarm := true
 @export_group("特效")
-@export_enum("命中火花", "冲击波", "蓄力", "治疗光圈", "流光", "翅膀", "魔法阵", "环绕光", "燃烧", "爆炸", "烟尘", "云朵", "箭矢", "火球", "雷电", "冰矛", "风刃", "沙流") var kind := ${d.kind}
+@export_enum("命中火花", "冲击波", "蓄力", "治疗光圈", "流光", "翅膀", "魔法阵", "环绕光", "燃烧", "爆炸", "烟尘", "云朵", "箭矢", "火球", "雷电", "冰矛", "风刃", "沙流", "剑气") var kind := ${d.kind}
 ## 画幅大小（编辑器里特效的画幅框）
 @export var box_size := Vector2(${num(d.w)}, ${num(d.h)})
 ## 特效大小：占画幅的比例
@@ -2459,6 +2460,7 @@ ${REMOTE_GD}
 ${REMOTE_TRAIL_GD}
 ${ICE_GD}
 ${ICE_HIT_GD}
+${SLASH_GD}
 ${THUNDER_HIT_GD}
 
 # 环绕光的位置：火焰尖、光束、火花到中心以上 1.77 ry，底部到中心以下 1.22 ry，两侧 1.15 rx，全部在画幅里
@@ -3170,8 +3172,8 @@ func _tg_glow(r: Array, seed: int, frame: int, alpha: float, gain: float, top: b
 	var cols: Array = Array(trail_colors) if trail_colors.size() >= 2 else Array(colors)
 	var core := core_color
 	var rim := rim_color
-	var tail := 0.6 if full_preset else (0.3 if _remote_active() else 0.75)
-	if _remote_active() and not full_preset:
+	var tail := 0.6 if full_preset or _tg_plain else (0.3 if _remote_active() else 0.75)
+	if _remote_active() and not full_preset and not _tg_plain:
 		L["core"] = 0.24
 		L["haze"] = 0.1
 		L["glow"] = 0.15

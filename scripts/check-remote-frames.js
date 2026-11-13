@@ -18,7 +18,7 @@ const editorUrl = new URL("../web/js/editor/editor.js", import.meta.url);
 const editorSource = readFileSync(editorUrl, "utf8").replace(/from "(\.[^"]+)"/g, (_, spec) => `from "${new URL(spec, editorUrl).href}"`);
 const { Editor } = await import("data:text/javascript;base64," + Buffer.from(editorSource + "\nexport { Editor };\n").toString("base64"));
 for (const count of [1, 2, 3, 8, 12, 36, 64, 80, 120]) for (const fi of new Set([0, Math.floor(count / 2), count - 1])) {
-  for (const kind of ["fireball", "thunder", "ice", "wind", "sand", "arrow"]) {
+  for (const kind of ["fireball", "thunder", "ice", "wind", "sand", "arrow", "slash"]) {
     const frames = Array.from({ length: count }, (_, i) => ({ id: "F" + i, duration: i % 2 ? 75 : null }));
     const doc = new EditorDoc({ w: 64, h: 32, fps: 12, frames, layers: [{ id: "L1", name: "角色" }], cels: new Map(), palette: [] });
     const originalFrames = structuredClone(frames);
