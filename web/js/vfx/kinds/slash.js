@@ -20,8 +20,8 @@ const HALF_SECTIONS = 16;
 export const SLASH_U0 = 0.35;
 export const SLASH_SHAPES = [["full", "两头尖"], ["half", "半头"]];
 
-// gone by the far end
-export const slashFade = (u) => 1 - smooth(0.7, 1, u);
+// after it arrives: fading out over the 命中消散 frames (hit 0 → 1)
+export const slashFade = (hit) => 1 - smooth(0, 1, hit);
 
 // the flight's own frame on screen: x along the flight, y across it pointing
 // down the screen (so "up" stays up whichever way it flies)
@@ -152,19 +152,26 @@ export function drawSlashAt(g, c, s, at, travel, r, scale, alpha, k) {
   g.globalCompositeOperation = "source-over";
 }
 
-// where the crescent and its faint after-image are while it flies:
-// [{ at, travel, scale, alpha, k }]
-export function slashCopies(s, w, h, state, index) {
-  if (!state.body) return [];
+// where the crescent (and, while it flies, its faint after-image) is:
+// [{ at, travel, scale, alpha, k }]. It flies whole all the way to the end
+// point, then over the 命中消散 frames drifts on a little, swells and fades
+// out there — the whole of its frames, from appearing to gone.
+export function slashCopies(s, w, h, state, index, r = 0) {
+  const dirAt = (u) => { const a = pathAt(s, w, h, Math.max(0, u - 0.005), index), b = pathAt(s, w, h, Math.min(1, u + 0.005), index); return Math.atan2(b[1] - a[1], b[0] - a[0]); };
+  if (!state.body) {
+    if (!(state.hit >= 0 && state.hit < 1)) return [];
+    const end = pathAt(s, w, h, 1, index), travel = dirAt(1), drift = r * 0.8 * state.hit;
+    return [{ at: [end[0] + Math.cos(travel) * drift, end[1] + Math.sin(travel) * drift], travel, scale: 1 + 0.15 * state.hit, alpha: slashFade(state.hit), k: 0 }];
+  }
   const grow = state.launched ? 1 : 0.15 + 0.85 * state.charge, out = [];
   for (const [lag, fade, k] of [[0.06, 0.22, 1], [0, 1, 0]]) {
     if (lag && (!state.launched || state.u - lag < 0)) continue;
-    const u = Math.max(0, state.u - lag), p = pathAt(s, w, h, u, index), a = pathAt(s, w, h, Math.max(0, u - 0.005), index), b = pathAt(s, w, h, Math.min(1, u + 0.005), index);
-    out.push({ at: p, travel: Math.atan2(b[1] - a[1], b[0] - a[0]), scale: grow, alpha: slashFade(u) * fade, k });
+    const u = Math.max(0, state.u - lag);
+    out.push({ at: pathAt(s, w, h, u, index), travel: dirAt(u), scale: grow, alpha: fade, k });
   }
   return out;
 }
 
 export function drawSlashFlight(g, c, s, state, index, r) {
-  for (const p of slashCopies(s, c.w, c.h, state, index)) drawSlashAt(g, c, s, p.at, p.travel, r, p.scale, p.alpha, p.k);
+  for (const p of slashCopies(s, c.w, c.h, state, index, r)) drawSlashAt(g, c, s, p.at, p.travel, r, p.scale, p.alpha, p.k);
 }

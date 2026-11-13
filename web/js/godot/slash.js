@@ -36,9 +36,9 @@ func _slash_mask_cols(pts: PackedVector2Array, cols: PackedColorArray) -> Packed
 		out[i] = c
 	return out
 
-# 飞到远处渐渐消失
-func _slash_fade(u: float) -> float:
-	return 1.0 - _smooth(0.7, 1.0, u)
+# 到达终点之后：在「命中消散」的帧数里淡出（hit 0 → 1）
+func _slash_fade(hit: float) -> float:
+	return 1.0 - _smooth(0.0, 1.0, hit)
 
 # 飞行方向自己的坐标：x 沿着飞行，y 横过它、朝屏幕下方（不管往哪边飞，上面总是上面）
 func _slash_frame(travel: float) -> Array:
@@ -140,9 +140,17 @@ func _slash_lines(at: Vector2, travel: float, half: float, thick: float, ground:
 			cols.append(_col(core_color if j < 5 else rim_color, aj))
 		_line(pts, cols, width)
 
-# 飞行中：剑气本身和后面一个淡淡的残影
+# 剑气（飞行中还有后面一个淡淡的残影）：完整地一直飞到终点，然后在「命中消散」的帧数里在终点往前飘一点、
+# 稍微变大并淡出——从出现到消失，跟着整段帧数
 func _remote_slash(state: Dictionary, index: int, r: float) -> void:
-	if not state.body: return
+	var key := random_seed + index * 31
+	if not state.body:
+		var hit := float(state.hit)
+		if hit < 0.0 or hit >= 1.0: return
+		var end := _remote_path(1.0, index)
+		var travel := (end - _remote_path(0.995, index)).angle()
+		_slash_at(end + Vector2.from_angle(travel) * r * 0.8 * hit, travel, r, 1.0 + 0.15 * hit, _slash_fade(hit), 0, key)
+		return
 	var grow: float = 1.0 if state.launched else 0.15 + 0.85 * float(state.charge)
 	for copy in [[0.06, 0.22, 1], [0.0, 1.0, 0]]:
 		var lag: float = copy[0]
@@ -150,5 +158,5 @@ func _remote_slash(state: Dictionary, index: int, r: float) -> void:
 		var u := maxf(0.0, float(state.u) - lag)
 		var p := _remote_path(u, index)
 		var dir := _remote_path(minf(1.0, u + 0.005), index) - _remote_path(maxf(0.0, u - 0.005), index)
-		_slash_at(p, dir.angle(), r, grow, _slash_fade(u) * float(copy[1]), int(copy[2]), random_seed + index * 31)
-`;
+		_slash_at(p, dir.angle(), r, grow, float(copy[1]), int(copy[2]), key)
+`

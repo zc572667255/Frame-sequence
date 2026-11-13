@@ -324,11 +324,22 @@ for (const ground of [90, 40, 0]) for (const travel of [0, Math.PI]) {
 assert.equal(slashFade(0), 1); assert.equal(slashFade(1), 0);
 {
   const s = remoteSettings({ ...REMOTE_DEFAULTS, kind: "slash", flightPath: "straight", startX: 12, startY: 55, endX: 88, endY: 55 });
-  const early = slashCopies(s, 256, 200, flightState(s, 256, 200, s.chargeFrames + 2, 0), 0), late = slashCopies(s, 256, 200, flightState(s, 256, 200, s.chargeFrames + s.travelFrames - 1, 0), 0);
-  assert.ok(early.at(-1).at[0] < late.at(-1).at[0], "it flies from left to right");
-  assert.equal(early.at(-1).scale, late.at(-1).scale, "2D: it keeps its size");
-  assert.ok(late.at(-1).alpha < early.at(-1).alpha, "it fades out far away");
-  assert.deepEqual(slashCopies(s, 256, 200, flightState(s, 256, 200, s.chargeFrames + s.travelFrames + 1, 0), 0), [], "gone after the flight");
+  const at = (frame) => slashCopies(s, 256, 200, flightState(s, 256, 200, frame, 0), 0, 12);
+  const early = at(s.chargeFrames + 2), arrive = at(s.chargeFrames + s.travelFrames - 0.01);
+  assert.ok(early.at(-1).at[0] < arrive.at(-1).at[0], "it flies from left to right");
+  assert.equal(early.at(-1).alpha, 1, "whole while it flies"); assert.equal(arrive.at(-1).alpha, 1, "still whole as it arrives");
+  const end = pathAt(s, 256, 200, 1, 0);
+  assert.ok(Math.hypot(arrive.at(-1).at[0] - end[0], arrive.at(-1).at[1] - end[1]) < 1, "it gets all the way to the end point");
+  let last = 1;
+  for (let f = 0; f < s.impactFrames; f += 0.5) {
+    const c = at(s.chargeFrames + s.travelFrames + f);
+    assert.equal(c.length, 1, "after arriving only the crescent itself is left, no after-image");
+    assert.ok(c[0].alpha <= last + 1e-9 && c[0].at[0] >= end[0] - 1e-9, "then it fades out at the end point, drifting on a little");
+    last = c[0].alpha;
+  }
+  assert.ok(last < 0.2, "almost gone by the last frame");
+  assert.deepEqual(at(s.frames + 1), [], "gone once its frames are over");
+  assert.equal(s.frames, s.chargeFrames + s.travelFrames + s.impactFrames, "the animation is charge + flight + fade");
   assert.ok(FLIGHT_FIELDS.some(f => f.key === "slashAngle" && f.max === 90 && flightFieldVisible(f, { kind: "slash", flightPath: "sprite" })), "the ground angle is always offered for 剑气");
   assert.ok(FLIGHT_FIELDS.some(f => f.key === "slashThick" && flightFieldVisible(f, { kind: "slash", flightPath: "sprite" })), "剑气 has its own thickness");
   assert.ok(!FLIGHT_FIELDS.some(f => f.key === "trailWidth" && flightFieldVisible(f, { kind: "slash", flightPath: "straight" })), "the trail width is not offered for 剑气");
