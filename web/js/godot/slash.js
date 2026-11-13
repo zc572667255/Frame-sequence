@@ -17,9 +17,9 @@ func _slash_frame(travel: float) -> Array:
 	if y.y < 0.0 or (absf(y.y) < 1e-9 and y.x < 0.0): y = -y
 	return [x, y]
 
-# 月牙分成几段拖尾，各从一个尖画到正中（所以尖是尖的，正中最粗最亮）：截面 {a 内侧, b 外侧（亮边）, u}。
-# ground 是和地面的夹角（度，90 竖直 … 0 平行地面，越放倒从侧面看越扁，下面的尖稍微更靠后）；
-# shape："full" 两头尖（上下两段），"half" 半头（只有上面一段，正中平切）
+# 月牙是一整段拖尾：截面 {a 内侧, b 外侧（亮边）, u}。两头尖：从上尖一直画到下尖，两头尖完全靠厚度收出来，
+# u 从拖尾中段开始，两头都不会淡没；半头：从上尖画到正中平切处（拖尾最粗的头）。
+# ground 是和地面的夹角（度，90 竖直 … 0 平行地面，越放倒从侧面看越扁，下面的尖稍微更靠后）
 func _slash_runs(at: Vector2, travel: float, half: float, thick: float, ground: float, shape: String) -> Array:
 	var th := clampf(ground, 0.0, 90.0) * PI / 180.0
 	var squash := 0.3 + 0.7 * sin(th)
@@ -30,23 +30,21 @@ func _slash_runs(at: Vector2, travel: float, half: float, thick: float, ground: 
 	var span := 140.0 * PI / 180.0
 	var A := half / sin(span / 2.0)
 	var sag := A * (1.0 - cos(span / 2.0))
-	var n_runs := 1 if shape == "half" else 2
-	var runs := []
-	for side in n_runs: runs.append([])
-	for k in 17:
-		var u := k / 16.0
-		for side in n_runs:
-			var s := 0.5 * u if side == 0 else 1.0 - 0.5 * u
-			var phi := -span / 2.0 + span * s
-			var W := thick * (0.04 + 0.96 * pow(sin(PI * s), 0.8))
-			var nx := cos(phi)
-			var ny := sin(phi)
-			var ox := A * nx - A * cos(span / 2.0) - sag / 2.0
-			var oy := A * ny
-			var ix := ox - nx * W
-			var iy := oy - ny * W
-			runs[side].append({"a": at + X * (ix - iy * shear) + Y * (iy * squash), "b": at + X * (ox - oy * shear) + Y * (oy * squash), "u": u})
-	return runs
+	var n := 16 if shape == "half" else 32
+	var run := []
+	for k in n + 1:
+		var s := 0.5 * k / 16.0 if shape == "half" else float(k) / 32.0
+		var u := k / 16.0 if shape == "half" else 0.35 + 0.65 * k / 32.0
+		var phi := -span / 2.0 + span * s
+		var W := thick * (0.04 + 0.96 * pow(sin(PI * s), 0.8))
+		var nx := cos(phi)
+		var ny := sin(phi)
+		var ox := A * nx - A * cos(span / 2.0) - sag / 2.0
+		var oy := A * ny
+		var ix := ox - nx * W
+		var iy := oy - ny * W
+		run.append({"a": at + X * (ix - iy * shear) + Y * (iy * squash), "b": at + X * (ox - oy * shear) + Y * (oy * squash), "u": u})
+	return [run]
 
 # 画一道剑气（k：第几个残影，用来换随机）
 func _slash_at(at: Vector2, travel: float, r: float, scale0: float, alpha: float, k: int, key: int) -> void:

@@ -16,6 +16,8 @@ import { pathAt } from "../remote.js";
 
 export const SLASH_SPAN = 140 * Math.PI / 180;
 const HALF_SECTIONS = 16;
+// where along the trail a whole crescent starts: past the trail's faded tail
+export const SLASH_U0 = 0.35;
 export const SLASH_SHAPES = [["full", "两头尖"], ["half", "半头"]];
 
 // gone by the far end
@@ -30,11 +32,12 @@ export function slashFrame(travel) {
   return { x, y };
 }
 
-// the crescent as trail runs, each from a tip to the middle (so the tips are
-// pointed and the middle is the hot, thick head): sections { a (inner edge),
-// b (outer, hot edge), u }. at: its middle; half: half its chord (upright);
-// thick: its greatest thickness; ground: its angle to the ground (degrees);
-// shape: "full" (two runs, top and bottom) or "half" (the top run only)
+// the crescent as one trail run, sections { a (inner edge), b (outer, hot
+// edge), u }: 两头尖 runs whole from its upper tip to its lower one — its
+// thickness alone makes both tips pointed, and u starts well into the trail
+// so neither end fades away; 半头 runs from the upper tip to the flat cut in
+// the middle, the trail's thick head. at: its middle; half: half its chord
+// (upright); thick: its greatest thickness; ground: its angle to the ground
 // the crescent's own frame: place(x, y) puts a point of the upright crescent
 // (x forward, y down, its middle at the origin) on screen; its outer edge is
 // the circle of radius A round [cx, 0], at angle phi (0 its middle, -SPAN/2
@@ -54,13 +57,10 @@ export function slashRuns(at, travel, half, thick, ground, shape = "full") {
     const nx = Math.cos(phi), ny = Math.sin(phi), ox = A * nx - A * Math.cos(SLASH_SPAN / 2) - sag / 2, oy = A * ny;
     return { a: place(ox - nx * W, oy - ny * W), b: place(ox, oy), u };
   };
-  const runs = shape === "half" ? [[]] : [[], []];
-  for (let k = 0; k <= HALF_SECTIONS; k++) {
-    const u = k / HALF_SECTIONS;
-    runs[0].push(section(0.5 * u, u));
-    if (runs[1]) runs[1].push(section(1 - 0.5 * u, u));
-  }
-  return runs;
+  const run = [];
+  if (shape === "half") for (let k = 0; k <= HALF_SECTIONS; k++) run.push(section(0.5 * k / HALF_SECTIONS, k / HALF_SECTIONS));
+  else for (let k = 0, n = 2 * HALF_SECTIONS; k <= n; k++) run.push(section(k / n, SLASH_U0 + (1 - SLASH_U0) * k / n));
+  return [run];
 }
 
 // 光丝: the trail's speed lines, but curving: each runs from near the middle
@@ -90,7 +90,7 @@ export function drawSlashAt(g, c, s, at, travel, r, scale, alpha, k) {
   // lines are drawn curving instead, below)
   const look = glowStyle(c.pal.preset), style = { ...look, flow: 0, speedLines: 0 };
   slashRuns(at, travel, half, thick, ground, s.slashShape).forEach((run, side) => {
-    const cv = renderGlow([run], style, c.w, c.h, { seed: c.seed * 4 + k * 2 + side, frame: c.i, alpha, fade: 0.6, fx: false });
+    const cv = renderGlow([run], style, c.w, c.h, { seed: c.seed * 4 + k * 2 + side, frame: c.i, alpha, fade: 0.3, fx: false });
     if (!cv) return;
     g.globalCompositeOperation = c.pal.dark ? "source-over" : "lighter";
     g.drawImage(cv, 0, 0);

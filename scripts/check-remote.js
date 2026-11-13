@@ -264,20 +264,21 @@ for (const width of [0.5, 1, 2.5]) {
 const slashWidth = q => Math.hypot(q.a[0] - q.b[0], q.a[1] - q.b[1]);
 for (const ground of [0, 30, 60, 90]) for (const travel of [0, Math.PI, 0.3]) for (const shape of ["full", "half"]) {
   const runs = slashRuns([100, 100], travel, 40, 20, ground, shape), { x: X, y: Y } = slashFrame(travel);
-  assert.equal(runs.length, shape === "half" ? 1 : 2);
-  for (const run of runs) {
-    assert.equal(run.length, 17); assert.equal(run[0].u, 0); assert.equal(run.at(-1).u, 1);
-    assert.ok(run.every(q => [...q.a, ...q.b, q.u].every(Number.isFinite)));
-    assert.ok(slashWidth(run[0]) < 1.5 && slashWidth(run.at(-1)) > 15, "each run goes from a pointed tip to the thick middle");
-  }
+  assert.equal(runs.length, 1, "one run, never pieced together");
+  const run = runs[0], n = run.length;
+  assert.equal(n, shape === "half" ? 17 : 33);
+  assert.ok(run.every((q, i) => [...q.a, ...q.b, q.u].every(Number.isFinite) && (!i || q.u > run[i - 1].u)), "u runs on along it");
   const along = p => (p[0] - 100) * X[0] + (p[1] - 100) * X[1], across = p => (p[0] - 100) * Y[0] + (p[1] - 100) * Y[1];
-  const top = runs[0][0].b, mid = runs[0].at(-1);
-  assert.ok(across(top) < 0, "the first run's tip is the upper one");
+  const top = run[0].b, mid = shape === "half" ? run.at(-1) : run[16];
+  assert.ok(slashWidth(run[0]) < 1.5 && slashWidth(mid) > 15, "pointed at its upper tip, thick in the middle");
+  assert.ok(across(top) < 0, "it starts at the upper tip");
   assert.ok(along(mid.b) > along(top) + 5, "its bulge leads, its tips trail");
   assert.ok(Math.abs(across(mid.a)) < 1e-9 && Math.abs(across(mid.b)) < 1e-9, "the middle (半头's flat cut) lies on the flight line");
   if (shape === "full") {
-    const bottom = runs[1][0].b, height = across(bottom) - across(top);
-    assert.ok(Math.hypot(runs[0].at(-1).b[0] - runs[1].at(-1).b[0], runs[0].at(-1).b[1] - runs[1].at(-1).b[1]) < 1e-9, "the halves meet in the middle");
+    const bottom = run.at(-1).b, height = across(bottom) - across(top);
+    assert.ok(slashWidth(run.at(-1)) < 1.5, "two-tipped: pointed at its lower tip too");
+    assert.ok(run[0].u >= 0.3, "neither end fades into the trail's tail");
+    if (ground === 90) for (let i = 1; i < 16; i++) assert.ok(slashWidth(run[i]) < slashWidth(run[i + 1]) + 1e-9 && Math.abs(slashWidth(run[i]) - slashWidth(run[32 - i])) < 1e-6, "it thickens smoothly to the middle and thins the same way");
     if (ground === 90) { assert.ok(Math.abs(height - 80) < 1e-6, "upright: the whole crescent, as tall as its chord"); assert.ok(Math.abs(along(bottom) - along(top)) < 1e-6, "upright: both tips level"); }
     if (ground === 0) { assert.ok(Math.abs(height - 24) < 1e-6, "parallel to the ground: flattened, seen from the side"); assert.ok(along(bottom) < along(top) - 1, "lying down, the lower tip trails further back"); }
   }

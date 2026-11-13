@@ -3172,7 +3172,7 @@ func _tg_glow(r: Array, seed: int, frame: int, alpha: float, gain: float, top: b
 	var cols: Array = Array(trail_colors) if trail_colors.size() >= 2 else Array(colors)
 	var core := core_color
 	var rim := rim_color
-	var tail := 0.6 if full_preset or _tg_plain else (0.3 if _remote_active() else 0.75)
+	var tail := 0.6 if full_preset else (0.3 if _remote_active() or _tg_plain else 0.75)
 	if _tg_plain:
 		L["flow"] = 0.0  # 剑气：流动的刀身在细尖处会拖出一团，不画
 		L["speedLines"] = 0.0  # 剑气：直的速度线改成顺着弧线走的光丝（_slash_lines）
