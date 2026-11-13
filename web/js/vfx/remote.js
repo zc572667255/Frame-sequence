@@ -10,7 +10,7 @@ export const REMOTE_DEFAULTS = {
   flightCount: 1, flightInterval: 3, flightSpread: 12,
   bodySize: 7, trailFrames: 8, trailWidth: 70, impactKind: "auto", impactSize: 22,
   headWidth: 100, headCurve: 35,
-  slashAngle: 0, slashFar: 25, // 剑气: angle to the ground (degrees), size at the far end (%)
+  slashAngle: 90, // 剑气: angle to the ground, degrees (90 upright, less leans forwards, more leans back)
 };
 export const FLIGHT_FIELDS = [
   { label: "移动路径", key: "flightPath", options: FLIGHT_PATHS, always: true },
@@ -35,8 +35,7 @@ export const FLIGHT_FIELDS = [
   { label: "拖尾宽度", key: "trailWidth", min: 0, max: 180, unit: "%" },
   { label: "头部宽度", key: "headWidth", min: 20, max: 250, unit: "%", kind: "arrow", always: true },
   { label: "头部弧度", key: "headCurve", min: 0, max: 100, unit: "%", kind: "arrow", always: true },
-  { label: "地面夹角", key: "slashAngle", min: 0, max: 90, unit: "°", kind: "slash", always: true },
-  { label: "远处大小", key: "slashFar", min: 5, max: 100, unit: "%", kind: "slash" },
+  { label: "地面夹角", key: "slashAngle", min: 0, max: 180, unit: "°", kind: "slash", always: true },
   { label: "命中效果", key: "impactKind", options: FLIGHT_IMPACTS },
   { label: "命中范围", key: "impactSize", min: 5, max: 40, unit: "%" },
 ];

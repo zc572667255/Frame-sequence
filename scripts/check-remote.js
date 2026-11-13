@@ -5,7 +5,7 @@ import { ribbonSections, materialAt, flameFlow } from "../web/js/vfx/remotetrail
 import { flightTrailWindow } from "../web/js/vfx/remote.js";
 import { alongPath, iceSwirl, iceLance, iceColors } from "../web/js/vfx/kinds/ice.js";
 import { iceBurst } from "../web/js/vfx/kinds/icehit.js";
-import { slashRun, slashScale, slashFade, slashCopies } from "../web/js/vfx/kinds/slash.js";
+import { slashRuns, slashAxes, slashFade, slashCopies } from "../web/js/vfx/kinds/slash.js";
 import { paletteOf } from "../web/js/vfx/common.js";
 import { shapeOf } from "../web/js/vfx/catalog.js";
 import { thunderDischarge } from "../web/js/vfx/kinds/thunderhit.js";
@@ -17,6 +17,7 @@ import { FLIGHT_FIELDS, flightFieldVisible } from "../web/js/vfx/remote.js";
 import { projectileBounds, projectileShape, PROJECTILES } from "../web/js/vfx/kinds/arrow.js";
 import { vfxRegion, vfxRect, vfxSettings } from "../web/js/vfx/layer.js";
 import { vfxData } from "../web/js/godot/vfx.js";
+import { VFX_KINDS } from "../web/js/vfx/effects.js";
 
 const close = (a, b) => assert.ok(Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-6, `${a} != ${b}`);
 const width = 384, height = 192;
@@ -258,30 +259,36 @@ for (const width of [0.5, 1, 2.5]) {
   assert.ok(Math.hypot(run.at(-1).a[0] - run.at(-1).b[0], run.at(-1).a[1] - run.at(-1).b[1]) <= body * 1.7 + 1e-9, "wide flame joins remain inside the body's height");
 }
 
-// 剑气: a crescent whose bulge leads, near → far, turned by its angle to the ground
-for (const ground of [0, 30, 60, 90]) for (const travel of [-Math.PI / 2, 0, -2.4]) {
-  const run = slashRun([100, 100], travel, 40, 12, ground);
-  assert.equal(run.length, 33); assert.equal(run[0].u, 0); assert.equal(run.at(-1).u, 1);
-  assert.ok(run.every(q => [...q.a, ...q.b, q.u].every(Number.isFinite)));
-  const width = q => Math.hypot(q.a[0] - q.b[0], q.a[1] - q.b[1]);
-  assert.ok(width(run[0]) < 1 && width(run.at(-1)) < 1 && width(run[16]) > 3, "pointed at both tips, thick in the middle");
-  const tips = [(run[0].b[0] + run.at(-1).b[0]) / 2, (run[0].b[1] + run.at(-1).b[1]) / 2], apex = run[16].b;
-  const bulge = [apex[0] - tips[0], apex[1] - tips[1]];
-  assert.ok(bulge[0] * Math.cos(travel) + bulge[1] * Math.sin(travel) >= -1e-9, "the crescent's bulge leads the flight");
-  const chord = [run.at(-1).b[0] - run[0].b[0], run.at(-1).b[1] - run[0].b[1]];
-  if (ground === 0) assert.ok(Math.abs(chord[1]) < 1e-6, "flat on the ground: a level sweep");
-  if (ground === 90) assert.ok(Math.abs(chord[0]) < 1e-6, "upright: a vertical cut");
+// 剑气 (2D): a crescent pointed at both tips, its bulge leading, leaned forwards or back
+for (const ground of [0, 30, 60, 90, 120, 150, 180]) for (const travel of [0, Math.PI, 0.3]) {
+  const runs = slashRuns([100, 100], travel, 40, 12, ground), width = q => Math.hypot(q.a[0] - q.b[0], q.a[1] - q.b[1]);
+  assert.equal(runs.length, 2);
+  for (const run of runs) {
+    assert.equal(run.length, 17); assert.equal(run[0].u, 0); assert.equal(run.at(-1).u, 1);
+    assert.ok(run.every(q => [...q.a, ...q.b, q.u].every(Number.isFinite)));
+    assert.ok(width(run[0]) < 1 && width(run.at(-1)) > 10, "each half runs from a pointed tip to the thick middle");
+  }
+  assert.ok(Math.hypot(runs[0].at(-1).b[0] - runs[1].at(-1).b[0], runs[0].at(-1).b[1] - runs[1].at(-1).b[1]) < 1e-9, "the halves meet in the middle");
+  const lo = runs[0][0].b, hi = runs[1][0].b, chord = [hi[0] - lo[0], hi[1] - lo[1]];
+  assert.ok(Math.abs(Math.hypot(...chord) - 80) < 1e-6, "2D: it is never squashed, whatever its angle");
+  const fwd = Math.cos(travel) < 0 ? -1 : 1, lean = Math.atan2(-chord[1], chord[0] * fwd) * 180 / Math.PI;
+  assert.ok(Math.abs(((lean - ground) % 360 + 540) % 360 - 180) < 1e-6, "its chord makes the set angle with the ground, measured from the way it flies");
+  const apex = runs[0].at(-1).b, mid = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2];
+  if (ground > 0 && ground < 180) assert.ok((apex[0] - mid[0]) * fwd > 1e-6, "its bulge faces the way it flies");
 }
-assert.equal(slashScale(0, 0.25), 1); assert.ok(Math.abs(slashScale(1, 0.25) - 0.25) < 1e-9); assert.ok(slashScale(0.5, 0.25) < 1 && slashScale(0.5, 0.25) > 0.25);
+assert.deepEqual(slashAxes(0, 90).chord.map(v => Math.round(v * 1e9) / 1e9), [0, -1], "90°: upright");
+assert.ok(slashAxes(0, 60).chord[0] > 0 && slashAxes(0, 120).chord[0] < 0, "under 90° its top leans forwards, over 90° back");
 assert.equal(slashFade(0), 1); assert.equal(slashFade(1), 0);
 {
-  const s = remoteSettings({ ...REMOTE_DEFAULTS, kind: "slash", flightPath: "straight", startX: 50, startY: 88, endX: 50, endY: 30 });
+  const s = remoteSettings({ ...REMOTE_DEFAULTS, kind: "slash", flightPath: "straight", startX: 12, startY: 55, endX: 88, endY: 55 });
   const early = slashCopies(s, 256, 200, flightState(s, 256, 200, s.chargeFrames + 2, 0), 0), late = slashCopies(s, 256, 200, flightState(s, 256, 200, s.chargeFrames + s.travelFrames - 1, 0), 0);
-  assert.ok(early.at(-1).scale > late.at(-1).scale, "it shrinks as it flies away");
-  assert.ok(early.at(-1).at[1] > late.at(-1).at[1], "it flies from near to far");
+  assert.ok(early.at(-1).at[0] < late.at(-1).at[0], "it flies from left to right");
+  assert.equal(early.at(-1).scale, late.at(-1).scale, "2D: it keeps its size");
   assert.ok(late.at(-1).alpha < early.at(-1).alpha, "it fades out far away");
   assert.deepEqual(slashCopies(s, 256, 200, flightState(s, 256, 200, s.chargeFrames + s.travelFrames + 1, 0), 0), [], "gone after the flight");
-  assert.ok(FLIGHT_FIELDS.some(f => f.key === "slashAngle" && flightFieldVisible(f, { kind: "slash", flightPath: "sprite" })), "the ground angle is always offered for 剑气");
+  assert.ok(FLIGHT_FIELDS.some(f => f.key === "slashAngle" && f.max === 180 && flightFieldVisible(f, { kind: "slash", flightPath: "sprite" })), "the ground angle is always offered for 剑气");
   assert.ok(!FLIGHT_FIELDS.some(f => f.key === "slashAngle" && flightFieldVisible(f, { kind: "fireball", flightPath: "arc" })));
+  const k = VFX_KINDS.find(x => x.id === "slash");
+  assert.ok(k.defaults.startX < k.defaults.endX && k.defaults.startY === k.defaults.endY && k.defaults.slashAngle === 90, "剑气 flies left to right, upright, by default");
 }
-console.log("剑气的月牙形状、朝向、地面夹角、近大远小与消失检查通过");
+console.log("剑气两头尖、鼓面朝前、前后倾斜的地面夹角、横向飞行与消失检查通过");

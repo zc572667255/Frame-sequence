@@ -9,7 +9,7 @@ function properties(p) {
     flight_count: p.flightCount | 0, flight_interval: p.flightInterval | 0, flight_spread: +p.flightSpread,
     flight_frame_budget: p.remoteFrameBudget ?? 64,
     body_size: +p.bodySize, trail_frames: +p.trailFrames, trail_width: +p.trailWidth,
-    head_width: +p.headWidth, head_curve: +p.headCurve, slash_angle: +p.slashAngle, slash_far: +p.slashFar,
+    head_width: +p.headWidth, head_curve: +p.headCurve, slash_angle: +p.slashAngle,
     impact_kind: JSON.stringify(p.impactKind), impact_size: +p.impactSize,
   };
 }
@@ -205,7 +205,7 @@ func _remote_body(r: float) -> void:
 			_blob(Vector2.ZERO, r * 0.65, [[0.0, core_color, 1.0], [0.5, core_color, 0.95], [1.0, rim_color, 0.0]])
 		18:
 			if not _remote_active():
-				_slash_at(Vector2.ZERO, -PI / 2.0, r, 1.0, 1.0, 0, random_seed)
+				_slash_at(Vector2.ZERO, 0.0, r, 1.0, 1.0, 0, random_seed)
 		15:
 			_remote_ice(r, random_seed + _remote_shot * 31, not _remote_active())
 		16:
