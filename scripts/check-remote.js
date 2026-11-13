@@ -3,15 +3,17 @@ import { REMOTE_DEFAULTS, remoteSettings, hasFlight, pathAt, flightState, flight
 import { migrate } from "../web/js/core/store.js";
 import { ribbonSections, materialAt, flameFlow } from "../web/js/vfx/remotetrail.js";
 import { flightTrailWindow } from "../web/js/vfx/remote.js";
-import { icePrism, iceCracks, iceTrailHalfWidth } from "../web/js/vfx/kinds/ice.js";
-import { iceDebris } from "../web/js/vfx/kinds/icehit.js";
+import { iceSpear, iceTones, iceTrailHalfWidth } from "../web/js/vfx/kinds/ice.js";
+import { iceBurst } from "../web/js/vfx/kinds/icehit.js";
+import { paletteOf } from "../web/js/vfx/common.js";
+import { shapeOf } from "../web/js/vfx/catalog.js";
 import { thunderDischarge } from "../web/js/vfx/kinds/thunderhit.js";
 import { sandGrains } from "../web/js/vfx/kinds/sand.js";
 import { flameCells } from "../web/js/vfx/ribbonmesh.js";
 import { fbmNoise } from "../web/js/trails/glow/util.js";
 import { arrowSections, headProfile } from "../web/js/vfx/arrowhead.js";
 import { FLIGHT_FIELDS, flightFieldVisible } from "../web/js/vfx/remote.js";
-import { projectileBounds } from "../web/js/vfx/kinds/arrow.js";
+import { projectileBounds, projectileShape, PROJECTILES } from "../web/js/vfx/kinds/arrow.js";
 import { vfxRegion, vfxRect, vfxSettings } from "../web/js/vfx/layer.js";
 import { vfxData } from "../web/js/godot/vfx.js";
 
@@ -84,9 +86,22 @@ for (const kind of ["fireball", "thunder", "wind", "sand"]) {
 }
 console.log("远程特效路径、连续截面、流动材质、拖尾消散、命中时序、连发上限与旧数据兼容检查通过");
 
+// Projectiles are drawn from shapes only: the Godot export carries geometry, never pictures.
+for (const [shape] of PROJECTILES) for (const spin of ["auto", "on", "off"]) {
+  const o = projectileShape(shape, spin, paletteOf("blaze"));
+  assert.ok(o.parts.every(q => ["fill", "line", "dot", "tassel"].includes(q.k)), shape + " has only drawn parts");
+  assert.ok(!JSON.stringify(o).includes("data:image") && !JSON.stringify(o).includes("png"), shape + " embeds no picture");
+  assert.ok([o.L, o.ro, o.outline, ...o.bounds].every(Number.isFinite));
+  for (const q of o.parts.filter(q => q.k === "fill")) assert.ok(q.cols.length === 1 || q.cols.length === q.pts.length, "one colour per corner");
+  assert.equal(shape === "core", o.parts.length === 0);
+}
+for (const [old, now] of [["s:arrow3", "arrow"], ["s:pole2", "spear"], ["s:star6", "shuriken"], ["s:bomb2", "ball"], ["custom", "core"], ["s:unknown", "arrow"], ["axe", "axe"]]) assert.equal(shapeOf(old), now);
+const oldCard = migrate({ board: { cards: { a: { type: "remote", params: { kind: "arrow", shape: "s:dagger2", coreImg: "data:image/png;base64,AAAA", coreScale: 120 } } } } }).board.cards.a.params;
+assert.equal(oldCard.shape, "dagger"); assert.equal(oldCard.coreImg, undefined); assert.equal(oldCard.coreScale, undefined);
+console.log("投掷物只用代码形状、不内嵌图片、旧图片外观迁移检查通过");
+
 // The rigid body's complete bounding box must sit inside the default envelope,
-// including very long projectiles, broad imported images and rotated flight.
-assert.deepEqual(projectileBounds({ round: false, L: 80, pivot: [0, 0], parts: [{ k: "img", l: "body", w: 80, h: 10, pts: [[0, -5], [80, -5], [80, 5], [0, 5]] }] }), [0, -5, 80, 10], "image width is not a stroke width");
+// including very long projectiles and rotated flight.
 const contains = (point, polygon) => {
   let inside = false;
   for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
@@ -143,44 +158,42 @@ assert.ok(samplePhase(14, 19, w1) > samplePhase(14, 18, w0), "flame flows backwa
 assert.ok(Math.abs(samplePhase(14, 18, w0) - samplePhase(14, 18, { oldest: 4, newest: 18 })) < 1e-9, "changing trail length cannot stretch the flame noise");
 assert.ok(Math.abs(flameFlow(14, 18) - flameFlow(14 - 0.1 / 0.42, 19)) < 1e-9, "a feature travels toward the older tail");
 const signedArea = pts => pts.reduce((area, p, i) => { const q = pts[(i + 1) % pts.length]; return area + p[0] * q[1] - q[0] * p[1]; }, 0) / 2;
-for (let i = 0; i < 48; i++) {
-  const prism = icePrism(12, i * Math.PI / 24);
-  assert.ok(prism.faces.length >= 2 && prism.faces.length <= 3, "only visible ice faces are painted");
-  const intervals = prism.faces.map(face => [Math.min(face.body[0][1], face.body[3][1]), Math.max(face.body[0][1], face.body[3][1])]).sort((a, b) => a[0] - b[0]);
-  for (let j = 1; j < intervals.length; j++) assert.ok(intervals[j][0] >= intervals[j - 1][1] - 1e-7, "ice panes do not stack into an opaque silhouette");
-  for (const face of prism.faces) for (const points of [face.body, face.tip, face.blade, face.tail]) assert.ok(signedArea(points) > 1e-7, "consistently wound crystal facets");
-}
 for (const seed of [1, 23, 97]) {
-  const roll = 0.37, a = iceCracks(12, seed, roll), b = iceCracks(12, seed, roll + Math.PI * 2);
-  for (let j = 0; j < a.length; j++) for (let k = 0; k < a[j].length; k++) {
-    assert.ok(Math.hypot(a[j][k][0] - b[j][k][0], a[j][k][1] - b[j][k][1]) < 1e-9, "internal ice fractures close after one full roll");
+  const r = 12, spear = iceSpear(r, seed);
+  assert.deepEqual(spear, iceSpear(r, seed), "the lance is the same every time");
+  for (const face of spear.faces) {
+    assert.ok(signedArea(face.pts) < -1e-6, "ice facets are wound the same way and never collapse");
+    assert.ok(face.pts.every(([x, y]) => x >= spear.x0 - 1e-9 && x <= spear.x1 + 1e-9 && Math.abs(y) <= r * 0.53));
   }
-  assert.notDeepEqual(a, iceCracks(12, seed, roll + Math.PI / 2), "fractures turn with the crystal, instead of remaining stuck to the screen");
+  assert.ok(Math.abs(signedArea(spear.outline)) > 1e-6);
+  const area = spear.faces.reduce((a, f) => a + Math.abs(signedArea(f.pts)), 0);
+  assert.ok(Math.abs(area - Math.abs(signedArea(spear.outline))) < 1e-6, "the four facets tile the outline without overlapping");
+  for (const roll of [0, 0.7, 2.4]) {
+    const a = iceTones(paletteOf("frost"), roll), b = iceTones(paletteOf("frost"), roll + Math.PI * 2);
+    assert.deepEqual(a, b, "a full roll lights the lance the same again");
+  }
 }
-console.log("火尾后向流动、纹理不随长度拉伸、冰晶可见切面与无重叠检查通过");
+console.log("火尾后向流动、纹理不随长度拉伸、冰矛切面拼合与翻转循环检查通过");
 
-for (const seed of [1, 23, 97]) for (const angle of [0, 0.7]) {
-  const initial = iceDebris(32, 0.9, seed, 0, angle);
-  let spread = 0;
+for (const seed of [1, 23, 97]) for (const angle of [0, 0.7]) for (const amount of [0, 0.9, 2]) {
+  const initial = iceBurst(32, amount, seed, 0, angle);
   for (const t of [0, 0.12, 0.35, 0.7, 1]) {
-    const pieces = iceDebris(32, 0.9, seed, t, angle);
-    assert.deepEqual(pieces, iceDebris(32, 0.9, seed, t, angle), "ice debris can be sought in any playback order");
-    for (const [j, piece] of pieces.entries()) {
-      assert.ok(piece.faces.length >= 1 && piece.faces.length < 20, "irregular shards show their front facets and never their back faces");
-      assert.ok(piece.alpha >= 0 && piece.alpha <= 1);
-      assert.ok(piece.at.every(Number.isFinite));
-      for (const face of piece.faces) assert.ok(signedArea(face.points) > 1e-8, "only front-facing chunk surfaces are drawn");
-      for (const edge of [[0, 1], [0, 2], [0, 4]]) {
-        const length = vertices => Math.hypot(...vertices[edge[0]].map((x, k) => x - vertices[edge[1]][k]));
-        assert.ok(Math.abs(length(piece.vertices) - length(initial[j].vertices)) < 1e-9, "ice chunks tumble as rigid volumes and never shrink into sparks");
-      }
-      if (t === 1) assert.equal(piece.alpha, 0, "all chunks fade before the impact phase ends");
-      if (t === 0.35) spread += Math.hypot(...piece.at) - Math.hypot(...initial[j].at);
+    const hit = iceBurst(32, amount, seed, t, angle);
+    assert.deepEqual(hit, iceBurst(32, amount, seed, t, angle), "the ice hit can be sought in any playback order");
+    assert.equal(hit.shards.length, initial.shards.length);
+    for (const p of [...hit.shards, ...hit.sparkles]) assert.ok(p.at.every(Number.isFinite) && p.alpha >= 0 && p.alpha <= 1 && p.size > 0);
+    for (const sp of hit.spikes) assert.ok([sp.angle, sp.len, sp.width, sp.alpha].every(Number.isFinite) && sp.len <= sp.full + 1e-9);
+    if (t === 1) {
+      assert.ok([...hit.spikes, ...hit.shards, ...hit.sparkles].every(p => p.alpha === 0), "everything fades before the hit ends");
+      assert.equal(hit.flash, 0); assert.equal(hit.ring.alpha, 0);
     }
   }
-  assert.ok(spread > 32, "ice chunks disperse from the hit instead of only rotating in place");
+  const early = iceBurst(32, amount, seed, 0.02, angle), mid = iceBurst(32, amount, seed, 0.35, angle);
+  const flying = mid.shards.map((p, j) => [p, early.shards[j]]).filter(([p]) => p.alpha > 0);
+  assert.ok(flying.length > 0 && flying.reduce((a, [p, q]) => a + Math.hypot(...p.at) - Math.hypot(...q.at), 0) / flying.length > 32 * 0.25, "shards fly away from the hit");
+  assert.ok(mid.spikes.every((sp, j) => sp.len > early.spikes[j].len), "crystal spikes grow out of the hit");
 }
-console.log("冰块碎裂的体积保持、正面切面、确定性飞散与消散时序检查通过");
+console.log("冰刺爆裂的确定性、碎片飞散与消散时序检查通过");
 
 for (const flightPath of ["straight", "arc", "wave", "spiral", "custom"]) for (const flightEase of ["linear", "in", "out", "smooth"]) {
   const s = remoteSettings({ ...REMOTE_DEFAULTS, kind: "fireball", flightPath, flightEase, pathWave: 40, pathTurns: 4, pathBend: 60, trailFrames: 24 });
@@ -225,10 +238,10 @@ for (const seed of [1, 23, 97]) {
   assert.ok(first.some((p,i) => Math.hypot(p.at[0]-moving[i].at[0],p.at[1]-moving[i].at[1]) > 1), "sand body streams independently of path history");
 }
 console.log("流沙主体的独立流动、粒子重生渐隐与循环衔接检查通过");
-for (const seed of [1, 23, 97]) for (const roll of [0, 0.7, 2.4, 5.1]) {
-  const r = 30, prism = icePrism(r, roll, seed), half = iceTrailHalfWidth(r, roll, seed);
-  const silhouette = Math.max(...prism.faces.flatMap(f => f.tip.map(p => Math.abs(p[1])))) * prism.tip[0] / (prism.tip[0] - prism.frontX);
-  assert.ok(half > 0 && half < silhouette, "ice wake remains inside the projected body width");
+for (const r of [6, 30, 120]) {
+  const half = iceTrailHalfWidth(r), spear = iceSpear(r);
+  const backHalf = Math.min(...spear.outline.filter(([x]) => Math.abs(x + 0.95 * r) < 1e-9).map(([, y]) => Math.abs(y)));
+  assert.ok(half > 0 && half < backHalf, "ice wake remains inside the lance's width");
   for (const multiplier of [0.2, 1, 3]) {
     const sections = ribbonSections([[0,0],[50,0],[100,0]], Math.min(r * multiplier, half / 0.85), "ice");
     assert.ok(sections.every(q => Math.max(Math.abs(q.a[1]), Math.abs(q.b[1])) <= half + 1e-8));

@@ -5,7 +5,7 @@
 // History is whole-document JSON snapshots: documents hold parameters and asset
 // ids, never pixels, so a snapshot is small and undo can't drift out of sync.
 import { Emitter } from "./events.js";
-import { isRemoteKind } from "../vfx/catalog.js";
+import { isRemoteKind, shapeOf } from "../vfx/catalog.js";
 import { api } from "./api.js";
 import { debounce } from "./util.js";
 
@@ -152,6 +152,11 @@ export class Store extends Emitter {
 }
 
 // bring documents from older builds up to the current shape
+function dropCorePicture(p) {
+  if (p.shape != null) p.shape = shapeOf(p.shape);
+  for (const k of ["coreImg", "coreKey", "coreName", "coreSize", "coreTurn", "coreScale"]) delete p[k];
+}
+
 export function migrate(doc) {
   doc.format = doc.format || 1;
   doc.board = doc.board || {};
@@ -166,6 +171,8 @@ export function migrate(doc) {
     // Keep card IDs, connections and authored settings when splitting projectiles.
     if (c.type === "vfx" && isRemoteKind(c.params.kind)) c.type = "remote";
     if (c.type === "remote" && c.params.flightPath == null) c.params.flightPath = "sprite";
+    // 箭矢 no longer flies as a picture: the drawn shape closest to the old one
+    if (c.type === "remote" && c.params.kind === "arrow") dropCorePicture(c.params);
     c.ui = c.ui || {};
     if (c.type === "character" && !("outputAnim" in c.params)) c.params.outputAnim = c.ui.current || null;
   }

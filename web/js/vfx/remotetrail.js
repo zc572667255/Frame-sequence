@@ -5,7 +5,7 @@ import { uvMap } from "../trails/uv.js";
 import { renderGlow, glowStyle, GLOW_PRESETS } from "../trails/glow.js";
 import { bolts } from "../trails/glow/layers.js";
 import { fbmNoise, rng, smooth, clamp01, rgba } from "../trails/glow/util.js";
-import { at, streak, TAU } from "./common.js";
+import { at, streak, blob, TAU } from "./common.js";
 import { flightTrail, flightTrailWindow, pathAt, pathProgress } from "./remote.js";
 import { projectile, projectileBounds } from "./kinds/arrow.js";
 import { arrowSections } from "./arrowhead.js";
@@ -51,7 +51,7 @@ export function ribbonSections(points, radius, kind, strength = 1, headRadius = 
 }
 
 export function iceTrailSections(points,r,roll,seed,strength=1){
-  const profile=iceTrailProfile(r,roll,seed);
+  const profile=iceTrailProfile(r);
   const shifted=points.map((p,i)=>{
     const a=points[Math.max(0,i-1)],b=points[Math.min(points.length-1,i+1)],len=Math.hypot(b[0]-a[0],b[1]-a[1])||1,dx=(b[0]-a[0])/len,dy=(b[1]-a[1])/len;
     return [p[0]-dx*r*0.65-dy*profile.offset,p[1]-dy*r*0.65+dx*profile.offset];
@@ -154,7 +154,7 @@ export function drawPuff(g, x, y, r, angle, color, alpha, seed, stretch = 1) {
 // Stable emission times: seeking a frame produces exactly the same wake. Each
 // mote leaves the path at birth, then drifts independently instead of riding it.
 function shed(g, c, s, state, index, r) {
-  if (c.kind === "ice" || c.amount <= 0 || s.trailFrames <= 0 || s.trailWidth <= 0) return;
+  if (c.amount <= 0 || s.trailFrames <= 0 || s.trailWidth <= 0) return;
   const life = Math.min(12, Math.max(4, s.trailFrames)), rate = Math.max(0.25, Math.min(3, c.amount * (c.kind === "sand" ? 2 : 1.5)));
   const postFade = 1 - smooth(0, Math.max(1, Math.min(life, s.impactFrames)), Math.max(0, state.time - s.chargeFrames - s.travelFrames));
   const oldest = Math.max(s.chargeFrames, state.time - life), newest = Math.min(state.time, s.chargeFrames + s.travelFrames);
@@ -176,6 +176,12 @@ function shed(g, c, s, state, index, r) {
       const size = Math.max(0.5, r * 0.055 * (0.5 + P()));
       streak(g, [x + vx * 1.5, y + vy * 1.5], [x, y], color, color, alpha, size);
     }
+    if (c.kind === "ice") {
+      // frost glitter left behind: tiny twinkling crosses
+      const size = Math.max(0.6, r * 0.07 * (0.5 + P())), tw = alpha * (0.6 + 0.4 * Math.sin(age * 2.1 + j));
+      blob(g, x, y, size * 1.4, [[0, c.pal.core, 0.9 * tw], [1, c.pal.rim, 0]]);
+      for (const [dx, dy] of [[-2, 0], [2, 0], [0, -1.4], [0, 1.4]]) streak(g, [x + dx * size, y + dy * size], [x, y], c.pal.rim, c.pal.core, 0.7 * tw, Math.max(0.4, size * 0.35));
+    }
   }
 }
 
@@ -188,7 +194,7 @@ export function drawRemoteTrail(g, c, s, state, frame, index, r) {
   let run;
   if (wrapping) {
     const radius = r * (state.launched ? 1 : 0.15 + state.charge * 0.85), R = radius * 2.1;
-    const obj = projectile(c.shape, c.spin, c.pal, R, c.core), bounds = projectileBounds(obj);
+    const obj = projectile(c.shape, c.spin, c.pal, R), bounds = projectileBounds(obj);
     bounds[0] += (obj.round ? 0 : obj.L / 2) + R * (c.coreShift || 0);
     run = arrowSections(s.trailWidth > 0 ? pts : [], state.at, state.angle, radius, bounds, s, strength);
   } else {

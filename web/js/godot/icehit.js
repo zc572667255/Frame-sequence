@@ -1,73 +1,105 @@
-// Impact fractures the projectile solid and keeps each cell's rigid volume.
+// 冰矛 hitting, drawn the same way as vfx/kinds/icehit.js: a flash, crystal
+// spikes bursting out and shattering, shards flying off and falling, a frost
+// ring, twinkles and mist. All gone by t = 1.
 export const ICE_HIT_GD = `
-func _ice_debris(r: float, quantity: float, key: int, t: float, angle: float, body_radius := -1.0, axial_roll := NAN) -> Array:
-	var P := Rand.new(key*227+61)
-	var cells := _ice_cells(_ice_solid(r*0.42 if body_radius<0.0 else body_radius,key))
-	var roll := float(key) if is_nan(axial_roll) else axial_roll
-	var out := []
-	for j in 24+roundi(20.0*clampf(quantity,0.0,2.0)):
-		var cell: Dictionary = cells[j%24]
-		var chip := j>=24
-		var scale0 := 0.12+P.next()*0.22 if chip else 1.0
-		var born := 0.025+P.next()*0.055 if chip else 0.0
-		var age := maxf(0.0,t-born)
-		var drift := age*(1.0-age*0.4)
-		var phi := angle+j*2.39996+(P.next()-0.5)*0.7
-		var speed0 := r*(1.8+P.next()*1.9 if chip else 0.8+P.next()*1.4)
-		var sign0 := -1.0 if P.next()<0.5 else 1.0
-		var spin := sign0*(3.0+P.next()*4.0 if chip else 0.8+P.next()*2.2)
-		var life := 0.8+P.next()*0.2
-		var centre := _ice_rotate(cell.centre,0.0,roll,angle)
-		var at0 := Vector2(centre.x+(cos(phi)*speed0+cos(angle)*r*0.3)*drift,centre.y+(sin(phi)*speed0*0.85+sin(angle)*r*0.3-r*0.35)*drift+r*age*age*0.9)
-		var vertices := PackedVector3Array()
-		var radius0 := 0.0
-		for p in cell.vertices:
-			var v := _ice_rotate(_ice_rotate(p*scale0,0.0,roll,0.0),spin*age*0.7,spin*age,angle+spin*age*0.5)
-			vertices.append(v)
-			radius0 = maxf(radius0,v.length())
-		var mesh := _ice_mesh(vertices,cell.sides)
-		mesh.merge({"id":j,"at":at0,"depth":centre.z,"radius":radius0,"alpha":0.0 if t<born else 1.0-_smooth(life*0.6,life,t)})
-		out.append(mesh)
-	return out
+func _ice_ease(x: float) -> float:
+	x = clampf(x, 0.0, 1.0)
+	return 1.0 - (1.0 - x) * (1.0 - x)
 
-func _ice_frost_cracks(r: float, key: int, t: float) -> Array:
-	var P := Rand.new(key*401+71)
-	var growth := _smooth(0.0,0.18,t)
-	var paths := []
-	for j in 6:
-		var a := j*TAU/6.0+(P.next()-0.5)*0.45
-		var length0 := r*(0.55+P.next()*0.5)
-		var bend := (P.next()-0.5)*0.4
-		var p := Vector2.from_angle(a+bend)*length0*growth*0.55
-		var q := Vector2.from_angle(a-bend)*length0*growth*0.25
-		var end := Vector2.from_angle(a)*length0*growth
-		var side := Vector2.from_angle(a+(-0.38 if j%2 else 0.38))*length0*growth*0.8
-		p.y *= 0.45; q.y *= 0.45; end.y *= 0.45; side.y *= 0.45
-		paths.append(PackedVector2Array([Vector2.ZERO,q,p,end]))
-		paths.append(PackedVector2Array([p,side]))
-	return paths
+# 命中的各个部分（和编辑器 iceBurst 一样，任意一帧都能直接算出来）
+func _ice_burst(R: float, quantity: float, key: int, t: float, angle: float) -> Dictionary:
+	var P := Rand.new(key * 227 + 61)
+	var q := clampf(quantity, 0.25, 2.0)
+	var grow := _ice_ease(_smooth(0.0, 0.14, t))
+	var fade := 1.0 - _smooth(0.42, 0.62, t)
+	var spikes := []
+	var shards := []
+	var sparkles := []
+	for j in 7:
+		var a := angle + j * TAU / 7.0 + (P.next() - 0.5) * 0.35
+		var len0 := R * (0.38 + 0.18 * P.next()) * (0.75 if j % 2 else 1.0)
+		spikes.append({"angle": a, "len": len0 * grow, "full": len0, "width": len0 * grow * 0.2, "alpha": fade})
+	# 冰矛自己碎开，大多继续往前飞
+	for j in roundi(8.0 * q):
+		var dir := angle + (P.next() - 0.5) * 2.4 + (PI if P.next() < 0.35 else 0.0)
+		var speed := R * (0.9 + 1.2 * P.next())
+		var size0 := R * (0.07 + 0.09 * P.next())
+		var life := 0.5 + 0.3 * P.next()
+		shards.append(_ice_shard(P, Vector2.ZERO, dir, speed, size0, 0.0, life, t, R))
+	# 每根冰刺断成两截
+	for s in spikes:
+		for k in 2:
+			var along: float = s.full * (0.3 + 0.5 * P.next())
+			var dir: float = s.angle + (P.next() - 0.5) * 0.8
+			var speed := R * (0.5 + 0.8 * P.next())
+			var size0 := R * (0.05 + 0.06 * P.next())
+			var life := 0.4 + 0.15 * P.next()
+			shards.append(_ice_shard(P, Vector2.from_angle(s.angle) * along, dir, speed, size0, 0.45, life, t, R))
+	for j in roundi(10.0 * q):
+		var a := P.next() * TAU
+		var reach := R * (0.3 + 0.7 * P.next())
+		var born := 0.05 + 0.3 * P.next()
+		var size0 := R * (0.06 + 0.05 * P.next())
+		var k := clampf((t - born) / 0.4, 0.0, 1.0)
+		sparkles.append({"at": Vector2.from_angle(a) * reach * _ice_ease(t), "size": size0, "alpha": 0.0 if t < born or k >= 1.0 else sin(PI * k)})
+	return {"flash": 1.0 - _smooth(0.0, 0.16, t), "spikes": spikes, "shards": shards, "sparkles": sparkles,
+		"ring_radius": R * (0.25 + 0.75 * _ice_ease(_smooth(0.0, 0.5, t))), "ring_alpha": 0.2 * (1.0 - _smooth(0.2, 0.75, t))}
+
+func _ice_shard(P: Rand, origin: Vector2, dir: float, speed: float, size0: float, born: float, life: float, t: float, R: float) -> Dictionary:
+	var rot := P.next() * TAU
+	var spin := (P.next() - 0.5) * 14.0
+	var age := t - born
+	if age < 0.0:
+		return {"at": origin, "rot": rot, "size": size0, "alpha": 0.0}
+	var d := speed * age * (1.0 - 0.45 * age)
+	return {"at": origin + Vector2.from_angle(dir) * d + Vector2(0.0, R * 0.9 * age * age), "rot": rot + spin * age, "size": size0, "alpha": 1.0 - _smooth(life * 0.55, life, age)}
+
+func _ice_tri(a: Vector2, b: Vector2, c: Vector2, col: Color, alpha: float) -> void:
+	_poly_fill(PackedVector2Array([a, b, c]), PackedColorArray([_col(col, alpha)]))
 
 func _remote_ice_hit(at0: Vector2, t: float, angle: float, key: int, radius: float) -> void:
 	var xf := _xf
-	_xf = xf*Transform2D(0.0,at0)
-	var P := Rand.new(key*331+19)
-	var flash := 1.0-_smooth(0.0,0.12,t)
-	_add = additive
-	for path in _ice_frost_cracks(radius,key,t):
-		_line(path,PackedColorArray([_col(rim_color.lerp(core_color,0.4),pow(1.0-t,2.0)*0.18)]),maxf(0.35,radius*0.008))
+	_xf = xf * Transform2D(0.0, at0)
+	var P := Rand.new(key * 331 + 19)
+	var hit := _ice_burst(radius, amount, key, t, angle)
+	var deep: Color = colors[0].lerp(Color8(6, 14, 40), 0.45)
+	var cyan: Color = colors[1] if colors.size() > 1 else rim_color
+	var lit_col := cyan.lerp(core_color, 0.4)
+	var dark_col := deep.lerp(colors[0], 0.6)
 	for j in 3:
-		var a := P.next()*TAU
-		var p := Vector2(cos(a)*radius*t*0.65,sin(a)*radius*t*0.3)
-		_remote_puff(p,radius*(0.12+t*0.25),a,rim_color,_smooth(0.0,0.1,t)*pow(1.0-t,2.0)*0.065*minf(1.5,amount),j+key,1.8)
-	var axial_roll := (charge_frames+travel_frames)/float(frames)*TAU+key
-	var pieces := _ice_debris(radius,amount,key,t,angle,_remote_radius(),axial_roll)
-	pieces.sort_custom(func(a,b): return a.depth<b.depth)
-	for piece in pieces:
-		if piece.alpha<=0.0: continue
-		_xf = xf*Transform2D(0.0,at0+piece.at)
-		_ice_draw_mesh(piece,key+piece.id*131,maxf(1.0,piece.radius),piece.alpha)
-	_xf = xf*Transform2D(0.0,at0)
+		var a := P.next() * TAU
+		_remote_puff(Vector2(cos(a) * radius * t * 0.6, sin(a) * radius * t * 0.3), radius * (0.18 + t * 0.3), a, rim_color, _smooth(0.0, 0.1, t) * pow(1.0 - t, 2.0) * 0.14 * minf(1.5, amount), j + key, 1.6)
 	_add = additive
-	_blob(Vector2.ZERO,radius*0.22,[[0.0,core_color,flash*0.42],[0.25,rim_color,flash*0.18],[1.0,rim_color,0.0]])
+	_ring(Vector2.ZERO, hit.ring_radius, maxf(0.6, radius * 0.05), 0.6, rim_color, hit.ring_alpha)
+	_add = false
+	for sp in hit.spikes:
+		if sp.alpha <= 0.005 or sp.len < 0.5: continue
+		var d := Vector2.from_angle(sp.angle)
+		var nv := Vector2(-d.y, d.x) * float(sp.width)
+		var b := d * radius * 0.05
+		var tip: Vector2 = d * float(sp.len)
+		var m: Vector2 = d * float(sp.len) * 0.35
+		_ice_tri(b, m + nv, tip, lit_col, 0.92 * sp.alpha)
+		_ice_tri(b, tip, m - nv, dark_col, 0.9 * sp.alpha)
+	for sh in hit.shards:
+		if sh.alpha <= 0.005: continue
+		var s: float = sh.size
+		var xs := Transform2D(float(sh.rot), sh.at as Vector2)
+		_ice_tri(xs * Vector2(-0.6 * s, 0.0), xs * Vector2(0.0, -0.35 * s), xs * Vector2(s, 0.0), lit_col, 0.95 * sh.alpha)
+		_ice_tri(xs * Vector2(-0.6 * s, 0.0), xs * Vector2(s, 0.0), xs * Vector2(0.0, 0.3 * s), dark_col, 0.9 * sh.alpha)
+	_add = additive
+	for sp in hit.spikes:
+		if sp.alpha <= 0.005 or sp.len < 0.5: continue
+		var d := Vector2.from_angle(sp.angle)
+		_streak(d * radius * 0.05, d * float(sp.len), rim_color, core_color, 0.6 * sp.alpha, maxf(0.5, float(sp.width) * 0.35))
+	for k in hit.sparkles:
+		if k.alpha <= 0.01: continue
+		var p: Vector2 = k.at
+		var s: float = k.size
+		_blob(p, s, [[0.0, core_color, 0.8 * k.alpha], [1.0, rim_color, 0.0]])
+		for d in [Vector2(-1, 0), Vector2(1, 0), Vector2(0, -1), Vector2(0, 1)]:
+			_streak(p + d * s * 1.6, p, rim_color, core_color, 0.7 * k.alpha, maxf(0.4, s * 0.25))
+	_blob(Vector2.ZERO, radius * 0.9, [[0.0, rim_color, 0.35 * hit.flash], [1.0, rim_color, 0.0]])
+	_blob(Vector2.ZERO, radius * 0.55, [[0.0, core_color, 0.85 * hit.flash], [0.4, core_color, 0.4 * hit.flash], [1.0, rim_color, 0.0]])
 	_xf = xf
 `;

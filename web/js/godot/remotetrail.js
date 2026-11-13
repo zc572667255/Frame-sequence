@@ -7,7 +7,6 @@ uniform int seed = 1;
 uniform int kind = 13;
 uniform float frame = 0.0;
 uniform bool puff_pass = false;
-uniform vec3 crystal_rim = vec3(0.37, 0.84, 1.0);
 uniform vec3 cols[8];
 uniform int ncols = 6;
 float lh(int x, int y, int s) {
@@ -29,17 +28,7 @@ vec3 across(float u) {
   return mix(cols[i], cols[i + 1], t - float(i));
 }
 void fragment() {
-  if (puff_pass && UV.x < 0.0) {
-    int key = int(floor(-UV.x / 2.0)) - 1;
-    vec2 p = vec2(-UV.x - float(key + 1) * 2.0, UV.y);
-    int s = key * 53 + 211;
-    float coarse = fbm(p * 6.0, s);
-    float fine = fbm(vec2(p.x * 18.0 + coarse * 2.0, p.y * 18.0), s);
-    float ridge = pow(max(0.0, 1.0 - abs(coarse - 0.5) * 6.0), 8.0);
-    float grain = smoothstep(0.5, 0.72, fine);
-    float frost = clamp(ridge * 0.75 + grain * 0.4, 0.0, 1.0);
-    COLOR = vec4(mix(crystal_rim, cols[ncols - 1], 0.15 + frost * 0.7), COLOR.a * (0.06 + frost * 0.6));
-  } else if (puff_pass) {
+  if (puff_pass) {
     int key = int(floor(UV.x / 2.0));
     vec2 p = (vec2(UV.x - float(key) * 2.0, UV.y) * 64.0 - vec2(32.0)) / 30.0;
     int s = key * 19 + 43;
@@ -89,7 +78,7 @@ void fragment() {
 `;
 
 export const REMOTE_TRAIL_GD = `
-var _rm := [{}, {}, {}] # ribbon, shed puffs, body puffs / shard frost
+var _rm := [{}, {}, {}] # ribbon, shed puffs, body puffs
 var _remote_shot := 0
 var _remote_clip: Array = []
 
@@ -292,7 +281,6 @@ func _remote_draw_mesh(cv: CanvasItem, slot: int) -> void:
 	m.set_shader_parameter("kind", kind)
 	m.set_shader_parameter("frame", _t * frames)
 	m.set_shader_parameter("puff_pass", slot > 0)
-	m.set_shader_parameter("crystal_rim", Vector3(rim_color.r, rim_color.g, rim_color.b))
 	var stops := [colors[0]] + Array(colors) + [core_color]
 	var cols := PackedVector3Array()
 	for i in 8:
@@ -356,7 +344,7 @@ func _remote_frost_fx(r: Array, key: int, frame: int, alpha: float, max_w: float
 					_seg(bp, bp + Vector2.from_angle(bt) * sz * float(br[1]), col, lw)
 
 func _remote_shed(state: Dictionary, index: int, r: float) -> void:
-	if kind == 15 or amount <= 0.0 or trail_frames <= 0.0 or trail_width <= 0.0: return
+	if amount <= 0.0 or trail_frames <= 0.0 or trail_width <= 0.0: return
 	var life := minf(12.0, maxf(4.0, trail_frames))
 	var post_fade := 1.0 - _smooth(0.0, minf(life, impact_frames), maxf(0.0, state.time - charge_frames - travel_frames))
 	var rate := maxf(0.25, minf(3.0, amount * (2.0 if kind == 17 else 1.5)))
@@ -387,4 +375,11 @@ func _remote_shed(state: Dictionary, index: int, r: float) -> void:
 		if kind == 13 or kind == 17:
 			var width := maxf(0.5, r * 0.055 * (0.5 + P.next()))
 			_streak(at0 + v * 1.5, at0, tone, tone, alpha, width)
+		if kind == 15:
+			# 冰晶闪粉：一闪一闪的小十字
+			var size0 := maxf(0.6, r * 0.07 * (0.5 + P.next()))
+			var tw := alpha * (0.6 + 0.4 * sin(age * 2.1 + j))
+			_blob(at0, size0 * 1.4, [[0.0, core_color, 0.9 * tw], [1.0, rim_color, 0.0]])
+			for d in [Vector2(-2.0, 0.0), Vector2(2.0, 0.0), Vector2(0.0, -1.4), Vector2(0.0, 1.4)]:
+				_streak(at0 + d * size0, at0, rim_color, core_color, 0.7 * tw, maxf(0.4, size0 * 0.35))
 `;

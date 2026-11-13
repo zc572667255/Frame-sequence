@@ -5,7 +5,7 @@ import { drawRemoteTrail, drawPuff } from "../remotetrail.js";
 import { REMOTE_DEFAULTS, remoteSettings, hasFlight, flightState, pathAt } from "../remote.js";
 import { fireball } from "./fireball.js";
 import { arrow } from "./arrow.js";
-import { drawIcePrism } from "./ice.js";
+import { drawIceSpear } from "./ice.js";
 import { drawIceImpact } from "./icehit.js";
 import { drawThunderImpact } from "./thunderhit.js";
 import { drawSandBody } from "./sand.js";
@@ -25,7 +25,7 @@ export function remoteBody(g, c, r) {
     g.globalCompositeOperation = "source-over";
     g.drawImage(cv, -box / 2, -box / 2);
   } else if (c.kind === "ice") {
-    drawIcePrism(g, c, r);
+    drawIceSpear(g, c, r);
   } else if (c.kind === "thunder") {
     const Q = rng(c.seed * 139 + Math.floor(c.i / 2));
     g.globalCompositeOperation = "lighter";
@@ -62,7 +62,7 @@ function impact(g, c, s, atPoint, t, angle) {
   const radius = Math.min(c.w, c.h) * s.impactSize / 100;
   const local = { ...c, t, loop: false, cx: atPoint[0], cy: atPoint[1], R: radius, gy: atPoint[1], squash: 0.45 };
   const kind = s.impactKind;
-  if (c.kind === "ice" && (kind === "auto" || kind === "explosion")) return drawIceImpact(g, { ...local, bodyRadius: Math.min(c.w,c.h)*s.bodySize/100*s.size/90, iceRoll: (s.chargeFrames+s.travelFrames)/s.frames*TAU+c.seed }, radius, angle);
+  if (c.kind === "ice" && (kind === "auto" || kind === "explosion")) return drawIceImpact(g, local, radius, angle);
   if (c.kind === "thunder" && (kind === "auto" || kind === "explosion")) return drawThunderImpact(g, local, radius);
   if (kind === "explosion" || (kind === "auto" && c.kind === "fireball")) return explosion(g, local);
   if (kind === "shock") return shock(g, local);

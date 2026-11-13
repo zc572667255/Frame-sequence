@@ -2,8 +2,8 @@ import { createCanvas } from "../../core/util.js";
 import { renderGlow, glowStyle } from "../../trails/glow.js";
 import { rng, rgba, clamp01, smooth } from "../../trails/glow/util.js";
 import { TAU, frac, mixRgb, blob, streak } from "../common.js";
-import { SPRITES, spriteOf } from "../projectiles.js";
 import { headProfile } from "../arrowhead.js";
+import { PROJECTILES, shapeOf } from "../catalog.js";
 
 // 箭矢: something thrown or shot, wrapped in the glow of an attack trail. The
 // light round it and streaming off behind it is drawn by the trails' own
@@ -18,16 +18,14 @@ import { headProfile } from "../arrowhead.js";
 // Everything is sized by R, the circle that fits the box, and kept inside it
 // (round in VFX_KINDS): turned any way (旋转) it never reaches the box's edge.
 
-// 外观: what flies — the ready-made pictures (projectiles.js), then the ones
-// drawn here in the palette's colours (简笔), nothing solid, the user's picture
-export const PROJECTILES = [...SPRITES.map((x) => ["s:" + x.id, x.name]),
-  ["arrow", "简笔·箭矢"], ["dagger", "简笔·匕首"], ["spear", "简笔·长枪"], ["club", "简笔·棍棒"], ["axe", "简笔·飞斧"], ["shuriken", "简笔·手里剑"], ["ball", "简笔·球"],
-  ["core", "透明核心"], ["custom", "自定义核心"]];
+// 外观: what flies, drawn here from shapes in the palette's colours, or
+// nothing solid (vfx/catalog.js). No pictures: the Godot export draws the same shapes.
+export { PROJECTILES, shapeOf };
 // 自转: "auto" turns what tumbles when thrown
-export const SPINS = [["auto", "按外观（斧、锤棍、飞镖、炸弹会转）"], ["on", "转"], ["off", "不转"]];
+export const SPINS = [["auto", "按外观（棍棒、飞斧、手里剑会转）"], ["on", "转"], ["off", "不转"]];
 const TUMBLES = new Set(["club", "axe", "shuriken"]);
 const ROUND = new Set(["shuriken", "ball", "core"]);
-const spins = (shape, spin) => (spin === "on" ? true : spin === "off" ? false : spriteOf(shape) ? spriteOf(shape).spin : TUMBLES.has(shape));
+const spins = (shape, spin) => (spin === "on" ? true : spin === "off" ? false : TUMBLES.has(shape));
 
 // What flies, in its own frame: x forward, its point at (0, 0) — or, for what
 // is round or tumbles, its middle at pivot. Its parts, drawn in order:
@@ -35,12 +33,11 @@ const spins = (shape, spin) => (spin === "on" ? true : spin === "off" ? false : 
 //   line   — a stroke of colour c, width w, closed (cl) or not
 //   dot    — a soft round glow at `at`, radius r (st by radius)
 //   tassel — strands streaming back from root, fluttering (whole cycles per loop)
-//   img    — a picture (自定义核心) centred at `at`, w × h, turned by `turn`
 // and what each is: body (solid and outlined), solid (over the body), glint
 // (light on it), glow (light round it, drawn last). fx: stays upright while the
-// rest tumbles (a ball's shine). core: 自定义核心's picture { img, size (of R),
-// turn (radians) }.
-export function projectile(shape, spin, pal, R, core = null) {
+// rest tumbles (a ball's shine).
+export function projectile(shape, spin, pal, R) {
+  shape = shapeOf(shape);
   const H = R * 0.24, sw = Math.max(1, H * 0.12);
   const c0 = pal.cols[0], k = pal.dark ? 0.6 : 1, W = [255, 255, 255], B = [0, 0, 0];
   const shade = mixRgb(c0, [14, 10, 18], 0.55);
@@ -145,18 +142,6 @@ export function projectile(shape, spin, pal, R, core = null) {
   } else if (shape === "core") {
     // 透明核心: nothing solid at all — only the light flies, a spell cast
     // (its head as round as a small orb's)
-  } else if (shape === "custom" || spriteOf(shape)) {
-    // 自定义核心 and the ready-made looks: a picture, its longer side size × R, turned so
-    // it faces forward; its front at the point (until there is a picture,
-    // only the light flies, as 透明核心)
-    if (core && core.img) {
-      const im = core.img, sc = R * core.size / Math.max(1, im.width, im.height), w = im.width * sc, h = im.height * sc, a = core.turn;
-      const bw = Math.abs(w * Math.cos(a)) + Math.abs(h * Math.sin(a)), cs = [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]];
-      parts.push({ k: "img", l: "body", img: im, at: [-bw / 2, 0], w, h, turn: a, fx: false,
-        pts: cs.map(([x, y]) => [-bw / 2 + x * Math.cos(a) - y * Math.sin(a), x * Math.sin(a) + y * Math.cos(a)]) });
-      L = bw;
-      pivot = [-bw / 2, 0];
-    }
   } else {
     // 箭矢: a shaft with a barbed broadhead, two swept feathers, a nock
     L = R * 0.8;
@@ -203,11 +188,6 @@ function drawPart(g, q, t) {
     g.fill();
   } else if (q.k === "dot") {
     blob(g, q.at[0], q.at[1], q.r, q.st);
-  } else if (q.k === "img") {
-    g.translate(q.at[0], q.at[1]);
-    g.rotate(q.turn);
-    g.imageSmoothingEnabled = true;
-    g.drawImage(q.img, -q.w / 2, -q.h / 2, q.w, q.h);
   } else {
     g.lineCap = "round"; g.lineJoin = "round";
     g.strokeStyle = rgba(q.c, q.a);
@@ -249,11 +229,6 @@ function paintObject(obj, t, w, h, place, d) {
 // how far the outline reaches out round the body
 const nudge = (R) => Math.max(0.75, Math.max(1, R * 0.24 * 0.12) * 0.4);
 
-// What flies as the game draws it (godot/code.js, Godot 纯代码): a picture of
-// it (png, base64) and of the light on and round it (light, added; "" when
-// none), at twice the size for a sharp picture, with where the pictures go —
-// rect [x, y, w, h] from its point (or, round or tumbling, its middle) — and
-// how it flies: L, ro (lengths in R), round, spin. The tassel stands still.
 // the box parts cover, from the pivot: { bx, by, w, h } (whole pixels), or null
 function boundsOf(parts, pivot, d) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -278,24 +253,48 @@ export function projectileBounds(obj) {
   return Number.isFinite(left) ? [left, top, right - left, bottom - top] : [-obj.L / 2, -1, obj.L, 2];
 }
 
-export function projectileSprite(shape, spin, pal, R, core) {
-  const R2 = Math.min(600, Math.max(96, R * 2)), obj = projectile(shape, spin, pal, R2, core), d = nudge(R2);
-  const base = { L: obj.L / R2, ro: obj.ro / R2, round: obj.round, spin: obj.spin, bounds: projectileBounds(obj).map(v => v / R2), rect: [0, 0, 0, 0], png: "", light: "" };
-  const b = boundsOf(obj.parts, obj.pivot, d);
-  if (!b) return base;
-  const { bx, by, w, h } = b;
-  const { S, draw } = paintObject(obj, 0, w, h, (cv) => cv.translate(-bx - obj.pivot[0], -by - obj.pivot[1]), d);
-  const G = createCanvas(w, h);
-  draw(G.getContext("2d"), "glow", "lighter");
-  const b64 = (cv) => cv.toDataURL("image/png").split(",")[1];
-  return { ...base, rect: [bx / R2, by / R2, w / R2, h / R2], png: b64(S), light: obj.parts.some((q) => q.l === "glow") ? b64(G) : "" };
+// What flies as the game draws it (godot/code.js, Godot 纯代码): its parts as
+// shapes, no pictures. Lengths are in R and measured from the pivot (its point,
+// or the middle of what is round or tumbles); a fill's gradient is worked out
+// per corner ([r, g, b, a], 0..1). outline: how far the dark outline reaches
+// out round the body; L, ro, round, spin, bounds: how it flies and what the
+// glow wraps (as projectile/projectileBounds).
+export function projectileShape(shape, spin, pal) {
+  const R = 100, obj = projectile(shape, spin, pal, R), [px, py] = obj.pivot;
+  const n = (v) => +(v / R).toFixed(4), c4 = (c, a) => [...c.map((v) => +(v / 255).toFixed(3)), +Math.max(0, Math.min(1, a)).toFixed(3)];
+  const pt = ([x, y]) => [n(x - px), n(y - py)];
+  const at = (st, t) => {
+    if (t <= st[0][0]) return c4(st[0][1], st[0][2]);
+    for (let i = 1; i < st.length; i++) if (t <= st[i][0]) {
+      const [o0, c0, a0] = st[i - 1], [o1, c1, a1] = st[i], k = (t - o0) / Math.max(1e-6, o1 - o0);
+      return c4(c0.map((v, j) => v + (c1[j] - v) * k), a0 + (a1 - a0) * k);
+    }
+    const l = st[st.length - 1];
+    return c4(l[1], l[2]);
+  };
+  const parts = obj.parts.map((q) => {
+    const base = { k: q.k, l: q.l, fx: !!q.fx };
+    if (q.k === "fill") {
+      let cols;
+      if (!q.g || q.st.length === 1) cols = [at(q.st, 0)];
+      else {
+        const [x0, y0, x1, y1] = q.g, dx = x1 - x0, dy = y1 - y0, dd = Math.max(1e-9, dx * dx + dy * dy);
+        cols = q.pts.map(([x, y]) => at(q.st, Math.max(0, Math.min(1, ((x - x0) * dx + (y - y0) * dy) / dd))));
+      }
+      return { ...base, pts: q.pts.map(pt), cols };
+    }
+    if (q.k === "line") return { ...base, pts: q.pts.map(pt), c: c4(q.c, q.a), w: n(q.w), cl: !!q.cl };
+    if (q.k === "dot") return { ...base, at: pt(q.at), r: n(q.r), st: q.st.map(([o, c, a]) => [o, ...c4(c, a)]) };
+    return { ...base, root: pt(q.root), len: n(q.len), w: n(q.w), c: c4(q.c, q.a), s: q.s.map((v) => v.map((x) => +x.toFixed(4))) };
+  });
+  return { L: obj.L / R, ro: obj.ro / R, round: obj.round, spin: obj.spin, bounds: projectileBounds(obj).map((v) => v / R),
+    outline: nudge(R) / R, shade: c4(obj.shade, 0.8), parts };
 }
 
 // What flies painted once, upright, per look — the parts that turn with it and
 // those that stay upright (fx) apart — and then only placed (and turned) each
 // frame: painting it is the costly part. The tassel, which moves, is left out.
-const sprites = new Map(), imgIds = new WeakMap();
-let nextImg = 1;
+const sprites = new Map();
 function objectSprites(obj, key, d) {
   if (sprites.has(key)) return sprites.get(key);
   const out = [false, true].map((fx) => {
@@ -308,12 +307,11 @@ function objectSprites(obj, key, d) {
   if (sprites.size > 48) sprites.delete(sprites.keys().next().value);
   return out;
 }
-const imgId = (img) => { if (!img) return 0; if (!imgIds.has(img)) imgIds.set(img, nextImg++); return imgIds.get(img); };
 
 export function arrow(g, c) {
   const { t, pal, cx, cy, R } = c;
   const P = rng(c.seed * 113 + 7);
-  const obj = projectile(c.shape, c.spin, pal, R, c.core), { L, ro } = obj;
+  const obj = projectile(c.shape, c.spin, pal, R), { L, ro } = obj;
   const H = obj.round ? Math.max(R * 0.24, ro * 1.35) : R * 0.24;   // how far the glow reaches either side
   const nose = H * 0.45;                                              // the glow past its point
   const fly = c.loop ? 0 : clamp01(t / 0.72);
@@ -377,9 +375,8 @@ export function arrow(g, c) {
   const sh = R * (c.coreShift || 0);
   if (xt + sh - L > cx + R + 2) return;
   const at = obj.round ? [xt - ro + sh, cy] : [xt + sh, cy], th = obj.spin ? TAU * t * (c.loop ? 1 : 2) : 0;
-  // a picture has its own outline: as pixels the blocks would make it all outline
-  const d = c.pixel && obj.parts.some((q) => q.k === "img") ? 0 : nudge(R);
-  const key = [c.shape, pal.preset.id, R.toFixed(2), d, obj.pivot.join(","), c.core ? [c.core.size, c.core.turn, imgId(c.core.img)].join(",") : ""].join("|");
+  const d = nudge(R);
+  const key = [shapeOf(c.shape), pal.preset.id, R.toFixed(2), d, obj.pivot.join(",")].join("|");
   const S = createCanvas(c.w, c.h), sg = S.getContext("2d");
   sg.imageSmoothingEnabled = true;
   sg.imageSmoothingQuality = "high";

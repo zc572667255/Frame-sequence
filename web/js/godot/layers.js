@@ -23,7 +23,6 @@ import { trailData, trailGodot, attachStrips } from "./trail.js";
 import { trailCodeData, strokeCodeData, trailCodeGodot } from "./trailcode.js";
 import { vfxData, vfxGodot, attachVfxSheet } from "./vfx.js";
 import { codeSupported, codeParams, codeGodot } from "./code.js";
-import { prepareVfxCore } from "../vfx/effects.js";
 import { godotScene, layeredScript, nodeNames } from "./scene.js";
 
 const safe = (s) => String(s || "layer").replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").trim() || "layer";
@@ -146,7 +145,6 @@ export async function layeredFiles(app, cardId, name, opts, dir) {
   for (const e of r.entries) {
     if (e.runtime && e.kind === "vfx" && opts.vfx === "code" && codeSupported(e.layer)) {
       // an effect drawn by the game itself: no pictures
-      await prepareVfxCore(e.layer.vfx);
       const p = codeParams(e.layer, r.frameIds, r.w, r.h, r.fps, { bbox: r.bbox }, e.name);
       if (!p.follow.timeline.some(Boolean)) continue;
       layers.push({ name: e.name, kind: "code", params: p });

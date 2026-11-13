@@ -1,45 +1,89 @@
-import { rgba,rng } from "../../trails/glow/util.js";
-import { mixRgb } from "../common.js";
-import { drawIceGrain } from "./icegrain.js";
-import { iceSolid,iceSolidSides,iceMesh,iceRotate } from "./icegeometry.js";
+import { rgba, rng, smooth } from "../../trails/glow/util.js";
+import { TAU, frac, mixRgb, blob, streak } from "../common.js";
 
-export function icePrism(r,roll,seed=1){
-  const solid=iceSolid(r,seed);
-  return iceMesh(solid.vertices.map(p=>iceRotate(p,0,roll,0)),iceSolidSides());
+// 冰矛: a slender crystal lance pointing along +x, r the body radius. Four
+// flat facets (a lit bevel and face above the ridge, a shaded face and bevel
+// below it) with a broken back end, a bright ridge, a glint on the upper edge,
+// a light sweeping along the ridge towards a sparkling tip and a cold halo.
+// godot/ice.js draws exactly the same shapes, colours and timing.
+//
+// roll: how far it has turned about its own axis; it only changes how lit the
+// upper face is, so the outline stays steady.
+
+// the shapes, in the body's own frame (x forward, y down)
+export function iceSpear(r, seed = 1) {
+  const p = (x, y) => [x * r, y * r];
+  const T = p(2.7, 0), Su = p(0.3, -0.52), Sd = p(0.3, 0.52), Wu = p(-0.95, -0.4), Wd = p(-0.95, 0.4);
+  const Bu = p(-1.45, -0.27), Bn = p(-1.22, -0.03), Bd = p(-1.6, 0.17);
+  const Iu1 = p(0.25, -0.35), Iu2 = p(-0.95, -0.25), Id1 = p(0.25, 0.37), Id2 = p(-0.95, 0.28);
+  const Rs = [0.3 * r, Bn[1] * (2.7 - 0.3) / (2.7 + 1.22)];
+  const P = rng(seed * 97 + 5);
+  // a few fractures inside, fixed per seed
+  const cracks = [
+    [p(-0.7 + P() * 0.4, -0.03), p(-0.25 + P() * 0.5, -0.22)],
+    [p(0.5 + P() * 0.5, -0.02), p(0.9 + P() * 0.5, -0.17)],
+    [p(-0.5 + P() * 0.5, 0.04), p(-0.1 + P() * 0.5, 0.24)],
+  ];
+  return {
+    tip: T, back: Bn, ridge: [Bn, Rs, T], edge: [Bu, Wu, Su, T], cracks,
+    outline: [T, Su, Wu, Bu, Bn, Bd, Wd, Sd],
+    faces: [
+      { tone: 0, pts: [T, Su, Wu, Bu, Iu2, Iu1] },
+      { tone: 1, pts: [T, Iu1, Iu2, Bu, Bn, Rs] },
+      { tone: 2, pts: [T, Rs, Bn, Bd, Id2, Id1] },
+      { tone: 3, pts: [T, Id1, Id2, Bd, Wd, Sd] },
+    ],
+    x0: Bd[0], x1: T[0],
+  };
 }
 
-export function iceTrailProfile(r,roll,seed=1){
-  const vertices=icePrism(r,roll,seed).vertices,lo=Math.min(...vertices.map(p=>p[1])),hi=Math.max(...vertices.map(p=>p[1]));
-  return {half:(hi-lo)/2,offset:(hi+lo)/2};
-}
-export const iceTrailHalfWidth=(r,roll,seed=1)=>iceTrailProfile(r,roll,seed).half;
-
-function polygon(g,points,fill){g.fillStyle=fill;g.beginPath();points.forEach(([x,y],i)=>i?g.lineTo(x,y):g.moveTo(x,y));g.closePath();g.fill();}
-
-export function iceFaceCracks(points,seed){
-  const P=rng(seed),mix=(a,b,t)=>a.map((n,k)=>n+(b[k]-n)*t),centre=[0,1].map(k=>points.reduce((s,p)=>s+p[k],0)/3);
-  const a=mix(points[0],points[1],0.15+P()*0.55),b=mix(centre,points[2],P()*0.35),c=mix(points[1],points[2],0.2+P()*0.6);
-  return [[a,mix(mix(a,b,0.5),centre,0.15+P()*0.3),b],[b,c]];
+// each facet's colour at its back and at the tip: [rgb, alpha] pairs
+export function iceTones(pal, roll) {
+  const deep = mixRgb(pal.cols[0], [6, 14, 40], 0.45), blue = pal.cols[0], cyan = pal.cols[1] || pal.rim, core = pal.core;
+  const lit = 0.5 + 0.5 * Math.cos(roll);
+  return [
+    [[mixRgb(cyan, core, 0.35), 0.85], [core, 0.98]],
+    [[mixRgb(blue, cyan, 0.45), 0.7], [mixRgb(cyan, core, 0.2 + 0.25 * lit), 0.92]],
+    [[mixRgb(deep, blue, 0.6), 0.75], [mixRgb(blue, cyan, 0.4 + 0.2 * (1 - lit)), 0.9]],
+    [[deep, 0.85], [mixRgb(deep, blue, 0.5), 0.9]],
+  ];
 }
 
-// The intact cone and its shards share dark ice, frosted cuts and reflections.
-export function drawIceMesh(g,mesh,pal,seed,r,alpha=1){
-  for(const face of mesh.faces){
-    g.globalCompositeOperation="source-over";
-    const deep=pal.cols[0].map(v=>Math.round(v*0.48)),blue=mixRgb(deep,pal.rim,0.12+face.light*0.38),lit=mixRgb(blue,pal.core,0.05+face.light*face.light*0.38+face.spec*0.24);
-    const pts=face.points,grad=g.createLinearGradient(...pts[0],...pts[2]);
-    grad.addColorStop(0,rgba(blue,alpha*0.94));grad.addColorStop(1,rgba(lit,alpha*0.94));polygon(g,pts,grad);
-    const key=seed*419+face.id*17+7;
-    drawIceGrain(g,pts,pal,key,alpha*(0.3+face.light*0.35));
-    g.strokeStyle=rgba(mixRgb(pal.rim,pal.core,0.55),alpha*(0.08+face.spec*0.25));g.lineWidth=Math.max(0.3,r*0.009);
-    for(const path of iceFaceCracks(pts,key)){g.beginPath();path.forEach(([x,y],i)=>i?g.lineTo(x,y):g.moveTo(x,y));g.stroke();}
+function polygon(g, pts) { g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); }
+function polyline(g, pts, col, a, w) {
+  g.strokeStyle = rgba(col, a); g.lineWidth = w; g.lineCap = "round"; g.lineJoin = "round";
+  g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.stroke();
+}
+
+// the lance at (0, 0); t: time 0..1 (the sweep runs twice a loop)
+export function drawIceSpear(g, c, r) {
+  const { pal, t } = c, sp = iceSpear(r, c.seed), tones = iceTones(pal, t * TAU + c.seed);
+  const light = pal.dark ? "source-over" : "lighter";
+  g.globalCompositeOperation = light;
+  g.save(); g.translate(0.4 * r, 0); g.scale(1.7, 0.75);
+  blob(g, 0, 0, 1.9 * r, [[0, pal.rim, 0.22], [0.5, pal.rim, 0.08], [1, pal.rim, 0]]);
+  g.restore();
+  g.globalCompositeOperation = "source-over";
+  for (const face of sp.faces) {
+    const [[c0, a0], [c1, a1]] = tones[face.tone], gr = g.createLinearGradient(sp.x0, 0, sp.x1, 0);
+    gr.addColorStop(0, rgba(c0, a0)); gr.addColorStop(1, rgba(c1, a1));
+    g.fillStyle = gr; polygon(g, face.pts); g.fill();
   }
-  g.globalCompositeOperation=pal.dark?"source-over":"lighter";
-  for(const edge of mesh.edges){
-    const rim=edge.front===1,bright=Math.pow(edge.light,8);
-    g.strokeStyle=rgba(mixRgb(pal.rim,pal.core,0.42),alpha*(rim?0.24+bright*0.35:0.015+bright*0.13));g.lineWidth=Math.max(0.35,r*(rim?0.018:0.009));
-    g.beginPath();g.moveTo(...edge.points[0]);g.lineTo(...edge.points[1]);g.stroke();
-  }
+  g.globalCompositeOperation = light;
+  const w = Math.max(0.6, r * 0.07);
+  for (const [a, b] of sp.cracks) polyline(g, [a, b], pal.core, 0.3, Math.max(0.4, r * 0.03));
+  streak(g, sp.ridge[0], sp.tip, pal.rim, pal.core, 0.85, w);
+  polyline(g, sp.edge, pal.core, 0.55, Math.max(0.5, r * 0.045));
+  // a light running along the ridge to the tip
+  const s = frac(t * 2), x = -1.1 * r + 3.4 * r * s, y = sp.back[1] * (sp.tip[0] - x) / (sp.tip[0] - sp.back[0]);
+  blob(g, x, y, 0.35 * r, [[0, pal.core, 0.55 * Math.sin(Math.PI * s)], [1, pal.core, 0]]);
+  // the tip sparkles
+  const tw = 0.7 + 0.3 * Math.sin(t * TAU * 2), [tx, ty] = sp.tip;
+  blob(g, tx, ty, 0.55 * r, [[0, pal.core, 0.9 * tw], [0.4, pal.rim, 0.35 * tw], [1, pal.rim, 0]]);
+  for (const [dx, dy] of [[-0.6, 0], [0.45, 0], [0, -0.35], [0, 0.35]]) streak(g, [tx + dx * r, ty + dy * r], sp.tip, pal.rim, pal.core, 0.75 * tw, Math.max(0.5, r * 0.05));
+  g.globalCompositeOperation = "source-over";
 }
 
-export function drawIcePrism(g,c,r){drawIceMesh(g,icePrism(r,c.t*Math.PI*2+c.seed,c.seed),c.pal,c.seed,r);}
+// how wide the wake behind it is: inside the back of the body
+export function iceTrailProfile(r) { return { half: 0.34 * r, offset: 0 }; }
+export const iceTrailHalfWidth = (r) => iceTrailProfile(r).half;

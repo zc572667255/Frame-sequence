@@ -79,8 +79,6 @@ export const REMOTE_FIELD = `
 `;
 
 export const REMOTE_GD = `
-var _remote_cores: Array = []
-
 func _remote_active() -> bool:
 	return kind >= 12 and kind <= 17 and flight_path != "sprite"
 
@@ -188,7 +186,6 @@ func _remote_body(r: float) -> void:
 			_R = r * 2.1
 			amount = 0.0
 			_k_arrow(true)
-			_remote_cores.append([_core_xf, _core_box])
 			_R = old_r
 			amount = old_amount
 		13:

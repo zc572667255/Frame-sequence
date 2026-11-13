@@ -16,18 +16,18 @@
 // as distances. 箭矢's glow is a trail's (trails/glow.js renderGlow): its layers
 // are drawn the way the trail's own pure code draws them (godot/trailcode.js),
 // its flowing body in the same shader, laid on the glow's mesh; what flies in
-// it goes as a picture drawn here (kinds/arrow.js projectileSprite). Not carried
+// it is drawn from the same shapes (kinds/arrow.js projectileShape). Not carried
 // over: the other rims of 魔法阵; the caustics, tearing, tail tint and erosion
 // of 箭矢's glow; and the pixel look — it is drawn smooth.
 import { vfxSettings } from "../vfx/layer.js";
-import { VFX_DEFAULTS, VFX_KINDS, coreOf } from "../vfx/effects.js";
+import { VFX_DEFAULTS, VFX_KINDS } from "../vfx/effects.js";
 import { paletteOf } from "../vfx/common.js";
 import { vfxData } from "./vfx.js";
 import { ACCENTS, accentAmounts } from "../vfx/accents.js";
 import { isGroundAura } from "../vfx/kinds/auras.js";
 import { glowStyle } from "../trails/glow.js";
 import { hexToRgb } from "../core/util.js";
-import { projectileSprite } from "../vfx/kinds/arrow.js";
+import { projectileShape } from "../vfx/kinds/arrow.js";
 import { FIREBALL_FIELD, FIREBALL_GD } from "./fireball.js";
 import { remoteSettings } from "../vfx/remote.js";
 import { remoteParams, remoteProps, remoteExports, REMOTE_FIELD, REMOTE_GD } from "./remote.js";
@@ -45,13 +45,13 @@ const BLOOM = { hit: 1, shock: 0.8, charge: 1, heal: 0.7, circle: 0, ribbon: 1, 
 // (strands is a count, the rest 0..1) — GDScript TG_KEYS
 const TG_KEYS = ["strands", "core", "haze", "glow", "flow", "flames", "bolts", "crystal", "speedLines", "curls", "rays", "serrate", "rocks", "shadow", "snow", "dust", "sparkles", "sparkleSize"];
 
-// 箭矢's core as a picture (kinds/arrow.js projectileSprite) and how it flies;
-// R: the effect's radius at the size it is exported
-function arrowCore(s, pal, R) {
-  const none = { coreRect: [0, 0, 0, 0], coreEnvelope: [-0.8, -0.1, 0.8, 0.2], coreLength: 0.8, coreRound: false, coreRadius: 0, coreSpin: false, coreShift: 0, corePng: "", coreLight: "" };
-  if (s.kind !== "arrow" || typeof document === "undefined") return none;
-  const o = projectileSprite(s.shape || "arrow", s.spin || "auto", pal, Math.max(8, R), coreOf(s));
-  return { coreRect: o.rect, coreEnvelope: o.bounds, coreLength: o.L, coreRound: o.round, coreRadius: o.ro, coreSpin: o.spin, coreShift: Math.max(-1, Math.min(1, (+s.coreShift || 0) / 100)), corePng: o.png, coreLight: o.light };
+// 箭矢's core as shapes (kinds/arrow.js projectileShape) and how it flies
+function arrowCore(s, pal) {
+  const none = { coreEnvelope: [-0.8, -0.1, 0.8, 0.2], coreLength: 0.8, coreRound: false, coreRadius: 0, coreSpin: false, coreShift: 0, coreOutline: 0, coreShape: "" };
+  if (s.kind !== "arrow") return none;
+  const o = projectileShape(s.shape || "arrow", s.spin || "auto", pal);
+  return { coreEnvelope: o.bounds, coreLength: o.L, coreRound: o.round, coreRadius: o.ro, coreSpin: o.spin, coreShift: Math.max(-1, Math.min(1, (+s.coreShift || 0) / 100)),
+    coreOutline: o.outline, coreShape: o.parts.length ? JSON.stringify({ shade: o.shade, parts: o.parts }) : "" };
 }
 
 // the glow of the trail preset a palette comes from, as 箭矢 draws it: its
@@ -103,7 +103,7 @@ export function codeParamsFrom(s, w, h, fps, name) {
     // 光效点缀, in ACCENTS order: the palette's own mix (按配色), none, or the effect's own
     accents: (() => { const a = accentAmounts(s, pal.preset) || {}; return ACCENTS.map((x) => +(a[x.id] || 0)); })(),
     ...trailGlow(pal, s.kind === "ice"),
-    ...arrowCore(s, pal, Math.min(w, h) / 2 * Math.max(0.05, Math.min(1, s.size / 100))),
+    ...arrowCore(s, pal),
     remote: remoteParams(s),
   };
 }
@@ -135,8 +135,8 @@ export function codeProps(p) {
     `random_seed = ${p.seed}`, `rotate_degrees = ${num(p.rotate)}`, `soft_light = ${p.soft}`, `bloom = ${num(p.bloom)}`, `additive = ${p.additive}`,
     `colors = ${tscnColors(p.cols)}`, `accents = PackedFloat32Array(${p.accents.map(num).join(", ")})`, `core_color = ${color(p.core)}`, `rim_color = ${color(p.rim)}`, `splat_color = ${color(p.splat)}`,
     `trail_colors = ${tscnColors(p.trailCols)}`, `trail_look = PackedFloat32Array(${p.trailLook.map(num).join(", ")})`, `trail_dark = ${p.trailDark}`,
-    `core_rect = Rect2(${p.coreRect.map(num).join(", ")})`, `core_envelope = Rect2(${p.coreEnvelope.map(num).join(", ")})`, `core_length = ${num(p.coreLength)}`, `core_round = ${p.coreRound}`, `core_radius = ${num(p.coreRadius)}`, `core_spin = ${p.coreSpin}`, `core_shift = ${num(p.coreShift)}`,
-    p.corePng ? `core_png = "${p.corePng}"` : null, p.coreLight ? `core_light_png = "${p.coreLight}"` : null,
+    `core_envelope = Rect2(${p.coreEnvelope.map(num).join(", ")})`, `core_length = ${num(p.coreLength)}`, `core_round = ${p.coreRound}`, `core_radius = ${num(p.coreRadius)}`, `core_spin = ${p.coreSpin}`, `core_shift = ${num(p.coreShift)}`, `core_outline = ${num(p.coreOutline)}`,
+    p.coreShape ? `core_shape = ${JSON.stringify(p.coreShape)}` : null,
     p.follow ? `data_json = ${JSON.stringify(JSON.stringify(p.follow))}` : null,
   ].filter(Boolean);
 }
@@ -229,10 +229,6 @@ ${remoteExports(d.remote)}
 ## 深色的光（黑炎、岩崩）：火舌用深色画
 @export var trail_dark := ${d.trailDark}
 @export_group("箭矢的核心")
-## 核心的图：换成自己的图就填这里（和内嵌的那张一样大小、一样朝右摆放）；空着就用导出时内嵌的
-@export var core_texture: Texture2D
-## 核心的图放在哪：从它的尖（圆的、会转的：从它的正中）量，x、y、宽、高，单位是特效半径 R
-@export var core_rect := Rect2(${d.coreRect.map(num).join(", ")})
 ## 实体轮廓：包裹光从箭尾延伸到箭尖前，不包含外围光晕
 @export var core_envelope := Rect2(${d.coreEnvelope.map(num).join(", ")})
 ## 核心的长度（R）：光从它的尖往后包多长
@@ -244,9 +240,10 @@ ${remoteExports(d.remote)}
 @export var core_spin := ${d.coreSpin}
 ## 核心离光头多远：正数往前伸出光头，负数缩进光里（R）
 @export var core_shift := ${num(d.coreShift)}
-## 内嵌的核心图（PNG，base64）和它身上、周围的光（叠加）
-@export_multiline var core_png := "${d.corePng}"
-@export_multiline var core_light_png := "${d.coreLight}"
+## 本体外面那圈深色描边有多宽（R）
+@export var core_outline := ${num(d.coreOutline)}
+## 核心的形状（JSON）：多边形、线、光点和红缨，长度单位是 R，从它的尖（圆的、会转的：从它的正中）量；每帧用代码画出来，没有图片
+@export_multiline var core_shape := ${JSON.stringify(d.coreShape)}
 @export_group("")
 @export_multiline var data_json := """${follow}"""
 
@@ -819,11 +816,9 @@ var _tg_light := true  # 光的这一层是叠加的
 var _tg_haze := false  # 正在画光晕
 var _tg_loop_n := 0.0  # 循环时一圈的帧数（流动的刀身、风刃转回原处）
 var _aw := {}  # 箭矢的形状（光的轮廓、摆动用）
-var _core_on := false  # 这一帧画核心的图
-var _core_xf := Transform2D.IDENTITY  # 核心的图：它自己的坐标 → 画幅
-var _core_box := Rect2()
-var _core_src := ["", ""]
-var _core_img: Array = [null, null]
+var _core_src := ""  # 解析过的 core_shape
+var _core_parts: Array = []
+var _core_shade := Color(0, 0, 0, 0.8)
 
 
 func _ready() -> void:
@@ -1161,24 +1156,10 @@ func _draw_layer(cv: CanvasItem, role: int) -> void:
 		_t8c = PackedColorArray()
 		_fm = [{}, {}]
 		_rm = [{}, {}, {}]
-		_core_on = false
-		_remote_cores.clear()
 		_remote_clip.clear()
 		_role = 0
 		_draw_effect(float(fb[0]), float(fb[1]), float(fb[2]))
 		cv.draw_set_transform_matrix(Transform2D.IDENTITY)
-	# 箭矢的核心：图盖上去，它身上的光叠加上去（点缀在它上面，后画）
-	if _core_on and (role == 4 or role == 5):
-		var tex := _core_tex(role == 5)
-		if tex:
-			if _remote_active():
-				for core in _remote_cores:
-					cv.draw_set_transform_matrix(core[0])
-					cv.draw_texture_rect(tex, core[1], false)
-			else:
-				cv.draw_set_transform_matrix(_core_xf)
-				cv.draw_texture_rect(tex, _core_box, false)
-			cv.draw_set_transform_matrix(Transform2D.IDENTITY)
 	if role == 1 and not _ai.is_empty():
 		RenderingServer.canvas_item_add_triangle_array(cv.get_canvas_item(), _ai, _ap, _ac)
 	elif role == 0 and not _bi.is_empty():
@@ -3001,8 +2982,8 @@ func _across(v: float) -> Color:
 
 
 # 箭矢：飞出去的东西包在拖尾的光效里，光往后拖成彗星（与编辑器 vfx/kinds/arrow.js 相同）。光分两半，各自的亮边贴着
-# 飞行线，合起来在前头收成圆头（圆的、会转的：包住整个核心）；每一半照拖尾的光效画（_tg_glow）。核心是导出时画好的图
-# （箭、匕首、长枪……或自定义的图片），盖在光上面，外面再薄薄叠一层光。
+# 飞行线，合起来在前头收成圆头（圆的、会转的：包住整个核心）；每一半照拖尾的光效画（_tg_glow）。核心（箭、匕首、
+# 长枪……）按 core_shape 的形状用代码画，盖在光上面，外面再薄薄叠一层光。
 # 大小都按画幅的内切圆算，显示时只留内切圆里的，所以怎么转都不出框。
 func _k_arrow(body_only := false) -> void:
 	var t := _t
@@ -3071,33 +3052,92 @@ func _k_arrow(body_only := false) -> void:
 		if a > 0.02:
 			_blob(Vector2(x1 - p * R * 1.1, cy + side * H * (0.15 + out * p)), maxf(0.9, H * 0.08 * sz), [[0.0, core_color, a], [0.45, rim_color, 0.6 * a], [1.0, rim_color, 0.0]])
 
-	# 核心（导出时画好的图）盖在光上面；圆的、会转的在光头的正中，转着（循环时整数圈）
+	# 核心盖在光上面；圆的、会转的在光头的正中，转着（循环时整数圈）
 	var sh := core_shift * R
 	if xt + sh - L > cx + R + 2.0:
 		return
-	_core_on = true
 	var th := TAU * t * (1.0 if loop else 2.0) if core_spin else 0.0
-	_core_xf = _xf * Transform2D(th, Vector2(xt - ro + sh, cy) if core_round else Vector2(xt + sh, cy))
-	_core_box = Rect2(core_rect.position * R, core_rect.size * R)
+	var at := Vector2(xt - ro + sh, cy) if core_round else Vector2(xt + sh, cy)
+	_core_draw(_xf * Transform2D(th, at), _xf * Transform2D(0.0, at), R, t)
 	# 包在光里：光再薄薄地盖一层在核心上
 	if additive:
 		for gl in glows:
 			_tg_glow(gl[0], gl[1], fi, life, 0.15, true, gl[2])
 
 
-# 核心的图：core_texture，没有就用内嵌的 PNG（light：它身上和周围的光，叠加上去）
-func _core_tex(light: bool) -> Texture2D:
-	if not light and core_texture:
-		return core_texture
-	var src := core_light_png if light else core_png
-	if src.is_empty():
-		return null
-	var k := 1 if light else 0
-	if _core_src[k] != src:
-		_core_src[k] = src
-		var img := Image.new()
-		_core_img[k] = ImageTexture.create_from_image(img) if img.load_png_from_buffer(Marshalls.base64_to_raw(src)) == OK else null
-	return _core_img[k]
+# 核心的形状（core_shape 解析一次）
+func _core_load() -> void:
+	if _core_src == core_shape:
+		return
+	_core_src = core_shape
+	_core_parts = []
+	var v = JSON.parse_string(core_shape) if not core_shape.is_empty() else null
+	if v is Dictionary:
+		_core_parts = v.get("parts", [])
+		var c: Array = v.get("shade", [0, 0, 0, 0.8])
+		_core_shade = Color(c[0], c[1], c[2], c[3])
+
+
+func _core_pts(src: Array, R: float, off := Vector2.ZERO) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for p in src:
+		out.append(Vector2(p[0], p[1]) * R + off)
+	return out
+
+
+func _core_col(c: Array) -> Color:
+	return Color(c[0], c[1], c[2], c[3])
+
+
+# 核心：本体（外面一圈深色描边）、上面的细节盖上去，高光和周围的光叠加上去（和编辑器 kinds/arrow.js 一样）。
+# xf：转着的坐标，up：不转的（球的高光）；都在最上面两层（_over）
+func _core_draw(xf: Transform2D, up: Transform2D, R: float, t: float) -> void:
+	_core_load()
+	if _core_parts.is_empty():
+		return
+	var saved := _xf
+	var saved_add := _add
+	_over = true
+	_under = false
+	_add = false
+	var d := maxf(0.75, core_outline * R)
+	for j in 8:
+		var off := Vector2.from_angle(j * TAU / 8.0) * d
+		for q in _core_parts:
+			if q.k != "fill" or q.l != "body": continue
+			_xf = up if q.fx else xf
+			_poly_fill(_core_pts(q.pts, R, off), PackedColorArray([_core_shade]))
+	for layer in ["body", "solid", "glint", "glow"]:
+		_add = layer == "glint" or layer == "glow"
+		for q in _core_parts:
+			if q.l != layer: continue
+			_xf = up if q.fx else xf
+			match String(q.k):
+				"fill":
+					var cl := PackedColorArray()
+					for c in q.cols: cl.append(_core_col(c))
+					_poly_fill(_core_pts(q.pts, R), cl)
+				"line":
+					var pts := _core_pts(q.pts, R)
+					if q.cl and pts.size() > 2: pts.append(pts[0])
+					_line(pts, PackedColorArray([_core_col(q.c)]), float(q.w) * R)
+				"dot":
+					var stops := []
+					for st in q.st: stops.append([st[0], Color(st[1], st[2], st[3]), st[4]])
+					_blob(Vector2(q.at[0], q.at[1]) * R, float(q.r) * R, stops)
+				"tassel":
+					# 红缨：一根根往后飘，抖动（循环时整数圈）
+					var root := Vector2(q.root[0], q.root[1]) * R
+					var ln := float(q.len) * R
+					for st in q.s:
+						var pts := PackedVector2Array()
+						for i in 7:
+							var s := i / 6.0
+							pts.append(root + Vector2(-ln * float(st[0]) * s, ln * float(st[1]) * s + ln * 0.12 * pow(s, 1.5) * sin(TAU * (2.0 * t + float(st[2])) - 3.0 * s)))
+						_line(pts, PackedColorArray([_core_col(q.c)]), float(q.w) * R)
+	_over = false
+	_add = saved_add
+	_xf = saved
 
 
 # 光的轮廓：尾巴细，箭头一圈最宽，过了箭尖收成一个尖
