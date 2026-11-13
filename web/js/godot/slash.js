@@ -13,7 +13,7 @@ var _sm := {}
 func _slash_mask_begin(at: Vector2, travel: float, half: float, ground: float, shape: String) -> void:
 	var th := clampf(ground, 0.0, 90.0) * PI / 180.0
 	var fr := _slash_frame(travel)
-	var span := 140.0 * PI / 180.0
+	var span := 170.0 * PI / 180.0
 	var A := half / sin(span / 2.0)
 	var sag := A * (1.0 - cos(span / 2.0))
 	_sm = {"at": at, "X": fr[0], "Y": fr[1], "squash": 0.3 + 0.7 * sin(th), "shear": 0.25 * cos(th), "cx": -A * cos(span / 2.0) - sag / 2.0, "span": span, "half": shape == "half"}
@@ -57,7 +57,7 @@ func _slash_runs(at: Vector2, travel: float, half: float, thick: float, ground: 
 	var fr := _slash_frame(travel)
 	var X: Vector2 = fr[0]
 	var Y: Vector2 = fr[1]
-	var span := 140.0 * PI / 180.0
+	var span := 170.0 * PI / 180.0
 	var A := half / sin(span / 2.0)
 	var sag := A * (1.0 - cos(span / 2.0))
 	var n := 16 if shape == "half" else 32
@@ -66,7 +66,7 @@ func _slash_runs(at: Vector2, travel: float, half: float, thick: float, ground: 
 		var s := 0.5 * k / 16.0 if shape == "half" else float(k) / 32.0
 		var u := k / 16.0 if shape == "half" else 0.35 + 0.65 * k / 32.0
 		var phi := -span / 2.0 + span * s
-		var W := thick * (0.04 + 0.96 * pow(sin(PI * s), 0.8))
+		var W := _slash_inset(A, thick, phi, span)
 		var nx := cos(phi)
 		var ny := sin(phi)
 		var ox := A * nx - A * cos(span / 2.0) - sag / 2.0
@@ -76,11 +76,22 @@ func _slash_runs(at: Vector2, travel: float, half: float, thick: float, ground: 
 		run.append({"a": at + X * (ix - iy * shear) + Y * (iy * squash), "b": at + X * (ox - oy * shear) + Y * (oy * squash), "u": u})
 	return [run]
 
+# 内侧边也是一段圆弧（穿过两个尖、正中离外弧 thick 的圆），所以凹进去的地方永远是凹的：thick 不超过月牙鼓出的深度。
+# 返回外弧上角度 phi 处，沿外弧圆心的射线往里到内侧边的距离
+func _slash_inset(A: float, thick: float, phi: float, span: float) -> float:
+	var a := A * cos(span / 2.0)
+	var m := A - minf(thick, 0.95 * (A - a))
+	var d := (m * m - A * A) / (2.0 * (m - a))
+	var B := m - d
+	var t := d * cos(phi) + sqrt(maxf(0.0, d * d * cos(phi) * cos(phi) - d * d + B * B))
+	return maxf(A - t, thick * 0.02)
+
 # 画一道剑气（k：第几个残影，用来换随机）
 func _slash_at(at: Vector2, travel: float, r: float, scale0: float, alpha: float, k: int, key: int) -> void:
 	if alpha <= 0.01 or scale0 <= 0.0: return
 	var half := r * 4.0 * scale0
-	var thick := half * clampf(slash_thick, 10.0, 150.0) / 100.0
+	var span := 170.0 * PI / 180.0
+	var thick := half / sin(span / 2.0) * (1.0 - cos(span / 2.0)) * clampf(slash_thick, 10.0, 90.0) / 100.0
 	var runs := _slash_runs(at, travel, half, thick, slash_angle, slash_shape)
 	var frame := int(floor(_t * frames + 0.0001))
 	_tg_plain = true
@@ -101,7 +112,7 @@ func _slash_lines(at: Vector2, travel: float, half: float, thick: float, ground:
 	var fr := _slash_frame(travel)
 	var X: Vector2 = fr[0]
 	var Y: Vector2 = fr[1]
-	var span := 140.0 * PI / 180.0
+	var span := 170.0 * PI / 180.0
 	var A := half / sin(span / 2.0)
 	var sag := A * (1.0 - cos(span / 2.0))
 	var cx := -A * cos(span / 2.0) - sag / 2.0

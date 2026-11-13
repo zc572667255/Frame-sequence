@@ -14,7 +14,7 @@ import { pathAt } from "../remote.js";
 //         lower tip trailing a little further back.
 // godot/slash.js draws exactly the same.
 
-export const SLASH_SPAN = 140 * Math.PI / 180;
+export const SLASH_SPAN = 170 * Math.PI / 180;
 const HALF_SECTIONS = 16;
 // where along the trail a whole crescent starts: past the trail's faded tail
 export const SLASH_U0 = 0.35;
@@ -79,10 +79,24 @@ function fadeEnds(cv, ends) {
   g.putImageData(img, x0, y0);
 }
 
+// how deep the crescent is (its outer arc's middle ahead of the line between
+// its tips), for half its chord: thickness is a share of this
+export const slashDepth = (half) => half / Math.sin(SLASH_SPAN / 2) * (1 - Math.cos(SLASH_SPAN / 2));
+
+// The inner edge is an arc too — the circle through both tips whose middle is
+// `thick` inside the outer arc's — so the hollow is always hollow: thick is
+// kept under the crescent's depth. Its distance in from the outer arc along
+// the ray from the outer arc's centre at angle phi.
+export function slashInset(A, thick, phi) {
+  const a = A * Math.cos(SLASH_SPAN / 2), m = A - Math.min(thick, 0.95 * (A - a)), d = (m * m - A * A) / (2 * (m - a)), B = m - d;
+  const t = d * Math.cos(phi) + Math.sqrt(Math.max(0, d * d * Math.cos(phi) ** 2 - d * d + B * B));
+  return Math.max(A - t, thick * 0.02);
+}
+
 export function slashRuns(at, travel, half, thick, ground, shape = "full") {
   const { place, A, sag } = slashFrameOf(at, travel, half, ground);
   const section = (s, u) => {
-    const phi = -SLASH_SPAN / 2 + SLASH_SPAN * s, W = thick * (0.04 + 0.96 * Math.pow(Math.sin(Math.PI * s), 0.8));
+    const phi = -SLASH_SPAN / 2 + SLASH_SPAN * s, W = slashInset(A, thick, phi);
     const nx = Math.cos(phi), ny = Math.sin(phi), ox = A * nx - A * Math.cos(SLASH_SPAN / 2) - sag / 2, oy = A * ny;
     return { a: place(ox - nx * W, oy - ny * W), b: place(ox, oy), u };
   };
@@ -114,7 +128,7 @@ export function slashLines(at, travel, half, thick, ground, shape, amount, seed,
 // one crescent, painted onto g (canvas coordinates)
 export function drawSlashAt(g, c, s, at, travel, r, scale, alpha, k) {
   if (alpha <= 0.01 || scale <= 0) return;
-  const half = r * 4 * scale, thick = half * Math.max(10, Math.min(150, s.slashThick ?? 70)) / 100, ground = s.slashAngle ?? 90;
+  const half = r * 4 * scale, thick = slashDepth(half) * Math.max(10, Math.min(90, s.slashThick ?? 60)) / 100, ground = s.slashAngle ?? 90;
   // (the flowing-blade layer smears past a pointed tip; the straight speed
   // lines are drawn curving instead, below)
   const look = glowStyle(c.pal.preset), style = { ...look, flow: 0, speedLines: 0 }, ends = slashEnds(at, travel, half, ground, s.slashShape);

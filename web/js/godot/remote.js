@@ -9,7 +9,7 @@ function properties(p) {
     flight_count: p.flightCount | 0, flight_interval: p.flightInterval | 0, flight_spread: +p.flightSpread,
     flight_frame_budget: p.remoteFrameBudget ?? 64,
     body_size: +p.bodySize, trail_frames: +p.trailFrames, trail_width: +p.trailWidth,
-    head_width: +p.headWidth, head_curve: +p.headCurve, slash_angle: +p.slashAngle, slash_shape: JSON.stringify(p.slashShape || "full"), slash_thick: +(p.slashThick ?? 70),
+    head_width: +p.headWidth, head_curve: +p.headCurve, slash_angle: +p.slashAngle, slash_shape: JSON.stringify(p.slashShape || "full"), slash_thick: +(p.slashThick ?? 60),
     impact_kind: JSON.stringify(p.impactKind), impact_size: +p.impactSize,
   };
 }

@@ -5,7 +5,7 @@ import { ribbonSections, materialAt, flameFlow } from "../web/js/vfx/remotetrail
 import { flightTrailWindow } from "../web/js/vfx/remote.js";
 import { alongPath, iceSwirl, iceLance, iceColors } from "../web/js/vfx/kinds/ice.js";
 import { iceBurst } from "../web/js/vfx/kinds/icehit.js";
-import { slashRuns, slashFrame, slashFade, slashCopies, slashLines, slashEnds } from "../web/js/vfx/kinds/slash.js";
+import { slashRuns, slashFrame, slashFade, slashCopies, slashLines, slashEnds, slashDepth } from "../web/js/vfx/kinds/slash.js";
 import { paletteOf } from "../web/js/vfx/common.js";
 import { shapeOf } from "../web/js/vfx/catalog.js";
 import { thunderDischarge } from "../web/js/vfx/kinds/thunderhit.js";
@@ -279,11 +279,22 @@ for (const ground of [0, 30, 60, 90]) for (const travel of [0, Math.PI, 0.3]) fo
     assert.ok(slashWidth(run.at(-1)) < 1.5, "two-tipped: pointed at its lower tip too");
     assert.ok(run[0].u >= 0.3, "neither end fades into the trail's tail");
     if (ground === 90) for (let i = 1; i < 16; i++) assert.ok(slashWidth(run[i]) < slashWidth(run[i + 1]) + 1e-9 && Math.abs(slashWidth(run[i]) - slashWidth(run[32 - i])) < 1e-6, "it thickens smoothly to the middle and thins the same way");
+    if (ground === 90) {
+      // the hollow is hollow: the inner edge bows the same way as the outer, its middle ahead of the tips
+      const inner = run.map(q => along(q.a));
+      for (let i = 1; i <= 16; i++) assert.ok(inner[i] >= inner[i - 1] - 1e-9 && inner[32 - i] >= inner[33 - i] - 1e-9, "the inner edge curves smoothly out to its middle and back");
+      assert.ok(inner[16] > along(top) + 1, "the inner edge's middle lies ahead of the tips: no bulge into the hollow");
+      for (let i = 2; i < 31; i++) assert.ok(inner[i - 1] + inner[i + 1] - 2 * inner[i] <= 1e-6, "the inner edge never bulges back into the hollow");
+    }
     if (ground === 90) { assert.ok(Math.abs(height - 80) < 1e-6, "upright: the whole crescent, as tall as its chord"); assert.ok(Math.abs(along(bottom) - along(top)) < 1e-6, "upright: both tips level"); }
     if (ground === 0) { assert.ok(Math.abs(height - 24) < 1e-6, "parallel to the ground: flattened, seen from the side"); assert.ok(along(bottom) < along(top) - 1, "lying down, the lower tip trails further back"); }
   }
 }
 for (const travel of [0, Math.PI, 0.3, -0.4]) assert.ok(slashFrame(travel).y[1] > 0, "up stays up whichever way it flies");
+for (const k of [0.1, 0.6, 0.9, 1.5]) {
+  const run = slashRuns([0, 0], 0, 40, slashDepth(40) * k, 90, "full")[0];
+  assert.ok(run[16].a[0] > run[0].b[0], "however thick, the hollow never fills or bulges");
+}
 // 光丝 curve along the arc towards the tips and on past them, never straight
 for (const shape of ["full", "half"]) for (const ground of [90, 40, 0]) {
   const lines = slashLines([100, 100], 0, 40, 20, ground, shape, 0.35, 7, 3, 1);
