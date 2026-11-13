@@ -40,7 +40,7 @@ export const CODE_KINDS = ["hit", "shock", "charge", "heal", "ribbon", "wings", 
 const PATTERNS = { hex: 0, penta: 1, square: 2, taiji: 3, burst: 4, holy: 5, whirl: 6, stars: 7, wisp: 8, arrows: 9 };
 // how much bloom each kind gets (vfx/effects.js BLOOM); 箭矢 more, standing in
 // for the bloom its trail glow adds to itself in the editor
-const BLOOM = { hit: 1, shock: 0.8, charge: 1, heal: 0.7, circle: 0, ribbon: 1, wings: 1, aura: 0.9, burn: 0.9, explosion: 0.7, dust: 0, cloud: 0, arrow: 1, fireball: 0.45, ice: 0.6 };
+const BLOOM = { hit: 1, shock: 0.8, charge: 1, heal: 0.7, circle: 0, ribbon: 1, wings: 1, aura: 0.9, burn: 0.9, explosion: 0.7, dust: 0, cloud: 0, arrow: 1, fireball: 0.45, ice: 0.35 };
 // 箭矢's glow: the trail look's amounts the script reads, in this order
 // (strands is a count, the rest 0..1) — GDScript TG_KEYS
 const TG_KEYS = ["strands", "core", "haze", "glow", "flow", "flames", "bolts", "crystal", "speedLines", "curls", "rays", "serrate", "rocks", "shadow", "snow", "dust", "sparkles", "sparkleSize"];

@@ -375,15 +375,16 @@ func _remote_shed(state: Dictionary, index: int, r: float) -> void:
 		if kind == 13 or kind == 17:
 			var width := maxf(0.5, r * 0.055 * (0.5 + P.next()))
 			_streak(at0 + v * 1.5, at0, tone, tone, alpha, width)
-		if kind == 15:
-			# 从头部掉下来的一块碎冰：往一侧、往后飞，边转边落，慢慢化掉
-			var size0 := r * (0.2 + 0.26 * P.next())
+		if kind == 15 and j % 2 == 0:
+			# 从冰枪上剥落的一小片冰：往一侧、往后飘，边转边淡去
+			var len0 := r * (0.3 + 0.3 * P.next())
 			var rot := P.next() * TAU
 			var spin := (P.next() - 0.5) * 0.9
-			var sides := 3 + int(floorf(P.next() * 2.0))
-			var out := r * (0.12 + 0.2 * P.next())
+			var out := r * (0.08 + 0.14 * P.next())
 			var fwd := Vector2.from_angle(angle)
 			var nrm := Vector2(-fwd.y, fwd.x)
-			var c := p + nrm * side * r * 0.5 - fwd * r * 0.05 * age + nrm * side * out * age + Vector2(0.0, r * 0.012 * age * age)
-			_ice_draw_lump(_ice_lump(Rand.new((random_seed + index * 31) * 31 + j * 17 + index), c, size0 * (1.0 - 0.5 * f), rot + spin * age, sides), _smooth(0.0, 0.1, f) * pow(1.0 - f, 1.2) * post_fade, maxf(0.5, r * 0.04))
+			var c := p + nrm * side * r * 0.3 - fwd * r * 0.05 * age + nrm * side * out * age
+			var fade := _smooth(0.0, 0.1, f) * pow(1.0 - f, 1.2) * post_fade
+			var ln := len0 * (1.0 - 0.4 * f)
+			_ice_fill_chip(_ice_chip(c, rot + spin * age, ln, len0 * 0.22), (_ice_cols().blue as Color), 0.55 * fade, 0.6 * fade, maxf(0.4, r * 0.03))
 `;
