@@ -8,7 +8,7 @@
 // alpha, so the result is clean pixel art that can be touched up with the pencil.
 // The bands and tail are rendered by trails/model.js, shared with attack trails.
 import { hexToRgb } from "../core/util.js";
-import { renderStroke, mirrorTails } from "../trails/model.js";
+import { renderStroke, crescentRuns, fadeTrailEnds } from "../trails/model.js";
 import { GLOW_PRESETS, glowStyle, mixStyle, hashSeed, renderGlow, pixelateGlow, celShade } from "../trails/glow.js";
 
 // bands: outer -> inner, [colour, width factor]. look: the rest of the band
@@ -179,19 +179,15 @@ function glowStroke(curve, sections, p, opts, w, h, fade) {
   // the preset, its layers as set under 细节 (opts.look), then the shared mixes
   const st0 = mixStyle({ ...glowStyle(p), ...(opts.look || {}), mixEdge: opts.mixEdge ?? 100, mixBody: opts.mixBody ?? 100, mixGlow: opts.mixGlow ?? 100, mixFx: opts.mixFx ?? 100, mixBurst: opts.mixBurst ?? 100 });
   const st = opts.pixelGlow || st0.cel > 0 ? { ...st0, glow: st0.glow * 0.5, haze: st0.haze * 0.6 } : st0;   // see model.js: tight glows
-  // 两头尖: the head end is drawn as a tail too, as the attack trail does it
-  // (trails/model.js mirrorTails) — drawn reversed as well and the two halves
-  // joined, the tails sharing the fade length half each
+  // 两头尖: drawn once, whole, and both ends faded, as the attack trail does
+  // it (trails/model.js fadeTrailEnds), each over half the fade length
   const two = (opts.shape || "head") === "crescent";
   const ctx = {
     seed: hashSeed(curve.length + ":" + Math.round(curve[0].x) + ":" + Math.round(curve[0].y)),
-    frame: 0, alpha: 1, fade: fade * (two ? 0.5 : 1), fx: true, run, age: run.length + 3, ended: true, after: 0,
+    frame: 0, alpha: 1, fade: two ? 0.05 : fade, fx: true, run, age: run.length + 3, ended: true, after: 0,
   };
-  let c = renderGlow([sections], st, w, h, ctx);
-  if (two) {
-    const back = sections.slice().reverse().map((q) => ({ ...q, u: 1 - q.u }));
-    c = mirrorTails(c, renderGlow([back], st, w, h, { ...ctx, fx: false, ended: false }), sections);
-  }
+  let c = renderGlow(two ? crescentRuns([sections]) : [sections], st, w, h, ctx);
+  if (two) c = fadeTrailEnds(c, sections, fade * 0.5);
   if (c && opts.pixelGlow) c = pixelateGlow(c, st, { size: opts.pxSize, alpha: opts.pxAlpha });
   else if (c && st.cel > 0) c = celShade(c, st, st.cel / 100, (st.celOutline || 0) / 100);
   return c && c.getContext("2d").getImageData(0, 0, w, h);

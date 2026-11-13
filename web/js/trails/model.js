@@ -795,46 +795,43 @@ function renderGlowTrail(t, state, w, h, z) {
     st = { ...st };
     for (const [k, m] of Object.entries(less)) st[k] = (+base[k] || 0) * m;
   }
-  // 两头尖: the head end is drawn as a tail too (see mirrorTails), the two
-  // tails sharing the fade length half each
-  const two = t.style.shape === "crescent";
+  // 两头尖: drawn once, whole, then both ends faded (fadeTrailEnds), each
+  // over half the fade length
+  const two = t.style.shape === "crescent", fade = t.style.fade ?? 0.6;
   const ctx = {
-    seed: hashSeed(t.id), frame: state.frame || 0, alpha: state.alpha ?? 1, fade: (t.style.fade ?? 0.6) * (two ? 0.5 : 1),
+    seed: hashSeed(t.id), frame: state.frame || 0, alpha: state.alpha ?? 1, fade: two ? 0.05 : fade,
     fx: z !== "back", run: state.run || [], age: state.age || 0, ended: !!state.ended, after: state.after || 0,
   };
-  let c = renderGlow(runs, st, w, h, ctx);
-  if (two && runs.length) {
-    const back = runs.map((r) => r.slice().reverse().map((q) => ({ ...q, u: 1 - q.u }))).reverse();
-    c = mirrorTails(c, renderGlow(back, st, w, h, { ...ctx, fx: false, ended: false }), all);
-  }
+  let c = renderGlow(two ? crescentRuns(runs) : runs, st, w, h, ctx);
+  if (two && runs.length) c = fadeTrailEnds(c, all, fade * 0.5);
   // 像素光效: the same glow, turned into pixel art
   if (t.style.pixelGlow) return pixelateGlow(c, t.style, { size: t.style.pxSize, alpha: t.style.pxAlpha });
   // 色阶: flat cel-shaded tones (and an outline), the 2D anime look
   return t.style.cel > 0 ? celShade(c, t.style, t.style.cel / 100, (t.style.celOutline || 0) / 100) : c;
 }
 
-// 两头尖 for glow trails: both ends should read as tails, and a glow's tail is
-// more than a fade — strands only start there, the core draws in, the flow
-// and colour change along it — spread over all its layers. So the trail is
-// also drawn reversed (head and tail swapped, no accents: the burst at the
-// tip has no place on a tail), and the two are joined in the middle: the
-// first half from the forward drawing, the second from the reversed one, with
-// a soft hand-over. Each pixel's place along the trail is that of the nearest
-// point on its middle line — continuous round a bend, and for light off to
-// the side the part of the trail it comes from.
-export function mirrorTails(fwd, rev, all) {
-  if (!fwd || !rev || all.length < 2) return fwd || rev;
-  const w = fwd.width, h = fwd.height;
-  const box = (c) => c.bbox || { x0: 0, y0: 0, w, h };
-  const A = box(fwd), B = box(rev);
-  const x0 = Math.max(0, Math.floor(Math.min(A.x0, B.x0))), y0 = Math.max(0, Math.floor(Math.min(A.y0, B.y0)));
-  const x1 = Math.min(w, Math.ceil(Math.max(A.x0 + A.w, B.x0 + B.w))), y1 = Math.min(h, Math.ceil(Math.max(A.y0 + A.h, B.y0 + B.h)));
-  if (x1 <= x0 || y1 <= y0) return fwd;
+// 两头尖 for glow trails: drawn once, whole — no end treated as the trail's
+// tail (crescentRuns starts u past it) — and then both ends weakened and
+// faded out over `ends` of the length each (fadeTrailEnds), so the trail is
+// pointed and fading at both tips with no join anywhere along it.
+export const CRESCENT_U0 = 0.35;
+export const crescentRuns = (runs) => runs.map((r) => r.map((q) => ({ ...q, u: CRESCENT_U0 + (1 - CRESCENT_U0) * q.u })));
+// how much of the light at u along the trail a 两头尖 keeps
+export const crescentEnds = (u, ends) => smooth01(u / Math.max(1e-3, ends)) * smooth01((1 - u) / Math.max(1e-3, ends));
+
+// The glow canvas faded towards both ends. Each pixel's place along the trail
+// is that of the nearest point on its middle line — continuous round a bend,
+// and for light off to the side the part of the trail it comes from.
+export function fadeTrailEnds(c, all, ends) {
+  if (!c || all.length < 2) return c;
+  const w = c.width, h = c.height, b = c.bbox || { x0: 0, y0: 0, w, h };
+  const x0 = Math.max(0, Math.floor(b.x0)), y0 = Math.max(0, Math.floor(b.y0));
+  const x1 = Math.min(w, Math.ceil(b.x0 + b.w)), y1 = Math.min(h, Math.ceil(b.y0 + b.h));
+  if (x1 <= x0 || y1 <= y0) return c;
   // the middle line, thinned to at most ~48 points: the search runs per pixel
   const step = Math.max(1, Math.ceil(all.length / 48));
   const pick = all.filter((_, i) => i % step === 0 || i === all.length - 1);
   const mid = pick.map((q) => lerp(q.a, q.b, 0.5)), us = pick.map((q) => q.u);
-  const bw = x1 - x0, bh = y1 - y0, img = new ImageData(bw, bh), d8 = img.data;
   const uAt = (px, py) => {
     let best = Infinity, u = 0;
     for (let i = 1; i < mid.length; i++) {
@@ -845,29 +842,22 @@ export function mirrorTails(fwd, rev, all) {
     }
     return u;
   };
-  // u varies smoothly: worked out every few pixels and blended in between —
-  // the search per pixel was most of the cost of a 两头尖 trail
-  const S = 3, gw = Math.ceil(bw / S) + 1, gh = Math.ceil(bh / S) + 1, grid = new Float32Array(gw * gh);
-  for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) grid[j * gw + i] = uAt(x0 + i * S + 0.5, y0 + j * S + 0.5);
+  // u varies smoothly: worked out every few pixels and blended in between
+  const bw = x1 - x0, bh = y1 - y0, S = 3, gw = Math.ceil(bw / S) + 1, gh = Math.ceil(bh / S) + 1, grid = new Float32Array(gw * gh);
+  for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) grid[j * gw + i] = crescentEnds(uAt(x0 + i * S + 0.5, y0 + j * S + 0.5), ends);
+  const g = c.getContext("2d"), img = g.getImageData(x0, y0, bw, bh), d8 = img.data;
   for (let y = 0; y < bh; y++) {
     const gy = y / S, j = Math.min(gh - 2, Math.floor(gy)), ty = gy - j;
     for (let x = 0; x < bw; x++) {
+      const p = (y * bw + x) * 4 + 3;
+      if (!d8[p]) continue;
       const gx = x / S, i = Math.min(gw - 2, Math.floor(gx)), tx = gx - i, k = j * gw + i;
       const top = grid[k] + (grid[k + 1] - grid[k]) * tx, bot = grid[k + gw] + (grid[k + gw + 1] - grid[k + gw]) * tx;
-      const u = top + (bot - top) * ty;
-      // how much of this pixel comes from the forward drawing
-      d8[(y * bw + x) * 4 + 3] = Math.round(255 * (1 - smooth01((u - 0.42) / 0.16)));
+      d8[p] = Math.round(d8[p] * (top + (bot - top) * ty));
     }
   }
-  const W = createCanvas(w, h);
-  W.getContext("2d").putImageData(img, x0, y0);
-  const fg = fwd.getContext("2d"), rg = rev.getContext("2d");
-  fg.globalCompositeOperation = "destination-in"; fg.drawImage(W, 0, 0); fg.globalCompositeOperation = "source-over";
-  rg.globalCompositeOperation = "destination-out"; rg.drawImage(W, 0, 0);
-  // the two shares of each pixel add back up to one
-  rg.globalCompositeOperation = "lighter"; rg.drawImage(fwd, 0, 0); rg.globalCompositeOperation = "source-over";
-  rev.bbox = { x0, y0, w: bw, h: bh };
-  return rev;
+  g.putImageData(img, x0, y0);
+  return c;
 }
 
 // The same bands + tail rendering for any ribbon given as cross-sections

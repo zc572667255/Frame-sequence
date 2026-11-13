@@ -63,7 +63,8 @@ function glowFrom(base, fin, two, fade, seed, less) {
     cols: cols.slice(0, 8), core: st.glowCore || "#ffffff", rim: st.glowRim || cols[cols.length - 1], splat: st.glowSplat || st.glowRim || "#ffffff",
     tail: st.tailTint > 0 && st.glowTail ? st.glowTail : "",
     dark: !!st.solid || cols.reduce((s, c) => s + lum(c), 0) / cols.length < 0.18,
-    look, seed, fade, mirror: two,
+    // 两头尖: drawn once with no tail of its own (u starts past it), both ends faded in the display shader
+    look, seed, fade: two ? 0.05 : fade, ends: two ? fade : 0, mirror: two,
   };
   // 像素光效 / 色阶: the finishing on the preset's own palette
   const pal = fin.pal || st;
@@ -831,9 +832,8 @@ const PIX := """
 shader_type canvas_item;
 render_mode blend_disabled;
 %s
-uniform bool mirror = false;
+uniform float ends = 0.0;
 uniform sampler2D fwd : filter_nearest, repeat_disable;
-uniform sampler2D rev : filter_nearest, repeat_disable;
 uniform vec2 blocks = vec2(1.0);
 uniform vec2 origin = vec2(0.0);
 uniform int k = 1;
@@ -843,7 +843,7 @@ uniform int pal_n = 1;
 uniform vec2 mids[48];
 uniform float mus[48];
 uniform int mid_n = 0;
-// 两头尖：像素在拖尾上的位置 = 中线上最近一点的 u（编辑器 mirrorTails）
+// 两头尖：像素在拖尾上的位置 = 中线上最近一点的 u（编辑器 fadeTrailEnds），两头按它淡出
 float mid_u(vec2 p) {
 	float best = 1e20;
 	float u = 0.0;
@@ -861,9 +861,9 @@ float mid_u(vec2 p) {
 }
 vec4 at(ivec2 d) {
 	vec4 c = texelFetch(fwd, d, 0);
-	if (mirror) {
-		float wf = 1.0 - sm01((mid_u(origin + vec2(d) + 0.5) - 0.42) / 0.16);
-		c = c * wf + texelFetch(rev, d, 0) * (1.0 - wf);
+	if (ends > 0.0) {
+		float u = mid_u(origin + vec2(d) + 0.5);
+		c *= sm01(u / ends) * sm01((1.0 - u) / ends);
 	}
 	return c;
 }
@@ -911,9 +911,8 @@ shader_type canvas_item;
 render_mode blend_premul_alpha;
 %s
 uniform int mode = 0;
-uniform bool mirror = false;
+uniform float ends = 0.0;
 uniform sampler2D fwd : filter_linear, repeat_disable;
-uniform sampler2D rev : filter_linear, repeat_disable;
 uniform vec2 canvas = vec2(1.0);
 uniform vec2 origin = vec2(0.0);
 uniform vec3 pal[24];
@@ -926,7 +925,7 @@ uniform vec4 clip = vec4(0.0);
 uniform vec2 mids[48];
 uniform float mus[48];
 uniform int mid_n = 0;
-// 两头尖：像素在拖尾上的位置 = 中线上最近一点的 u（编辑器 mirrorTails）
+// 两头尖：像素在拖尾上的位置 = 中线上最近一点的 u（编辑器 fadeTrailEnds），两头按它淡出
 float mid_u(vec2 p) {
 	float best = 1e20;
 	float u = 0.0;
@@ -944,9 +943,9 @@ float mid_u(vec2 p) {
 }
 vec4 src(vec2 uv) {
 	vec4 c = texture(fwd, uv);
-	if (mirror) {
-		float wf = 1.0 - sm01((mid_u(origin + uv * canvas) - 0.42) / 0.16);
-		c = c * wf + texture(rev, uv) * (1.0 - wf);
+	if (ends > 0.0) {
+		float u = mid_u(origin + uv * canvas);
+		c *= sm01(u / ends) * sm01((1.0 - u) / ends);
 	}
 	return c;
 }
@@ -1460,8 +1459,6 @@ func _make_pass(t: Dictionary, back: bool, s: int) -> Pass:
 	var ws := Vector2i(ceili(P.box.size.x * P.s), ceili(P.box.size.y * P.s))
 	if mode == "glow":
 		P.fwd = _pipe_glow(P, ws, not back or String(t.get("kind", "")) == "stroke", false)
-		if t["glow"]["mirror"]:
-			P.rev = _pipe_glow(P, ws, false, true)
 	elif mode == "bands":
 		P.fwd = _pipe_bands(P, ws)
 	else:
@@ -1542,10 +1539,10 @@ func _set_pal(m: ShaderMaterial, pal: Array) -> void:
 	m.set_shader_parameter("pal_n", mini(24, pal.size()))
 
 
+# 两头尖：一遍画完，两头在显示时按中线上的位置淡出（ends：每头淡出的长度）
 func _set_mirror(P: Pass, m: ShaderMaterial) -> void:
-	m.set_shader_parameter("mirror", P.rev != null)
-	if P.rev != null:
-		m.set_shader_parameter("rev", P.rev.post.get_texture())
+	var G: Dictionary = P.trail["glow"]
+	m.set_shader_parameter("ends", float(G.get("ends", 0.0)) if bool(G.get("mirror", false)) else 0.0)
 
 
 # 光效：编辑器 renderGlow 的层，按顺序画进刀身（body）和辉光的来源（light），飞出去的点缀另画一张
@@ -1896,29 +1893,25 @@ func _render(P: Pass, fi: int) -> bool:
 	return drew
 
 
-# 光效的一帧：正着画，两头尖再倒着画一遍，交接用的中线，色阶的描边粗细
+# 两头尖：整段拖尾从这个 u 开始画（编辑器 trails/model.js CRESCENT_U0），两头都不当成尾巴
+const CRESCENT_U0 := 0.35
+
+# 光效的一帧：一遍画完；两头尖不把哪一头当拖尾的尾巴画（u 从尾巴之后开始），两头在显示时按中线淡出；色阶的描边粗细
 func _glow_frame(P: Pass, secs: Array, runs: Array, ctx: Dictionary) -> bool:
 	var t := P.trail
-	var drew := _paint_glow(P, P.fwd, runs, ctx)
-	if P.rev != null:
-		var rr := []
-		for i in range(runs.size() - 1, -1, -1):
-			var r: Array = runs[i]
+	var two: bool = bool(t["glow"].get("mirror", false))
+	var paint := runs
+	if two:
+		paint = []
+		for r in runs:
 			var out := []
-			for j in range(r.size() - 1, -1, -1):
-				var q: Dictionary = r[j]
-				out.append({"a": q["a"], "b": q["b"], "u": 1.0 - float(q["u"]), "back": q["back"]})
-			rr.append(out)
-		var c2 := ctx.duplicate()
-		c2["fx"] = false
-		c2["ended"] = false
-		if not runs.is_empty():
-			_paint_glow(P, P.rev, rr, c2)
-		else:
-			P.rev.ops.clear()
-			for prt in P.rev.parts:
-				prt.queue_redraw()
-	if P.rev != null:
+			for q in r:
+				var c: Dictionary = (q as Dictionary).duplicate()
+				c["u"] = CRESCENT_U0 + (1.0 - CRESCENT_U0) * float(q["u"])
+				out.append(c)
+			paint.append(out)
+	var drew := _paint_glow(P, P.fwd, paint, ctx)
+	if two:
 		_set_mids(P, secs)
 	if P.disp_mat and t["glow"].has("cel"):
 		var cl: Dictionary = t["glow"]["cel"]

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { REMOTE_DEFAULTS, remoteSettings, hasFlight, pathAt, flightState, flightTrail } from "../web/js/vfx/remote.js";
 import { migrate } from "../web/js/core/store.js";
+import { crescentRuns, crescentEnds, CRESCENT_U0 } from "../web/js/trails/model.js";
 import { ribbonSections, materialAt, flameFlow } from "../web/js/vfx/remotetrail.js";
 import { flightTrailWindow } from "../web/js/vfx/remote.js";
 import { alongPath, iceSwirl, iceLance, iceColors } from "../web/js/vfx/kinds/ice.js";
@@ -337,3 +338,16 @@ assert.equal(slashFade(0), 1); assert.equal(slashFade(1), 0);
   assert.ok(k.defaults.startX < k.defaults.endX && k.defaults.startY === k.defaults.endY && k.defaults.slashAngle === 90, "剑气 flies left to right, upright, by default");
 }
 console.log("剑气两头尖 / 半头、鼓面朝前、竖直到平行地面的夹角、横向飞行与消失检查通过");
+
+// 攻击拖尾 两头尖: drawn once, whole (no end is the trail's own tail), both ends faded
+{
+  const run = Array.from({ length: 11 }, (_, i) => ({ a: [i, 0], b: [i, 4], u: i / 10 }));
+  const [r] = crescentRuns([run]);
+  assert.equal(r.length, run.length); assert.equal(r[0].u, CRESCENT_U0); assert.equal(r.at(-1).u, 1);
+  assert.ok(r.every((q, i) => q.a === run[i].a && (!i || q.u > r[i - 1].u)), "one pass, its order kept");
+  for (const ends of [0.1, 0.225, 0.5]) {
+    assert.equal(crescentEnds(0, ends), 0); assert.equal(crescentEnds(1, ends), 0); assert.equal(crescentEnds(0.5, ends), 1);
+    for (const u of [0.05, 0.15, 0.3]) assert.ok(Math.abs(crescentEnds(u, ends) - crescentEnds(1 - u, ends)) < 1e-12, "both ends fade alike");
+  }
+}
+console.log("攻击拖尾两头尖整段画出、两头对称淡出检查通过");
