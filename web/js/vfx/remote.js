@@ -37,7 +37,7 @@ export const FLIGHT_FIELDS = [
   { label: "命中效果", key: "impactKind", options: FLIGHT_IMPACTS },
   { label: "命中范围", key: "impactSize", min: 5, max: 40, unit: "%" },
 ];
-export const flightFieldVisible = (f, s) => !(s.kind === "ice" && f.key === "trailWidth") && (!f.kind || f.kind === s.kind) && (f.always || (hasFlight(s) && (!f.path || f.path.includes(s.flightPath))));
+export const flightFieldVisible = (f, s) => (!f.kind || f.kind === s.kind) && (f.always || (hasFlight(s) && (!f.path || f.path.includes(s.flightPath))));
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, Number(v) || 0));
 const mix = (a, b, t) => a + (b - a) * t;
 const smooth = (t) => t * t * (3 - 2 * t);

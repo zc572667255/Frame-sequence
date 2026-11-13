@@ -109,7 +109,7 @@ export const effectKinds = (remote = false) => {
 const EFFECTS = { hit, explosion, shock, dust, charge, circle, heal, aura, ribbon, wings, burn, cloud, arrow, fireball };
 
 // how much bloom each kind gets on top of what it draws itself
-const BLOOM = { hit: 1, shock: 0.8, charge: 1, heal: 0.7, circle: 0, explosion: 0.7, dust: 0, aura: 0.9, burn: 0.9, ribbon: 1, wings: 1, cloud: 0, arrow: 0.4, fireball: 0.45, ice: 0.28 };
+const BLOOM = { hit: 1, shock: 0.8, charge: 1, heal: 0.7, circle: 0, explosion: 0.7, dust: 0, aura: 0.9, burn: 0.9, ribbon: 1, wings: 1, cloud: 0, arrow: 0.4, fireball: 0.45, ice: 0.6 };
 
 // one frame: a w×h canvas
 export function renderVfx(p, i) {

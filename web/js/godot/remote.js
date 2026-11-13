@@ -204,7 +204,7 @@ func _remote_body(r: float) -> void:
 				_bolt(points, maxf(0.55, r * 0.04), 0.8)
 			_blob(Vector2.ZERO, r * 0.65, [[0.0, core_color, 1.0], [0.5, core_color, 0.95], [1.0, rim_color, 0.0]])
 		15:
-			_remote_ice(r, random_seed + _remote_shot * 31)
+			_remote_ice(r, random_seed + _remote_shot * 31, not _remote_active())
 		16:
 			var spin := _t * TAU * 2.0
 			for j in 6:
@@ -232,18 +232,18 @@ func _remote_trail(state: Dictionary, frame: float, index: int, r: float) -> Arr
 	var wrapping: bool = kind == 12 and state.body
 	if not wrapping and (pts.size() < 2 or trail_width <= 0.0): return []
 	var strength := 1.0 - _smooth(0.0, maxf(1.0, minf(trail_frames, impact_frames)), maxf(0.0, state.time - charge_frames - travel_frames))
+	# 冰矛：自己的寒冰拖尾（雾、光丝、闪光点），不是带子
+	if kind == 15:
+		_remote_frost_tail(pts, r, strength, trail_width / 70.0, random_seed + index * 31)
+		return []
 	var run: Array
 	if wrapping:
 		var scale0: float = 1.0 if state.launched else 0.15 + state.charge * 0.85
 		run = _remote_arrow_sections(pts if trail_width > 0.0 else PackedVector2Array(), state.at, state.angle, r * scale0, strength)
 	else:
-		run = _ice_trail_sections(pts,r,random_seed+index*31,strength) if kind==15 else _remote_sections(pts,r*trail_width/70.0,strength,r)
+		run = _remote_sections(pts, r * trail_width / 70.0, strength, r)
 	if run.size() < 2: return []
-	if kind == 15:
-		_remote_set_clip(run)
-		_tg_glow(run, random_seed + index * 31, int(floor(frame)), strength, 1.0, false, 0, true)
-		_remote_clip.clear()
-	elif kind == 12:
+	if kind == 12:
 		for side in 2:
 			var half := []
 			for q in run: half.append({"a": q.a if side == 0 else q.b, "b": (q.a + q.b) / 2.0, "u": q.u})

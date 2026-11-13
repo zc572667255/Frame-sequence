@@ -5,7 +5,7 @@ import { drawRemoteTrail, drawPuff } from "../remotetrail.js";
 import { REMOTE_DEFAULTS, remoteSettings, hasFlight, flightState, pathAt } from "../remote.js";
 import { fireball } from "./fireball.js";
 import { arrow } from "./arrow.js";
-import { drawIceSpear } from "./ice.js";
+import { drawFrostBolt } from "./ice.js";
 import { drawIceImpact } from "./icehit.js";
 import { drawThunderImpact } from "./thunderhit.js";
 import { drawSandBody } from "./sand.js";
@@ -25,7 +25,7 @@ export function remoteBody(g, c, r) {
     g.globalCompositeOperation = "source-over";
     g.drawImage(cv, -box / 2, -box / 2);
   } else if (c.kind === "ice") {
-    drawIceSpear(g, c, r);
+    drawFrostBolt(g, c, r, !!c.still);
   } else if (c.kind === "thunder") {
     const Q = rng(c.seed * 139 + Math.floor(c.i / 2));
     g.globalCompositeOperation = "lighter";
@@ -88,7 +88,7 @@ export function remote(g, c, settings) {
   const radius = Math.min(c.w, c.h) * Math.max(2, Math.min(16, s.bodySize)) / 100 * s.size / 90;
   const frame = c.t * s.frames;
   if (!hasFlight(s)) {
-    g.save(); g.translate(c.cx, c.cy); remoteBody(g, c, radius); g.restore(); return;
+    g.save(); g.translate(c.cx, c.cy); remoteBody(g, { ...c, still: true }, radius); g.restore(); return;
   }
   for (let index = 0; index < s.flightCount; index++) {
     const state = flightState(s, c.w, c.h, frame, index);

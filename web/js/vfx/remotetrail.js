@@ -2,7 +2,7 @@
 // the trail brush and attack trails. u runs from the oldest point to the body.
 import { createCanvas } from "../core/util.js";
 import { uvMap } from "../trails/uv.js";
-import { renderGlow, glowStyle, GLOW_PRESETS } from "../trails/glow.js";
+import { renderGlow, glowStyle } from "../trails/glow.js";
 import { bolts } from "../trails/glow/layers.js";
 import { fbmNoise, rng, smooth, clamp01, rgba } from "../trails/glow/util.js";
 import { at, streak, blob, TAU } from "./common.js";
@@ -10,7 +10,7 @@ import { flightTrail, flightTrailWindow, pathAt, pathProgress } from "./remote.j
 import { projectile, projectileBounds } from "./kinds/arrow.js";
 import { arrowSections } from "./arrowhead.js";
 import { flameUV } from "./ribbonmesh.js";
-import { iceTrailProfile } from "./kinds/ice.js";
+import { drawFrostTail } from "./kinds/ice.js";
 
 export function ribbonSections(points, radius, kind, strength = 1, headRadius = radius) {
   const pts = [];
@@ -50,24 +50,8 @@ export function ribbonSections(points, radius, kind, strength = 1, headRadius = 
   });
 }
 
-export function iceTrailSections(points,r,roll,seed,strength=1){
-  const profile=iceTrailProfile(r);
-  const shifted=points.map((p,i)=>{
-    const a=points[Math.max(0,i-1)],b=points[Math.min(points.length-1,i+1)],len=Math.hypot(b[0]-a[0],b[1]-a[1])||1,dx=(b[0]-a[0])/len,dy=(b[1]-a[1])/len;
-    return [p[0]-dx*r*0.65-dy*profile.offset,p[1]-dy*r*0.65+dx*profile.offset];
-  });
-  return ribbonSections(shifted,profile.half/0.85,"ice",strength,r);
-}
-
 // These equations are mirrored by the native ribbon shader in godot/remotetrail.js.
 export const flameFlow = (birth, frame) => birth * 0.42 + frame * 0.1;
-
-// The same 冰晶 preset used by the trail brush and attack trails. Geometry
-// stays icy even when the projectile's colours are changed.
-export function iceTrailStyle(pal) {
-  return { ...glowStyle(GLOW_PRESETS.find(p => p.id === "frost")),
-    glowColors: pal.preset.colors, glowCore: pal.preset.core, glowRim: pal.preset.rim, glowSplat: pal.preset.splat };
-}
 
 export function materialAt(kind, u, v, frame, noise, fine, start = 0, span = 8) {
   if (kind === "fireball") {
@@ -191,6 +175,8 @@ export function drawRemoteTrail(g, c, s, state, frame, index, r) {
   const wrapping = c.kind === "arrow" && state.body;
   if (!wrapping && (pts.length < 2 || s.trailWidth <= 0)) return;
   const strength = 1 - smooth(0, Math.max(1, Math.min(s.trailFrames, s.impactFrames)), Math.max(0, state.time - s.chargeFrames - s.travelFrames));
+  // 冰矛: a comet of frost (kinds/ice.js), its own tail rather than a ribbon
+  if (c.kind === "ice") return void drawFrostTail(g, c, pts, r, strength, s.trailWidth / 70);
   let run;
   if (wrapping) {
     const radius = r * (state.launched ? 1 : 0.15 + state.charge * 0.85), R = radius * 2.1;
@@ -198,19 +184,9 @@ export function drawRemoteTrail(g, c, s, state, frame, index, r) {
     bounds[0] += (obj.round ? 0 : obj.L / 2) + R * (c.coreShift || 0);
     run = arrowSections(s.trailWidth > 0 ? pts : [], state.at, state.angle, radius, bounds, s, strength);
   } else {
-    run = c.kind === "ice" ? iceTrailSections(pts,r,c.t*TAU+c.seed,c.seed,strength) : ribbonSections(pts,r*s.trailWidth/70,c.kind,strength,r);
+    run = ribbonSections(pts, r * s.trailWidth / 70, c.kind, strength, r);
   }
   if (run.length < 2) return;
-  if (c.kind === "ice") {
-    const cv = renderGlow([run], iceTrailStyle(c.pal), c.w, c.h, { seed: c.seed, frame: c.i, alpha: strength, fade: 0.6 });
-    if (cv) {
-      g.save(); g.beginPath();
-      [...run.map(q => q.a), ...run.toReversed().map(q => q.b)].forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y));
-      g.closePath(); g.clip();
-      g.globalCompositeOperation = "source-over"; g.drawImage(cv, 0, 0); g.restore();
-    }
-    return;
-  }
   if (c.kind === "arrow") {
     const halves = ["a", "b"].map(side => run.map(q => ({ a: q[side], b: [(q.a[0] + q.b[0]) / 2, (q.a[1] + q.b[1]) / 2], u: q.u })));
     const look = glowStyle(c.pal.preset);
