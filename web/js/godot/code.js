@@ -1189,6 +1189,8 @@ func _has_field() -> bool:
 
 # 攒起来的三角形（点按当前的变换算好）
 func _tri(idx: PackedInt32Array, pts: PackedVector2Array, cols: PackedColorArray) -> void:
+	if _sm_on:
+		cols = _slash_mask_cols(pts, cols)  # 剑气：两头变淡
 	if not _remote_clip.is_empty():
 		_remote_clip_tri(idx, pts, cols)
 		return

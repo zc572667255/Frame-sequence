@@ -5,7 +5,7 @@ import { ribbonSections, materialAt, flameFlow } from "../web/js/vfx/remotetrail
 import { flightTrailWindow } from "../web/js/vfx/remote.js";
 import { alongPath, iceSwirl, iceLance, iceColors } from "../web/js/vfx/kinds/ice.js";
 import { iceBurst } from "../web/js/vfx/kinds/icehit.js";
-import { slashRuns, slashFrame, slashFade, slashCopies, slashLines } from "../web/js/vfx/kinds/slash.js";
+import { slashRuns, slashFrame, slashFade, slashCopies, slashLines, slashEnds } from "../web/js/vfx/kinds/slash.js";
 import { paletteOf } from "../web/js/vfx/common.js";
 import { shapeOf } from "../web/js/vfx/catalog.js";
 import { thunderDischarge } from "../web/js/vfx/kinds/thunderhit.js";
@@ -298,6 +298,17 @@ for (const shape of ["full", "half"]) for (const ground of [90, 40, 0]) {
   }
 }
 assert.equal(slashLines([0, 0], 0, 40, 20, 90, "full", 0, 7, 3, 1).length, 0, "palettes without speed lines get none");
+// the ends weaken and fade out, they do not only thin
+for (const ground of [90, 40, 0]) for (const travel of [0, Math.PI]) {
+  const run = slashRuns([100, 100], travel, 40, 20, ground, "full")[0], ends = slashEnds([100, 100], travel, 40, ground, "full");
+  const mid = q => [(q.a[0] + q.b[0]) / 2, (q.a[1] + q.b[1]) / 2];
+  assert.ok(ends(mid(run[16])) > 0.999, "full strength in the middle");
+  assert.ok(ends(mid(run[0])) < 0.02 && ends(mid(run[32])) < 0.02, "both tips fade right out");
+  for (let i = 1; i <= 16; i++) assert.ok(ends(mid(run[i])) >= ends(mid(run[i - 1])) - 1e-6 && ends(mid(run[32 - i])) >= ends(mid(run[33 - i])) - 1e-6, "weakening steadily towards each tip");
+  assert.ok(Math.abs(ends(mid(run[4])) - ends(mid(run[28]))) < 0.05 || ground !== 90, "the same at both ends when upright");
+  const halfEnds = slashEnds([100, 100], travel, 40, ground, "half"), hrun = slashRuns([100, 100], travel, 40, 20, ground, "half")[0];
+  assert.ok(halfEnds(mid(hrun[0])) < 0.02 && halfEnds(mid(hrun.at(-1))) > 0.999, "半头 fades at its tip, not at its flat cut");
+}
 assert.equal(slashFade(0), 1); assert.equal(slashFade(1), 0);
 {
   const s = remoteSettings({ ...REMOTE_DEFAULTS, kind: "slash", flightPath: "straight", startX: 12, startY: 55, endX: 88, endY: 55 });

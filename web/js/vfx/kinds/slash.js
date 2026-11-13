@@ -47,7 +47,36 @@ export function slashFrameOf(at, travel, half, ground) {
   const { x: X, y: Y } = slashFrame(travel);
   const A = half / Math.sin(SLASH_SPAN / 2), sag = A * (1 - Math.cos(SLASH_SPAN / 2));
   const place = (x, y) => { const px = x - y * shear, py = y * squash; return [at[0] + X[0] * px + Y[0] * py, at[1] + X[1] * px + Y[1] * py]; };
-  return { place, A, sag, cx: -A * Math.cos(SLASH_SPAN / 2) - sag / 2 };
+  // and back: a point on screen in the upright crescent's own frame
+  const unplace = ([qx, qy]) => { const dx = qx - at[0], dy = qy - at[1], py = dx * Y[0] + dy * Y[1], y = py / squash; return [dx * X[0] + dy * X[1] + y * shear, y]; };
+  return { place, unplace, A, sag, cx: -A * Math.cos(SLASH_SPAN / 2) - sag / 2 };
+}
+
+// how far each end weakens: the share of its length over which a tip fades out
+export const SLASH_END_FADE = 0.3;
+// the crescent's ends weakening: for a point on screen, how much of the light
+// there is kept (0 past a tip, rising smoothly to 1 in the middle). It goes by
+// where along the arc the point lies (its angle round the arc's centre), so
+// the glow round it fades with it; 半头 fades at its upper tip only
+export function slashEnds(at, travel, half, ground, shape = "full") {
+  const { unplace, cx } = slashFrameOf(at, travel, half, ground);
+  return (p) => {
+    const [x, y] = unplace(p), s = (Math.atan2(y, x - cx) + SLASH_SPAN / 2) / SLASH_SPAN;
+    return smooth(0, SLASH_END_FADE, s) * (shape === "half" ? 1 : smooth(0, SLASH_END_FADE, 1 - s));
+  };
+}
+
+// a glow canvas faded towards the crescent's ends (its alpha scaled per pixel)
+function fadeEnds(cv, ends) {
+  const b = cv.bbox || { x0: 0, y0: 0, w: cv.width, h: cv.height };
+  const x0 = Math.max(0, Math.floor(b.x0)), y0 = Math.max(0, Math.floor(b.y0)), w = Math.min(cv.width - x0, Math.ceil(b.w) + 1), h = Math.min(cv.height - y0, Math.ceil(b.h) + 1);
+  if (w <= 0 || h <= 0) return;
+  const g = cv.getContext("2d"), img = g.getImageData(x0, y0, w, h), d = img.data;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = (y * w + x) * 4;
+    if (d[i + 3]) d[i + 3] = Math.round(d[i + 3] * ends([x0 + x + 0.5, y0 + y + 0.5]));
+  }
+  g.putImageData(img, x0, y0);
 }
 
 export function slashRuns(at, travel, half, thick, ground, shape = "full") {
@@ -88,10 +117,12 @@ export function drawSlashAt(g, c, s, at, travel, r, scale, alpha, k) {
   const half = r * 4 * scale, thick = half * Math.max(10, Math.min(150, s.slashThick ?? 70)) / 100, ground = s.slashAngle ?? 90;
   // (the flowing-blade layer smears past a pointed tip; the straight speed
   // lines are drawn curving instead, below)
-  const look = glowStyle(c.pal.preset), style = { ...look, flow: 0, speedLines: 0 };
+  const look = glowStyle(c.pal.preset), style = { ...look, flow: 0, speedLines: 0 }, ends = slashEnds(at, travel, half, ground, s.slashShape);
   slashRuns(at, travel, half, thick, ground, s.slashShape).forEach((run, side) => {
     const cv = renderGlow([run], style, c.w, c.h, { seed: c.seed * 4 + k * 2 + side, frame: c.i, alpha, fade: 0.3, fx: false });
     if (!cv) return;
+    // both ends weaken and fade out, not just thin
+    fadeEnds(cv, ends);
     g.globalCompositeOperation = c.pal.dark ? "source-over" : "lighter";
     g.drawImage(cv, 0, 0);
   });

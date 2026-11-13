@@ -5,6 +5,36 @@
 // laid down from upright towards parallel to the ground by its angle.
 export const SLASH_GD = `
 var _tg_plain := false  # 剑气：完全照拖尾本身的画法（不用远程弹体包裹光的简化）
+# 剑气两头变淡：画月牙时每个顶点的透明度按它在弧上的位置减弱（_tri 里用）
+var _sm_on := false
+var _sm := {}
+
+# 画月牙的这一段时间里，按 at/travel/half/ground/shape 设好两头变淡
+func _slash_mask_begin(at: Vector2, travel: float, half: float, ground: float, shape: String) -> void:
+	var th := clampf(ground, 0.0, 90.0) * PI / 180.0
+	var fr := _slash_frame(travel)
+	var span := 140.0 * PI / 180.0
+	var A := half / sin(span / 2.0)
+	var sag := A * (1.0 - cos(span / 2.0))
+	_sm = {"at": at, "X": fr[0], "Y": fr[1], "squash": 0.3 + 0.7 * sin(th), "shear": 0.25 * cos(th), "cx": -A * cos(span / 2.0) - sag / 2.0, "span": span, "half": shape == "half"}
+	_sm_on = true
+
+# 屏幕上一点留下多少光：过了尖是 0，往中间平滑升到 1（按它在弧上的角度，所以周围的光晕跟着一起淡）
+func _slash_ends(p: Vector2) -> float:
+	var d: Vector2 = p - (_sm.at as Vector2)
+	var y: float = d.dot(_sm.Y) / float(_sm.squash)
+	var x: float = d.dot(_sm.X) + y * float(_sm.shear)
+	var s := (atan2(y, x - float(_sm.cx)) + float(_sm.span) / 2.0) / float(_sm.span)
+	return _smooth(0.0, 0.3, s) * (1.0 if _sm.half else _smooth(0.0, 0.3, 1.0 - s))
+
+func _slash_mask_cols(pts: PackedVector2Array, cols: PackedColorArray) -> PackedColorArray:
+	var out := PackedColorArray()
+	out.resize(pts.size())
+	for i in pts.size():
+		var c: Color = cols[i] if cols.size() == pts.size() else cols[0]
+		c.a *= _slash_ends(pts[i])
+		out[i] = c
+	return out
 
 # 飞到远处渐渐消失
 func _slash_fade(u: float) -> float:
@@ -55,8 +85,10 @@ func _slash_at(at: Vector2, travel: float, r: float, scale0: float, alpha: float
 	var frame := int(floor(_t * frames + 0.0001))
 	_tg_plain = true
 	_tg_loop_n = 0.0
+	_slash_mask_begin(at, travel, half, slash_angle, slash_shape)
 	for side in runs.size():
 		_tg_glow(runs[side], key * 4 + k * 2 + side, frame, alpha, 1.0, false, side)
+	_sm_on = false
 	_tg_plain = false
 	var li := TG_KEYS.find("speedLines")
 	_slash_lines(at, travel, half, thick, slash_angle, slash_shape, trail_look[li] if li >= 0 and li < trail_look.size() else 0.0, key * 4 + k * 2, frame, alpha)
