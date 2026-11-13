@@ -17,7 +17,7 @@ const clean = (s) => String(s || "").replace(/["\\]/g, "");
 
 // ctx: { bbox(layerId, fi) } for a layer that follows another (vfx/layer.js vfxRegion)
 export function vfxData(l, frameIds, w, h, fps, ctx, title) {
-  const s = vfxSettings(l);
+  const s = vfxSettings(l, frameIds);
   const kind = VFX_KINDS.find((k) => k.id === s.kind);
   // per animation frame: [effect frame, x, y, w, h] (the region's top-left and size), or null
   const timeline = frameIds.map((_, fi) => {
@@ -45,8 +45,8 @@ const toBase64 = async (blob) => {
 // the effect's frames, as the editor renders them, at the largest region it
 // takes (smaller ones are drawn scaled down): embedded ("embed") or as a file
 // next to the script ("files": returned for the zip)
-export async function attachVfxSheet(data, l, mode = "embed", prefix = "vfx/") {
-  const s = vfxSettings(l);
+export async function attachVfxSheet(data, l, mode = "embed", prefix = "vfx/", frameIds = null) {
+  const s = vfxSettings(l, frameIds);
   let rw = 0, rh = 0;
   for (const e of data.timeline) if (e && e[3] * e[4] > rw * rh) { rw = e[3]; rh = e[4]; }
   if (!rw) { const r = vfxRect({ x: 0, y: 0, w: s.w, h: s.h }); rw = r.w; rh = r.h; }

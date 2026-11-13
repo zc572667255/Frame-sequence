@@ -1385,7 +1385,7 @@ class Editor {
       return !!(t && t.keys && t.keys[this.doc.frames[fi].id]);
     }
     if (l && l.ghost) return ghostOn(ghostSettings(l), this.doc.frames[fi].id);
-    if (l && l.vfx) return vfxFrame(vfxSettings(l), this.doc.frames.map((f) => f.id), fi) >= 0;
+    if (l && l.vfx) { const ids = this.doc.frames.map((f) => f.id); return vfxFrame(vfxSettings(l, ids), ids, fi) >= 0; }
     if (l && l.stroke) return strokeShows(strokeAt(l.stroke, this.doc.frames.map((f) => f.id), fi));
     const img = this.doc.cel(fi, li);
     if (!img) return false;
@@ -1554,7 +1554,8 @@ class Editor {
 
   // an effect layer's region on a frame
   vfxRegionNow(l, fi = this.fi) {
-    return vfxRegion(vfxSettings(l), this.doc.frames.map((f) => f.id), fi, this.vfxCtx());
+    const ids = this.doc.frames.map((f) => f.id);
+    return vfxRegion(vfxSettings(l, ids), ids, fi, this.vfxCtx());
   }
 
   // set an effect layer's region on this frame — its key when keyed per frame,
@@ -2305,7 +2306,7 @@ class Editor {
     };
     const curL = doc.layers[this.li];
     if (curL && curL.vfx && !this.playing) {
-      const s = vfxSettings(curL), r = this.vfxRegionNow(curL), b = vfxRect(r);
+      const s = vfxSettings(curL, frameIds), r = this.vfxRegionNow(curL), b = vfxRect(r);
       if (!isRemoteKind(s.kind)) box(b.x, b.y, b.w, b.h, vfxFrame(s, frameIds, this.fi) >= 0, !s.perFrame || r.key !== false, !r.followed);
       drawRemotePath(g, s, r, ox, oy, z);
     }

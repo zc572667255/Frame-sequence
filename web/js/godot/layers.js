@@ -155,7 +155,7 @@ export async function layeredFiles(app, cardId, name, opts, dir) {
       const data = vfxData(e.layer, r.frameIds, r.w, r.h, r.fps, { bbox: r.bbox }, e.name);
       if (!data.timeline.some(Boolean)) continue;
       const n = String(layers.length + 1).padStart(2, "0");
-      for (const x of await attachVfxSheet(data, e.layer, "files", "vfx/" + n + "_")) {
+      for (const x of await attachVfxSheet(data, e.layer, "files", "vfx/" + n + "_", r.frameIds)) {
         files.push({ name: dir + "/" + x.file, data: new Uint8Array(await x.blob.arrayBuffer()) });
       }
       layers.push({ name: e.name, kind: "vfx", data });

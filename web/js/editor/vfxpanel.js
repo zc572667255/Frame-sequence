@@ -6,7 +6,7 @@ import { VFX_KINDS, VFX_DEFAULTS, VFX_PALETTES, VFX_EDGES as EDGES, hasSide, eff
 import { isRemoteKind } from "../vfx/catalog.js";
 import { remoteSettings, fitRemoteFrames, hasFlight, FLIGHT_FIELDS, flightFieldVisible, flightFieldRange } from "../vfx/remote.js";
 import { PROJECTILES, SPINS } from "../vfx/kinds/arrow.js";
-import { vfxSettings, renderVfxAsync } from "../vfx/layer.js";
+import { vfxSettings, vfxShownFrames, renderVfxAsync } from "../vfx/layer.js";
 import { ACCENTS, ACC_MODES, autoAccents } from "../vfx/accents.js";
 import { GLOW_PRESETS } from "../trails/glow.js";
 import { GROUND_AURAS } from "../vfx/kinds/auras.js";
@@ -95,16 +95,26 @@ export class VfxPanel {
     this.ed.commitFloat();
     this.doc.checkpoint();
     const l = this.layer();
-    l.vfx = remoteSettings({ ...l.vfx, ...(typeof patch === "function" ? patch(vfxSettings(l)) : patch) });
+    const p = typeof patch === "function" ? patch(vfxSettings(l)) : patch;
+    l.vfx = this.timed({ ...l.vfx, ...p }, p);
     this.ed.afterChange(structural);
   }
 
   liveEdit(patch) {
-    if (!this.live) { this.ed.commitFloat(); this.doc.checkpoint(); this.live = true; }
+    if (!this.live) { this.ed.commitFloat(); this.doc.checkpoint(); this.live = true; this.liveBase = this.layer().vfx; }
     const l = this.layer();
-    l.vfx = remoteSettings({ ...l.vfx, ...patch });
+    // dragging 持续 fits from where the drag began, so going shorter and back
+    // gives the same charge / flight / impact again
+    l.vfx = this.timed({ ...("length" in patch ? this.liveBase : l.vfx), ...patch }, patch);
     this.ed.markDirty();
     this.ed.requestRender();
+  }
+
+  // a flight whose frames on show change (持续, its start) is fitted to them
+  // again: it plays whole within them, charge → flight to the end point → impact
+  timed(v, patch) {
+    if (!hasFlight(v) || !("length" in patch || "start" in patch)) return remoteSettings(v);
+    return fitRemoteFrames(v, vfxShownFrames(v, this.doc.frames.map((f) => f.id)));
   }
 
   // the region on this frame (a key when keyed per frame, else the fixed one)
@@ -252,9 +262,10 @@ export class VfxPanel {
       }
       if (s.kind === "arrow") P.append(el("p", { class: "ed-hint" }, "包裹光覆盖整个箭身，并随核心大小自动适配。头部宽度独立于拖尾宽度；头部弧度从 0 的尖头逐渐变为 100 的圆钝头。拖尾保留为 0 时仍保留箭身包裹光。"));
       P.append(el("p", { class: "ed-hint" }, hasFlight(s)
-        ? "画布上的绿点是起点，红点是命中点；自定义曲线还有蓝色控制点，都可以直接拖动。新建时按当前帧到动画末尾的帧数分配蓄力、飞行与命中，不增加动画帧。"
+        ? "画布上的绿点是起点，红点是命中点；自定义曲线还有蓝色控制点，都可以直接拖动。新建时按当前帧到动画末尾的帧数分配蓄力、飞行与命中，不增加动画帧；改「持续」后按持续帧数重新分配，整次发射总在这些帧内播完。"
         : "原地模式保留循环精灵。选择移动路径后可设置蓄力、飞行、拖尾、连发和命中效果。"));
-      if (hasFlight(s) && st + s.frames !== ids.length) row("", btn("适配动画帧数", "将整次发射适配到现有动画末尾", () => this.edit(fitRemoteFrames(s, ids.length - st))), el("span"));
+      const shown = vfxShownFrames(s, ids);
+      if (hasFlight(s) && s.frames !== shown) row("", btn("适配动画帧数", "将整次发射适配到它显示的帧数（持续，或到动画末尾）", () => this.edit(fitRemoteFrames(s, shown))), el("span"));
     }
 
     // look
@@ -331,7 +342,7 @@ export class VfxPanel {
     const data = vfxData(l, ids, this.doc.w, this.doc.h, this.doc.fps, this.ed.vfxCtx(), l.name);
     if (!data.timeline.some(Boolean)) { this.ed.app.toast("这个特效在动画里一帧都没有显示（检查开始帧和持续帧数）。", "warn"); return; }
     const t = this.ed.app.toast("正在渲染特效序列图…");
-    try { await attachVfxSheet(data, l, "embed"); } finally { t.remove(); }
+    try { await attachVfxSheet(data, l, "embed", "vfx/", ids); } finally { t.remove(); }
     if (kind === "godot") downloadBlob(new Blob([vfxGodot(data)], { type: "text/plain" }), "vfx_effect.gd");
     else downloadBlob(new Blob([vfxJSON(data)], { type: "application/json" }), "vfx_effect.json");
     this.ed.app.toast(kind === "godot"

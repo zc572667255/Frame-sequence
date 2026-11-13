@@ -11,7 +11,7 @@
 //   · following a layer (follow: layer id): that layer's outline on each
 //     frame, grown by pad % — an aura that goes where the character goes
 import { createCanvas } from "../core/util.js";
-import { remoteSettings } from "./remote.js";
+import { remoteSettings, fitRemoteFrames, hasFlight } from "./remote.js";
 import { isRemoteKind } from "./catalog.js";
 import { renderVfx, VFX_DEFAULTS, VFX_KINDS } from "./effects.js";
 
@@ -28,11 +28,28 @@ export const VFX_LAYER_DEFAULTS = {
   pad: 45,          // following: how much is added round the outline, % of its longer side
 };
 
-export function vfxSettings(l) {
+// frameIds (the animation's frames): a flight longer than the frames it is
+// shown on is fitted into them, so it always plays whole (charge → flight to
+// the end point → impact) instead of being cut off on its way
+export function vfxSettings(l, frameIds) {
   const v = { ...VFX_LAYER_DEFAULTS, ...((l && l.vfx) || {}) };
   if (l && l.vfx && l.vfx.box && l.vfx.w == null) v.w = v.h = l.vfx.box; // square boxes of the first version
   if (isRemoteKind(v.kind)) { v.follow = null; v.perFrame = false; v.keys = null; }
-  return remoteSettings(v);
+  const s = remoteSettings(v);
+  return frameIds ? fitShown(s, frameIds) : s;
+}
+
+// how many animation frames an effect layer is shown on: its 持续 (length),
+// at most to the end of the animation
+export function vfxShownFrames(s, frameIds) {
+  const room = frameIds.length - Math.max(0, frameIds.indexOf(s.start));
+  return s.length > 0 ? Math.min(s.length, room) : room;
+}
+
+function fitShown(s, frameIds) {
+  if (!hasFlight(s)) return s;
+  const shown = vfxShownFrames(s, frameIds);
+  return shown > 0 && s.frames > shown ? fitRemoteFrames(s, shown) : s;
 }
 
 // the effect frame shown on animation frame fi, or -1
@@ -201,7 +218,7 @@ export function vfxPrefetch(s, i, w, h) {
 // the background — from frame `from` on, so what comes next is ready first
 export function prefetchVfxLayer(l, frameIds, ctx, from = 0) {
   if (!getWorker()) return Promise.resolve();
-  const s = vfxSettings(l), n = frameIds.length, all = [];
+  const s = vfxSettings(l, frameIds), n = frameIds.length, all = [];
   for (let k = 0; k < n; k++) {
     const fi = (from + k) % n, i = vfxFrame(s, frameIds, fi);
     if (i < 0) continue;
@@ -216,7 +233,7 @@ export function vfxFrameReady(layers, frameIds, fi, ctx) {
   if (!getWorker()) return true;
   for (const l of layers) {
     if (!l.vfx || l.visible === false) continue;
-    const s = vfxSettings(l), i = vfxFrame(s, frameIds, fi);
+    const s = vfxSettings(l, frameIds), i = vfxFrame(s, frameIds, fi);
     if (i < 0) continue;
     const r = vfxRect(vfxRegion(s, frameIds, fi, ctx));
     if (!cache.has(keyOf(lookOf(s), i, r.w, r.h, false))) return false;
@@ -239,7 +256,7 @@ export async function renderVfxAsync(p, i) {
 // ctx.onlyReady: leave the effect out unless it is rendered already (a
 // thumbnail or an onion skin that is drawn again when it comes)
 export function drawVfxLayer(g, l, frameIds, fi, ox = 0, oy = 0, z = 1, ctx = null) {
-  const s = vfxSettings(l);
+  const s = vfxSettings(l, frameIds);
   const i = vfxFrame(s, frameIds, fi);
   if (i < 0) return;
   const regionCtx = ctx?.w > 0 && ctx?.h > 0 ? ctx : { ...ctx, w: g.canvas.width / z, h: g.canvas.height / z };

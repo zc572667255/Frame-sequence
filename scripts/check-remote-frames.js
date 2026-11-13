@@ -67,5 +67,41 @@ for (const count of [1, 2, 3, 8, 12, 36, 64, 80, 120]) for (const fi of new Set(
     assert.deepEqual(doc.frames, originalFrames, "undo preserves the original animation frames");
   }
 }
+// A flight shown on fewer frames than it has (持续 shortened, its start moved
+// later, frames deleted) still plays whole there: it reaches the end point and
+// finishes on its last shown frame instead of being cut off on its way.
+{
+  const ids = Array.from({ length: 40 }, (_, i) => "F" + i);
+  const slash = { ...VFX_KINDS.find(k => k.id === "slash").defaults, kind: "slash", start: "F17" };
+  const reaches = (s, shown, what) => {
+    assert.ok(s.frames <= shown, what + ": fits in " + shown + " frames, not " + s.frames);
+    const arrive = s.chargeFrames + s.travelFrames;
+    assert.ok(arrive < shown, what + ": arrives at the end point within its frames");
+    assert.equal(flightState(s, 64, 32, arrive).u, 1, what + ": at the end point");
+    assert.equal(flightState(s, 64, 32, shown).finished, true, what + ": gone after its last frame");
+  };
+  for (const length of [8, 5, 3]) {
+    // an old layer fitted to the whole rest of the animation, then 持续 = length
+    const layer = { vfx: { ...fitRemoteFrames(slash, 23), length } };
+    assert.equal(layer.vfx.frames, 23);
+    reaches(vfxSettings(layer, ids), length, "持续 " + length);
+    const data = vfxData(layer, ids, 64, 32, 12, {});
+    assert.equal(data.timeline.filter(Boolean).length, length);
+    assert.equal(data.effect.frames, length);
+  }
+  // no 持续, but only 8 frames left after its start
+  reaches(vfxSettings({ vfx: { ...fitRemoteFrames(slash, 23), start: "F32" } }, ids), 8, "start moved late");
+  // the panel's 持续 slider fits the stored timing, and dragging back restores it
+  const doc = { frames: ids.map(id => ({ id })), checkpoint() {} };
+  const layer = { vfx: fitRemoteFrames(slash, 23) };
+  const panel = Object.assign(Object.create(VfxPanel.prototype), { live: false, layer: () => layer,
+    ed: { doc, commitFloat() {}, markDirty() {}, requestRender() {}, afterChange() {} } });
+  panel.liveEdit({ length: 8 });
+  reaches(remoteSettings(layer.vfx), 8, "持续 slider");
+  panel.liveEdit({ length: 3 });
+  panel.liveEdit({ length: 0 });
+  assert.equal(layer.vfx.frames, 23, "dragging 持续 back gives the whole timing again");
+  panel.endLive();
+}
 console.log("新建远程特效按现有动画帧数生成、不补帧、切换类型、单帧、长动画、连发、撤销与导出检查通过");
 

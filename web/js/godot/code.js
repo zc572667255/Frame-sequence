@@ -112,7 +112,7 @@ export function codeParamsFrom(s, w, h, fps, name) {
 // from a 特效 layer of an animation: its settings, its largest region, and per
 // frame where it is (following the animation)
 export function codeParams(l, frameIds, w, h, fps, ctx, title) {
-  const s = vfxSettings(l);
+  const s = vfxSettings(l, frameIds);
   const data = vfxData(l, frameIds, w, h, fps, ctx, title);
   let rw = 0, rh = 0;
   for (const e of data.timeline) if (e && e[3] * e[4] > rw * rh) { rw = e[3]; rh = e[4]; }
