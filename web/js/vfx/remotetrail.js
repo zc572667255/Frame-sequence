@@ -10,7 +10,7 @@ import { flightTrail, flightTrailWindow, pathAt, pathProgress } from "./remote.j
 import { projectile, projectileBounds } from "./kinds/arrow.js";
 import { arrowSections } from "./arrowhead.js";
 import { flameUV } from "./ribbonmesh.js";
-import { drawFrostTail } from "./kinds/ice.js";
+import { drawIceVapor, iceColors, iceLump, drawLump } from "./kinds/ice.js";
 
 export function ribbonSections(points, radius, kind, strength = 1, headRadius = radius) {
   const pts = [];
@@ -139,7 +139,7 @@ export function drawPuff(g, x, y, r, angle, color, alpha, seed, stretch = 1) {
 // mote leaves the path at birth, then drifts independently instead of riding it.
 function shed(g, c, s, state, index, r) {
   if (c.amount <= 0 || s.trailFrames <= 0 || s.trailWidth <= 0) return;
-  const life = Math.min(12, Math.max(4, s.trailFrames)), rate = Math.max(0.25, Math.min(3, c.amount * (c.kind === "sand" ? 2 : 1.5)));
+  const life = Math.min(12, Math.max(4, s.trailFrames)), rate = Math.max(0.25, Math.min(3, c.amount * (c.kind === "sand" || c.kind === "ice" ? 2 : 1.5)));
   const postFade = 1 - smooth(0, Math.max(1, Math.min(life, s.impactFrames)), Math.max(0, state.time - s.chargeFrames - s.travelFrames));
   const oldest = Math.max(s.chargeFrames, state.time - life), newest = Math.min(state.time, s.chargeFrames + s.travelFrames);
   for (let j = Math.ceil(oldest * rate); j <= Math.floor(newest * rate); j++) {
@@ -161,10 +161,13 @@ function shed(g, c, s, state, index, r) {
       streak(g, [x + vx * 1.5, y + vy * 1.5], [x, y], color, color, alpha, size);
     }
     if (c.kind === "ice") {
-      // frost glitter left behind: tiny twinkling crosses
-      const size = Math.max(0.6, r * 0.07 * (0.5 + P())), tw = alpha * (0.6 + 0.4 * Math.sin(age * 2.1 + j));
-      blob(g, x, y, size * 1.4, [[0, c.pal.core, 0.9 * tw], [1, c.pal.rim, 0]]);
-      for (const [dx, dy] of [[-2, 0], [2, 0], [0, -1.4], [0, 1.4]]) streak(g, [x + dx * size, y + dy * size], [x, y], c.pal.rim, c.pal.core, 0.7 * tw, Math.max(0.4, size * 0.35));
+      // a chip of ice broken off where the head was: it flies off to one side
+      // and back, spinning and falling, and melts away
+      const size = r * (0.2 + 0.26 * P()), rot = P() * TAU, spin = (P() - 0.5) * 0.9, sides = 3 + Math.floor(P() * 2), out = r * (0.12 + 0.2 * P());
+      const cx = p[0] - Math.sin(a) * side * r * 0.5 - Math.cos(a) * r * 0.05 * age - Math.sin(a) * side * out * age;
+      const cy = p[1] + Math.cos(a) * side * r * 0.5 - Math.sin(a) * r * 0.05 * age + Math.cos(a) * side * out * age + r * 0.012 * age * age;
+      drawLump(g, iceLump(rng(c.seed * 31 + j * 17 + index), [cx, cy], size * (1 - 0.5 * f), rot + spin * age, sides), iceColors(c.pal),
+        smooth(0, 0.1, f) * Math.pow(1 - f, 1.2) * postFade, Math.max(0.5, r * 0.04), c.pal.dark);
     }
   }
 }
@@ -175,8 +178,8 @@ export function drawRemoteTrail(g, c, s, state, frame, index, r) {
   const wrapping = c.kind === "arrow" && state.body;
   if (!wrapping && (pts.length < 2 || s.trailWidth <= 0)) return;
   const strength = 1 - smooth(0, Math.max(1, Math.min(s.trailFrames, s.impactFrames)), Math.max(0, state.time - s.chargeFrames - s.travelFrames));
-  // 冰矛: a comet of frost (kinds/ice.js), its own tail rather than a ribbon
-  if (c.kind === "ice") return void drawFrostTail(g, c, pts, r, strength, s.trailWidth / 70);
+  // 冰矛: freezing vapour behind the ice meteor (kinds/ice.js) rather than a ribbon
+  if (c.kind === "ice") return void drawIceVapor(g, c, pts, r, strength, s.trailWidth / 70);
   let run;
   if (wrapping) {
     const radius = r * (state.launched ? 1 : 0.15 + state.charge * 0.85), R = radius * 2.1;

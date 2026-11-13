@@ -232,9 +232,9 @@ func _remote_trail(state: Dictionary, frame: float, index: int, r: float) -> Arr
 	var wrapping: bool = kind == 12 and state.body
 	if not wrapping and (pts.size() < 2 or trail_width <= 0.0): return []
 	var strength := 1.0 - _smooth(0.0, maxf(1.0, minf(trail_frames, impact_frames)), maxf(0.0, state.time - charge_frames - travel_frames))
-	# 冰矛：自己的寒冰拖尾（雾、光丝、闪光点），不是带子
+	# 冰矛：冰块后面的寒气，不是带子
 	if kind == 15:
-		_remote_frost_tail(pts, r, strength, trail_width / 70.0, random_seed + index * 31)
+		_remote_ice_vapor(pts, r, strength, trail_width / 70.0, random_seed + index * 31)
 		return []
 	var run: Array
 	if wrapping:

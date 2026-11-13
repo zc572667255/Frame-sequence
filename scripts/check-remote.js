@@ -3,14 +3,14 @@ import { REMOTE_DEFAULTS, remoteSettings, hasFlight, pathAt, flightState, flight
 import { migrate } from "../web/js/core/store.js";
 import { ribbonSections, materialAt, flameFlow } from "../web/js/vfx/remotetrail.js";
 import { flightTrailWindow } from "../web/js/vfx/remote.js";
-import { alongPath, frostTail, frostCrystals } from "../web/js/vfx/kinds/ice.js";
+import { alongPath, iceVapor, iceHead, iceStillChips, iceLump } from "../web/js/vfx/kinds/ice.js";
 import { iceBurst } from "../web/js/vfx/kinds/icehit.js";
 import { paletteOf } from "../web/js/vfx/common.js";
 import { shapeOf } from "../web/js/vfx/catalog.js";
 import { thunderDischarge } from "../web/js/vfx/kinds/thunderhit.js";
 import { sandGrains } from "../web/js/vfx/kinds/sand.js";
 import { flameCells } from "../web/js/vfx/ribbonmesh.js";
-import { fbmNoise } from "../web/js/trails/glow/util.js";
+import { fbmNoise, rng } from "../web/js/trails/glow/util.js";
 import { arrowSections, headProfile } from "../web/js/vfx/arrowhead.js";
 import { FLIGHT_FIELDS, flightFieldVisible } from "../web/js/vfx/remote.js";
 import { projectileBounds, projectileShape, PROJECTILES } from "../web/js/vfx/kinds/arrow.js";
@@ -160,39 +160,45 @@ assert.ok(Math.abs(flameFlow(14, 18) - flameFlow(14 - 0.1 / 0.42, 19)) < 1e-9, "
 const signedArea = pts => pts.reduce((area, p, i) => { const q = pts[(i + 1) % pts.length]; return area + p[0] * q[1] - q[0] * p[1]; }, 0) / 2;
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, msg + ": " + a + " != " + b);
 for (const seed of [1, 23, 97]) for (const n of [8, 36, 64]) {
-  const r = 12, a = frostTail(180, r, 0, n, seed), b = frostTail(180, r, 1, n, seed), mid = frostTail(180, r, 0.37, n, seed);
-  assert.deepEqual(mid, frostTail(180, r, 0.37, n, seed), "the frost tail can be sought in any order");
-  for (const key of ["mist", "wisps", "motes"]) assert.equal(a[key].length, b[key].length);
-  a.mist.forEach((m, i) => { near(m.off, b.mist[i].off, "mist closes the loop"); near(m.r, b.mist[i].r, "mist closes the loop"); });
-  a.wisps.forEach((w, j) => w.forEach((q, k) => { near(q.off, b.wisps[j][k].off, "wisps close the loop"); near(q.a, b.wisps[j][k].a, "wisps close the loop"); }));
-  for (const m of mid.mist) assert.ok([m.d, m.off, m.r, m.a].every(Number.isFinite) && m.a >= 0 && m.r > 0);
-  assert.ok(mid.mist.filter(m => !m.hot && m.d >= 179.999).every(m => m.a < 1e-9), "the mist thins out to nothing at the tail's end");
-  for (const w of mid.wisps) assert.ok(w.every(q => q.a >= 0 && q.w > 0 && Number.isFinite(q.off)) && w.at(-1).a < 1e-9, "wisps fade out at the tail");
-  const c0 = frostCrystals(r, 0, seed), c1 = frostCrystals(r, 1, seed);
-  c0.forEach((k, i) => k.lit.forEach((p, j) => { near(p[0], c1[i].lit[j][0], "crystals turn round the loop"); near(p[1], c1[i].lit[j][1], "crystals turn round the loop"); }));
+  const r = 12, a = iceVapor(180, r, 0, n, seed), b = iceVapor(180, r, 1, n, seed), mid = iceVapor(180, r, 0.37, n, seed);
+  assert.deepEqual(mid, iceVapor(180, r, 0.37, n, seed), "the vapour can be sought in any order");
+  a.forEach((m, i) => { near(m.off, b[i].off, "vapour closes the loop"); near(m.r, b[i].r, "vapour closes the loop"); });
+  for (const m of mid) assert.ok([m.d, m.off, m.r, m.a].every(Number.isFinite) && m.a >= 0 && m.r > 0);
+  assert.ok(mid.filter(m => !m.hot && m.d >= 179.999).every(m => m.a < 1e-9), "the vapour thins out to nothing at the tail's end");
+  const h0 = iceHead(r, 0, seed), h1 = iceHead(r, 1, seed);
+  h0.pts.forEach((p, i) => { near(p[0], h1.pts[i][0], "the chunk tumbles a whole turn a loop"); near(p[1], h1.pts[i][1], "the chunk tumbles a whole turn a loop"); });
+  for (const f of h0.facets) assert.ok(f.light >= 0 && f.light <= 1 && Math.abs(signedArea(f.pts)) > 1e-6, "facets are lit and never collapse");
+  const c0 = iceStillChips(r, 0, n, seed), c1 = iceStillChips(r, 1, n, seed);
+  c0.forEach((c, i) => { near(c.alpha, c1[i].alpha, "chips come round once a loop"); c.lump.pts.forEach((p, j) => near(p[0], c1[i].lump.pts[j][0], "chips come round once a loop")); });
+  assert.ok(c0.every(c => c.lump.pts.every(([x]) => x < r * 0.5)), "chips stream away behind the chunk");
 }
-assert.deepEqual(frostTail(0.5, 12, 0.3, 8, 1), { mist: [], wisps: [], motes: [] }, "no tail before the bolt has moved");
+for (const sides of [3, 5, 9]) {
+  const lump = iceLump(rng(5), [10, 20], 8, 0.7, sides);
+  assert.equal(lump.pts.length, sides); assert.equal(lump.facets.length, sides);
+  assert.ok(lump.pts.every(([x, y]) => Math.hypot(x - 10, y - 20) <= 8 * 1.1 + 1e-9), "a lump stays its size");
+}
+assert.deepEqual(iceVapor(0.5, 12, 0.3, 8, 1), [], "no vapour before the meteor has moved");
 const bent = alongPath([[0, 0], [10, 0], [10, 10]]);
 assert.equal(bent.len, 20);
 assert.deepEqual(bent.at(0).slice(0, 2), [10, 10], "the tail is measured back from the head");
 assert.deepEqual(bent.at(20).slice(0, 2), [0, 0]);
-console.log("火尾后向流动、纹理不随长度拉伸、寒冰箭拖尾与冰晶循环衔接检查通过");
+console.log("火尾后向流动、纹理不随长度拉伸、冰块流星寒气、翻滚与碎冰循环衔接检查通过");
 
 for (const seed of [1, 23, 97]) for (const amount of [0, 0.9, 2]) {
-  const early = iceBurst(32, amount, seed, 0.02), mid = iceBurst(32, amount, seed, 0.35);
+  const early = iceBurst(32, amount, seed, 0.02), mid = iceBurst(32, amount, seed, 0.3);
   for (const t of [0, 0.12, 0.35, 0.7, 1]) {
     const hit = iceBurst(32, amount, seed, t);
-    assert.deepEqual(hit, iceBurst(32, amount, seed, t), "the frost burst can be sought in any playback order");
-    for (const p of [...hit.shards, ...hit.sparkles, ...hit.flakes, ...hit.mist]) assert.ok(p.at.every(Number.isFinite) && p.alpha >= 0 && p.alpha <= 1);
+    assert.deepEqual(hit, iceBurst(32, amount, seed, t), "the smash can be sought in any playback order");
+    for (const p of [...hit.pieces, ...hit.sparkles, ...hit.mist]) assert.ok(p.at.every(Number.isFinite) && p.alpha >= 0 && p.alpha <= 1);
     if (t === 1) {
-      assert.ok([...hit.shards, ...hit.sparkles, ...hit.flakes, ...hit.mist].every(p => p.alpha === 0), "everything fades before the hit ends");
+      assert.ok([...hit.pieces, ...hit.sparkles, ...hit.mist].every(p => p.alpha === 0), "everything fades before the hit ends");
       assert.equal(hit.flash, 0); assert.equal(hit.ring.alpha, 0);
     }
   }
-  assert.ok(mid.shards.every((p, j) => Math.hypot(...p.at) > Math.hypot(...early.shards[j].at)), "ice shards fly out from the hit");
-  assert.ok(mid.ring.radius > early.ring.radius, "the frost ring spreads");
+  assert.ok(mid.pieces.every((p, j) => Math.hypot(...p.at) > Math.hypot(...early.pieces[j].at)), "ice chunks fly out from the hit");
+  assert.ok(iceBurst(32, amount, seed, 0.9).pieces.some(p => p.at[1] > 0), "chunks fall under gravity");
 }
-console.log("冰霜爆散的确定性、碎片飞散与消散时序检查通过");
+console.log("冰块碎裂的确定性、飞散下落与消散时序检查通过");
 
 for (const flightPath of ["straight", "arc", "wave", "spiral", "custom"]) for (const flightEase of ["linear", "in", "out", "smooth"]) {
   const s = remoteSettings({ ...REMOTE_DEFAULTS, kind: "fireball", flightPath, flightEase, pathWave: 40, pathTurns: 4, pathBend: 60, trailFrames: 24 });

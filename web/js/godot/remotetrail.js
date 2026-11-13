@@ -347,7 +347,7 @@ func _remote_shed(state: Dictionary, index: int, r: float) -> void:
 	if amount <= 0.0 or trail_frames <= 0.0 or trail_width <= 0.0: return
 	var life := minf(12.0, maxf(4.0, trail_frames))
 	var post_fade := 1.0 - _smooth(0.0, minf(life, impact_frames), maxf(0.0, state.time - charge_frames - travel_frames))
-	var rate := maxf(0.25, minf(3.0, amount * (2.0 if kind == 17 else 1.5)))
+	var rate := maxf(0.25, minf(3.0, amount * (2.0 if kind == 17 or kind == 15 else 1.5)))
 	var oldest := maxf(charge_frames, state.time - life)
 	var newest := minf(state.time, charge_frames + travel_frames)
 	for j in range(ceili(oldest * rate), floori(newest * rate) + 1):
@@ -376,10 +376,14 @@ func _remote_shed(state: Dictionary, index: int, r: float) -> void:
 			var width := maxf(0.5, r * 0.055 * (0.5 + P.next()))
 			_streak(at0 + v * 1.5, at0, tone, tone, alpha, width)
 		if kind == 15:
-			# 冰晶闪粉：一闪一闪的小十字
-			var size0 := maxf(0.6, r * 0.07 * (0.5 + P.next()))
-			var tw := alpha * (0.6 + 0.4 * sin(age * 2.1 + j))
-			_blob(at0, size0 * 1.4, [[0.0, core_color, 0.9 * tw], [1.0, rim_color, 0.0]])
-			for d in [Vector2(-2.0, 0.0), Vector2(2.0, 0.0), Vector2(0.0, -1.4), Vector2(0.0, 1.4)]:
-				_streak(at0 + d * size0, at0, rim_color, core_color, 0.7 * tw, maxf(0.4, size0 * 0.35))
+			# 从头部掉下来的一块碎冰：往一侧、往后飞，边转边落，慢慢化掉
+			var size0 := r * (0.2 + 0.26 * P.next())
+			var rot := P.next() * TAU
+			var spin := (P.next() - 0.5) * 0.9
+			var sides := 3 + int(floorf(P.next() * 2.0))
+			var out := r * (0.12 + 0.2 * P.next())
+			var fwd := Vector2.from_angle(angle)
+			var nrm := Vector2(-fwd.y, fwd.x)
+			var c := p + nrm * side * r * 0.5 - fwd * r * 0.05 * age + nrm * side * out * age + Vector2(0.0, r * 0.012 * age * age)
+			_ice_draw_lump(_ice_lump(Rand.new((random_seed + index * 31) * 31 + j * 17 + index), c, size0 * (1.0 - 0.5 * f), rot + spin * age, sides), _smooth(0.0, 0.1, f) * pow(1.0 - f, 1.2) * post_fade, maxf(0.5, r * 0.04))
 `;
