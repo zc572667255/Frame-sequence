@@ -5,7 +5,7 @@ import { ribbonSections, materialAt, flameFlow } from "../web/js/vfx/remotetrail
 import { flightTrailWindow } from "../web/js/vfx/remote.js";
 import { alongPath, iceSwirl, iceLance, iceColors } from "../web/js/vfx/kinds/ice.js";
 import { iceBurst } from "../web/js/vfx/kinds/icehit.js";
-import { slashRuns, slashFrame, slashFade, slashCopies } from "../web/js/vfx/kinds/slash.js";
+import { slashRuns, slashFrame, slashFade, slashCopies, slashLines } from "../web/js/vfx/kinds/slash.js";
 import { paletteOf } from "../web/js/vfx/common.js";
 import { shapeOf } from "../web/js/vfx/catalog.js";
 import { thunderDischarge } from "../web/js/vfx/kinds/thunderhit.js";
@@ -283,6 +283,20 @@ for (const ground of [0, 30, 60, 90]) for (const travel of [0, Math.PI, 0.3]) fo
   }
 }
 for (const travel of [0, Math.PI, 0.3, -0.4]) assert.ok(slashFrame(travel).y[1] > 0, "up stays up whichever way it flies");
+// 光丝 curve along the arc towards the tips and on past them, never straight
+for (const shape of ["full", "half"]) for (const ground of [90, 40, 0]) {
+  const lines = slashLines([100, 100], 0, 40, 20, ground, shape, 0.35, 7, 3, 1);
+  assert.equal(lines.length, Math.round(0.35 * 22));
+  for (const { pts, width: lw } of lines) {
+    assert.equal(pts.length, 17); assert.ok(lw > 0 && pts.every(q => q.p.every(Number.isFinite) && q.a >= 0 && q.a <= 1));
+    assert.ok(pts.at(-1).a < 1e-9, "each fades out at its far end");
+    const [p0, p1, p2] = [pts[0].p, pts[8].p, pts[16].p], bend = Math.abs((p1[0] - p0[0]) * (p2[1] - p0[1]) - (p1[1] - p0[1]) * (p2[0] - p0[0]));
+    assert.ok(bend > 1, "it curves, it is not a straight line");
+    assert.ok(p2[0] < p0[0], "it runs from the middle back past a tip");
+    if (shape === "half") assert.ok(p2[1] < 100, "半头: only the upper half has strands");
+  }
+}
+assert.equal(slashLines([0, 0], 0, 40, 20, 90, "full", 0, 7, 3, 1).length, 0, "palettes without speed lines get none");
 assert.equal(slashFade(0), 1); assert.equal(slashFade(1), 0);
 {
   const s = remoteSettings({ ...REMOTE_DEFAULTS, kind: "slash", flightPath: "straight", startX: 12, startY: 55, endX: 88, endY: 55 });

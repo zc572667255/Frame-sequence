@@ -3175,6 +3175,7 @@ func _tg_glow(r: Array, seed: int, frame: int, alpha: float, gain: float, top: b
 	var tail := 0.6 if full_preset or _tg_plain else (0.3 if _remote_active() else 0.75)
 	if _tg_plain:
 		L["flow"] = 0.0  # 剑气：流动的刀身在细尖处会拖出一团，不画
+		L["speedLines"] = 0.0  # 剑气：直的速度线改成顺着弧线走的光丝（_slash_lines）
 	if _remote_active() and not full_preset and not _tg_plain:
 		L["core"] = 0.24
 		L["haze"] = 0.1

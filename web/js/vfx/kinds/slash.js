@@ -1,5 +1,5 @@
 import { renderGlow, glowStyle } from "../../trails/glow.js";
-import { smooth } from "../../trails/glow/util.js";
+import { smooth, rng, rgba } from "../../trails/glow/util.js";
 import { pathAt } from "../remote.js";
 
 // 剑气 (2D, side view): a crescent of sword light drawn exactly as an attack
@@ -35,11 +35,20 @@ export function slashFrame(travel) {
 // b (outer, hot edge), u }. at: its middle; half: half its chord (upright);
 // thick: its greatest thickness; ground: its angle to the ground (degrees);
 // shape: "full" (two runs, top and bottom) or "half" (the top run only)
-export function slashRuns(at, travel, half, thick, ground, shape = "full") {
+// the crescent's own frame: place(x, y) puts a point of the upright crescent
+// (x forward, y down, its middle at the origin) on screen; its outer edge is
+// the circle of radius A round [cx, 0], at angle phi (0 its middle, -SPAN/2
+// its upper tip)
+export function slashFrameOf(at, travel, half, ground) {
   const th = Math.max(0, Math.min(90, ground)) * Math.PI / 180, squash = 0.3 + 0.7 * Math.sin(th), shear = 0.25 * Math.cos(th);
   const { x: X, y: Y } = slashFrame(travel);
   const A = half / Math.sin(SLASH_SPAN / 2), sag = A * (1 - Math.cos(SLASH_SPAN / 2));
   const place = (x, y) => { const px = x - y * shear, py = y * squash; return [at[0] + X[0] * px + Y[0] * py, at[1] + X[1] * px + Y[1] * py]; };
+  return { place, A, sag, cx: -A * Math.cos(SLASH_SPAN / 2) - sag / 2 };
+}
+
+export function slashRuns(at, travel, half, thick, ground, shape = "full") {
+  const { place, A, sag } = slashFrameOf(at, travel, half, ground);
   const section = (s, u) => {
     const phi = -SLASH_SPAN / 2 + SLASH_SPAN * s, W = thick * (0.04 + 0.96 * Math.pow(Math.sin(Math.PI * s), 0.8));
     const nx = Math.cos(phi), ny = Math.sin(phi), ox = A * nx - A * Math.cos(SLASH_SPAN / 2) - sag / 2, oy = A * ny;
@@ -54,18 +63,47 @@ export function slashRuns(at, travel, half, thick, ground, shape = "full") {
   return runs;
 }
 
+// 光丝: the trail's speed lines, but curving: each runs from near the middle
+// along the crescent's arc towards a tip and a little past it, the way that
+// end points, bright at its start and fading out. amount: the palette's
+// speed lines (0..1); each line is a polyline of { p, a } and a width
+export function slashLines(at, travel, half, thick, ground, shape, amount, seed, frame, alpha) {
+  const { place, A, cx } = slashFrameOf(at, travel, half, ground), out = [];
+  const S = rng(seed * 131 + 3), P = rng(seed * 131 + frame * 557 + 1), sides = shape === "half" ? [-1] : [-1, 1];
+  for (let k = 0, N = Math.round(Math.max(0, amount) * 22); k < N; k++) {
+    const dir = sides[k % sides.length], from = (0.05 + 0.3 * S()) * SLASH_SPAN / 2, to = (1 + 0.1 + 0.3 * S()) * SLASH_SPAN / 2;
+    const depth = thick * (0.05 + 0.6 * S()), width = Math.max(0.6, thick / (30 + 50 * S())), a = alpha * (0.35 + 0.5 * P()), rad = A - depth, pts = [];
+    for (let j = 0; j <= 16; j++) {
+      const f = j / 16, phi = dir * (from + (to - from) * f);
+      pts.push({ p: place(cx + Math.cos(phi) * rad, Math.sin(phi) * rad), a: a * (f < 0.3 ? 0.85 - 0.35 * f / 0.3 : 0.5 * (1 - (f - 0.3) / 0.7)) });
+    }
+    out.push({ pts, width });
+  }
+  return out;
+}
+
 // one crescent, painted onto g (canvas coordinates)
 export function drawSlashAt(g, c, s, at, travel, r, scale, alpha, k) {
   if (alpha <= 0.01 || scale <= 0) return;
-  const half = r * 4 * scale, thick = half * Math.max(10, Math.min(150, s.slashThick ?? 70)) / 100;
-  // (the flowing-blade layer smears past a pointed tip)
-  const style = { ...glowStyle(c.pal.preset), flow: 0 };
-  slashRuns(at, travel, half, thick, s.slashAngle ?? 90, s.slashShape).forEach((run, side) => {
+  const half = r * 4 * scale, thick = half * Math.max(10, Math.min(150, s.slashThick ?? 70)) / 100, ground = s.slashAngle ?? 90;
+  // (the flowing-blade layer smears past a pointed tip; the straight speed
+  // lines are drawn curving instead, below)
+  const look = glowStyle(c.pal.preset), style = { ...look, flow: 0, speedLines: 0 };
+  slashRuns(at, travel, half, thick, ground, s.slashShape).forEach((run, side) => {
     const cv = renderGlow([run], style, c.w, c.h, { seed: c.seed * 4 + k * 2 + side, frame: c.i, alpha, fade: 0.6, fx: false });
     if (!cv) return;
     g.globalCompositeOperation = c.pal.dark ? "source-over" : "lighter";
     g.drawImage(cv, 0, 0);
   });
+  g.globalCompositeOperation = c.pal.dark ? "source-over" : "lighter";
+  g.lineCap = "round";
+  for (const line of slashLines(at, travel, half, thick, ground, s.slashShape, (+look.speedLines || 0) / 100, c.seed * 4 + k * 2, c.i, alpha)) {
+    g.lineWidth = line.width;
+    for (let j = 1; j < line.pts.length; j++) {
+      const p = line.pts[j - 1], q = line.pts[j], tone = j < 5 ? c.pal.core : c.pal.rim;
+      g.strokeStyle = rgba(tone, p.a); g.beginPath(); g.moveTo(...p.p); g.lineTo(...q.p); g.stroke();
+    }
+  }
   g.globalCompositeOperation = "source-over";
 }
 

@@ -54,11 +54,50 @@ func _slash_at(at: Vector2, travel: float, r: float, scale0: float, alpha: float
 	var half := r * 4.0 * scale0
 	var thick := half * clampf(slash_thick, 10.0, 150.0) / 100.0
 	var runs := _slash_runs(at, travel, half, thick, slash_angle, slash_shape)
+	var frame := int(floor(_t * frames + 0.0001))
 	_tg_plain = true
 	_tg_loop_n = 0.0
 	for side in runs.size():
-		_tg_glow(runs[side], key * 4 + k * 2 + side, int(floor(_t * frames + 0.0001)), alpha, 1.0, false, side)
+		_tg_glow(runs[side], key * 4 + k * 2 + side, frame, alpha, 1.0, false, side)
 	_tg_plain = false
+	var li := TG_KEYS.find("speedLines")
+	_slash_lines(at, travel, half, thick, slash_angle, slash_shape, trail_look[li] if li >= 0 and li < trail_look.size() else 0.0, key * 4 + k * 2, frame, alpha)
+
+# 光丝：配色里拖尾的速度线，但顺着月牙的弧线走：从正中附近沿着弧往一个尖去，过了尖再顺着弯一点，开头亮、往外淡去
+func _slash_lines(at: Vector2, travel: float, half: float, thick: float, ground: float, shape: String, quantity: float, key: int, frame: int, alpha: float) -> void:
+	var th := clampf(ground, 0.0, 90.0) * PI / 180.0
+	var squash := 0.3 + 0.7 * sin(th)
+	var shear := 0.25 * cos(th)
+	var fr := _slash_frame(travel)
+	var X: Vector2 = fr[0]
+	var Y: Vector2 = fr[1]
+	var span := 140.0 * PI / 180.0
+	var A := half / sin(span / 2.0)
+	var sag := A * (1.0 - cos(span / 2.0))
+	var cx := -A * cos(span / 2.0) - sag / 2.0
+	var S := Rand.new(key * 131 + 3)
+	var P := Rand.new(key * 131 + frame * 557 + 1)
+	var sides := [-1.0] if shape == "half" else [-1.0, 1.0]
+	_add = additive
+	for k in roundi(maxf(0.0, quantity) * 22.0):
+		var dir: float = sides[k % sides.size()]
+		var from := (0.05 + 0.3 * S.next()) * span / 2.0
+		var to := (1.1 + 0.3 * S.next()) * span / 2.0
+		var depth := thick * (0.05 + 0.6 * S.next())
+		var width := maxf(0.6, thick / (30.0 + 50.0 * S.next()))
+		var a := alpha * (0.35 + 0.5 * P.next())
+		var rad := A - depth
+		var pts := PackedVector2Array()
+		var cols := PackedColorArray()
+		for j in 17:
+			var f := j / 16.0
+			var phi := dir * (from + (to - from) * f)
+			var x := cx + cos(phi) * rad
+			var y := sin(phi) * rad
+			pts.append(at + X * (x - y * shear) + Y * (y * squash))
+			var aj := a * (0.85 - 0.35 * f / 0.3 if f < 0.3 else 0.5 * (1.0 - (f - 0.3) / 0.7))
+			cols.append(_col(core_color if j < 5 else rim_color, aj))
+		_line(pts, cols, width)
 
 # 飞行中：剑气本身和后面一个淡淡的残影
 func _remote_slash(state: Dictionary, index: int, r: float) -> void:
