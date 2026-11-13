@@ -12,7 +12,7 @@ export function sandGrains(r, amount, seed, t) {
     const strength = 0.45 + P() * 0.5, flicker = P() * TAU, age = frac(phase + t * cycles);
     const x = -r * (0.06 + reach * age), y = r * (side * (0.07 + age * 0.35) + Math.sin(age * 2 + flicker) * 0.035 * age);
     const alpha = smooth(0, 0.08, age) * (1 - smooth(0.22, 1, age)) * strength * (0.7 + Math.sin(t * TAU * cycles * 2 + flicker) * 0.3);
-    grains.push({ at: [x, y], back: [x + width * (1.2 + age * 0.8), y], width, alpha, heat: 0.5 + (1 - age) * 0.35 });
+    grains.push({ at: [x, y], back: [x + width * (1.2 + age * 0.8), y], width, alpha, heat: 0.35 + (1 - age) * 0.35 });
   }
   return grains;
 }

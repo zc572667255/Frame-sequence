@@ -80,14 +80,15 @@ export function materialAt(kind, u, v, frame, noise, fine, start = 0, span = 8) 
       + 0.3 * Math.exp(-(((v - 0.72 + weave) / 0.06) ** 2));
     const grains = smooth(0.54 - u * 0.16, 0.72 - u * 0.12, fine(phase * 8, v * 29));
     const feather = (1 - smooth(0.55, 1, d)) * smooth(0, 0.4, u) ** 1.2 * (0.08 + 0.92 * u);
-    return [0.45 + grains * 0.5, (lane * grains * 0.88 + (1 - d) ** 3 * 0.045) * feather];
+    // the palette's own colours (the middle of its ramp), not its near-whites
+    return [0.3 + grains * 0.45, (lane * grains * 0.88 + (1 - d) ** 3 * 0.045) * feather];
   }
   if (kind === "thunder") return [0.35 + n * 0.4, Math.pow(1 - d, 3) * end * (0.12 + f * 0.08)];
   const curl = (n - 0.5) * (0.7 + (1 - u) * 0.5);
   const billow = Math.max(0, 1 - Math.abs(v * 2 - 1 + curl));
   const thread = Math.pow(Math.max(0, Math.sin((v * 4 + warp * 0.65 + u * 0.4) * TAU)), 18);
   const mist = Math.pow(billow, 1.8) * smooth(0.2, 0.8, f) * (kind === "wind" ? 0.6 : 0.22);
-  return [0.62 + f * 0.35, (mist + thread * billow * (kind === "wind" ? 0.18 : 0.28)) * end * (0.35 + u * 0.65)];
+  return [kind === "wind" ? 0.35 + f * 0.4 : 0.62 + f * 0.35, (mist + thread * billow * (kind === "wind" ? 0.18 : 0.28)) * end * (0.35 + u * 0.65)];
 }
 
 function ribbonMaterial(g, c, sections, strength, clock, frame) {
@@ -155,7 +156,7 @@ function shed(g, c, s, state, index, r) {
       drawPuff(g, x, y - (smoke ? age * r * 0.04 : 0), r * (0.4 + f * 0.85), angle, color, smooth(0, 0.15, f) * (1 - f) ** 1.5 * (smoke ? 0.28 : 0.2) * postFade, j, 1.3);
     }
     g.globalCompositeOperation = c.pal.dark ? "source-over" : "lighter";
-    const alpha = (1 - f) ** 1.6 * (0.3 + P() * 0.6) * postFade, color = at(c.pal.flame, 0.85 - f * 0.4);
+    const alpha = (1 - f) ** 1.6 * (0.3 + P() * 0.6) * postFade, color = at(c.pal.flame, (c.kind === "sand" ? 0.62 : 0.85) - f * 0.4);
     if (c.kind === "fireball" || c.kind === "sand") {
       const size = Math.max(0.5, r * 0.055 * (0.5 + P()));
       streak(g, [x + vx * 1.5, y + vy * 1.5], [x, y], color, color, alpha, size);

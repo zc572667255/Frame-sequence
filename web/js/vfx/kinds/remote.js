@@ -1,6 +1,6 @@
 import { createCanvas } from "../../core/util.js";
 import { rng, rgba } from "../../trails/glow/util.js";
-import { TAU, at, blob, ring, bolt, swirl, trail } from "../common.js";
+import { TAU, at, blob, ring, bolt, swirl, trail, mixRgb } from "../common.js";
 import { drawRemoteTrail, drawPuff } from "../remotetrail.js";
 import { REMOTE_DEFAULTS, remoteSettings, hasFlight, flightState, pathAt } from "../remote.js";
 import { fireball } from "./fireball.js";
@@ -40,9 +40,9 @@ export function remoteBody(g, c, r) {
     const spin = t * TAU * 2;
     for (let j = 0; j < 6; j++) {
       const a = spin + j * TAU / 6;
-      drawPuff(g, Math.cos(a) * r * 0.45, Math.sin(a) * r * 0.32, r * 0.72, a, pal.core, 0.58, c.seed + j, 1.5);
+      drawPuff(g, Math.cos(a) * r * 0.45, Math.sin(a) * r * 0.32, r * 0.72, a, mixRgb(pal.rim, pal.core, 0.35), 0.58, c.seed + j, 1.5);
     }
-    drawPuff(g, 0, 0, r * 0.8, -spin * 0.5, pal.core, 0.85, c.seed, 1.5);
+    drawPuff(g, 0, 0, r * 0.8, -spin * 0.5, mixRgb(pal.rim, pal.core, 0.6), 0.85, c.seed, 1.5);
     g.globalCompositeOperation = pal.dark ? "source-over" : "lighter";
     for (let j = 0; j < 2; j++) {
       const points = [];

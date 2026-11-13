@@ -174,7 +174,7 @@ func _sand_grains(r: float, quantity: float, key: int, t: float) -> Array:
 		var x := -r * (0.06 + reach * age)
 		var y := r * (side * (0.07 + age * 0.35) + sin(age * 2.0 + flicker) * 0.035 * age)
 		var alpha := _smooth(0.0, 0.08, age) * (1.0 - _smooth(0.22, 1.0, age)) * strength * (0.7 + sin(t * TAU * cycles * 2.0 + flicker) * 0.3)
-		grains.append({"at": Vector2(x, y), "back": Vector2(x + width * (1.2 + age * 0.8), y), "width": width, "alpha": alpha, "heat": 0.5 + (1.0 - age) * 0.35})
+		grains.append({"at": Vector2(x, y), "back": Vector2(x + width * (1.2 + age * 0.8), y), "width": width, "alpha": alpha, "heat": 0.35 + (1.0 - age) * 0.35})
 	return grains
 
 func _remote_body(r: float) -> void:
@@ -209,8 +209,8 @@ func _remote_body(r: float) -> void:
 			var spin := _t * TAU * 2.0
 			for j in 6:
 				var a := spin + j * TAU / 6.0
-				_remote_puff(Vector2(cos(a) * r * 0.45, sin(a) * r * 0.32), r * 0.72, a, core_color, 0.58, random_seed + _remote_shot * 31 + j, 1.5, true)
-			_remote_puff(Vector2.ZERO, r * 0.8, -spin * 0.5, core_color, 0.85, random_seed + _remote_shot * 31, 1.5, true)
+				_remote_puff(Vector2(cos(a) * r * 0.45, sin(a) * r * 0.32), r * 0.72, a, rim_color.lerp(core_color, 0.35), 0.58, random_seed + _remote_shot * 31 + j, 1.5, true)
+			_remote_puff(Vector2.ZERO, r * 0.8, -spin * 0.5, rim_color.lerp(core_color, 0.6), 0.85, random_seed + _remote_shot * 31, 1.5, true)
 			_add = additive
 			for j in 2:
 				var points := PackedVector2Array()

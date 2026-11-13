@@ -59,7 +59,7 @@ void fragment() {
       float lane = exp(-pow((v - 0.5 - weave) / 0.075, 2.0)) + 0.4 * exp(-pow((v - 0.28 + weave) / 0.055, 2.0)) + 0.3 * exp(-pow((v - 0.72 + weave) / 0.06, 2.0));
       float grains = smoothstep(0.54 - u * 0.16, 0.72 - u * 0.12, fbm(vec2(phase * 8.0, v * 29.0), fs));
       float feather = (1.0 - smoothstep(0.55, 1.0, d)) * pow(smoothstep(0.0, 0.4, u), 1.2) * (0.08 + 0.92 * u);
-      heat = 0.45 + grains * 0.5;
+      heat = 0.3 + grains * 0.45;
       alpha = (lane * grains * 0.88 + pow(1.0 - d, 3.0) * 0.045) * feather;
     } else if (kind == 14) {
       heat = 0.35 + n * 0.4;
@@ -69,7 +69,7 @@ void fragment() {
       float billow = max(0.0, 1.0 - abs(v * 2.0 - 1.0 + curl));
       float thread = pow(max(0.0, sin((v * 4.0 + warp * 0.65 + u * 0.4) * 6.283185307)), 18.0);
       float mist = pow(billow, 1.8) * smoothstep(0.2, 0.8, f) * (kind == 16 ? 0.6 : 0.22);
-      heat = 0.62 + f * 0.35;
+      heat = kind == 16 ? 0.35 + f * 0.4 : 0.62 + f * 0.35;
       alpha = (mist + thread * billow * (kind == 16 ? 0.18 : 0.28)) * end * (0.35 + u * 0.65);
     }
     COLOR = vec4(across(heat), alpha * COLOR.g);
@@ -371,7 +371,7 @@ func _remote_shed(state: Dictionary, index: int, r: float) -> void:
 			_remote_puff(at0 - Vector2(0, age * r * 0.04 if smoke else 0.0), r * (0.4 + f * 0.85), puff_angle, tone, _smooth(0.0, 0.15, f) * pow(1.0 - f, 1.5) * (0.28 if smoke else 0.2) * post_fade, j, 1.3)
 		_add = additive
 		var alpha := pow(1.0 - f, 1.6) * (0.3 + P.next() * 0.6) * post_fade
-		var tone := _remote_color(0.85 - f * 0.4)
+		var tone := _remote_color((0.62 if kind == 17 else 0.85) - f * 0.4)
 		if kind == 13 or kind == 17:
 			var width := maxf(0.5, r * 0.055 * (0.5 + P.next()))
 			_streak(at0 + v * 1.5, at0, tone, tone, alpha, width)
