@@ -66,11 +66,23 @@ function fitFlightStages(r, frames) {
   return r;
 }
 
+// the charge : flight : impact proportions (stages: [蓄力, 飞行, 命中消散] as the
+// user last set them), kept apart from the frames each gets: fitting to one
+// length after another keeps them instead of drifting with the rounding
+export function stageWeights(s) {
+  const w = Array.isArray(s.stages) && s.stages.length === 3 ? s.stages.map(Number) : null;
+  if (w && w.every((v) => Number.isFinite(v) && v >= 0) && w[1] > 0) return w;
+  const r = remoteSettings(s);
+  return [r.chargeFrames, r.travelFrames, r.impactFrames];
+}
+
 // Fit a complete launch into existing animation frames, including a single frame.
+// The stages keep their proportions (stageWeights).
 export function fitRemoteFrames(s, frames) {
   const r = remoteSettings(s), budget = Math.max(1, Math.round(Number(frames) || 1));
   if (!hasFlight(r)) return { ...r, remoteFrameBudget: budget, frames: budget };
-  return fitFlightStages({ ...r, remoteFrameBudget: budget }, budget);
+  const w = stageWeights(s);
+  return fitFlightStages({ ...r, remoteFrameBudget: budget, stages: w, chargeFrames: w[0], travelFrames: w[1], impactFrames: w[2] }, budget);
 }
 
 // Old sprites keep their original time/appearance. New flights have an explicit

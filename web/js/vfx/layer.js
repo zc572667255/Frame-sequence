@@ -116,7 +116,7 @@ const cache = new Map();
 const CACHE_MAX = 400, CACHE_PIXELS = 16e6; // ~64 MB
 let cachePixels = 0;
 // (older projects may still carry 箭矢's former picture settings: left out)
-const lookOf = (s) => { const { x, y, start, length, perFrame, keys, follow, pad, box, coreImg, coreKey, coreName, coreSize, coreTurn, coreScale, ...look } = s; return look; };
+const lookOf = (s) => { const { x, y, start, length, stages, perFrame, keys, follow, pad, box, coreImg, coreKey, coreName, coreSize, coreTurn, coreScale, ...look } = s; return look; };
 const keyOf = (look, i, w, h, draft) => JSON.stringify(look) + "#" + i + "#" + w + "x" + h + (draft ? "#draft" : "");
 function remember(key, v) {
   // the same frame again (rendered here while the background had it too)

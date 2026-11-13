@@ -13,6 +13,9 @@ import { GROUND_AURAS } from "../vfx/kinds/auras.js";
 import { vfxData, vfxGodot, vfxJSON, attachVfxSheet } from "../godot/vfx.js";
 import { codeSupported, codeParams, codeGodot } from "../godot/code.js";
 
+// a flight's stages: 蓄力 / 飞行 / 命中消散
+const STAGE_KEYS = ["chargeFrames", "travelFrames", "impactFrames"];
+
 const GROUND = new Set(["shock", "dust", "circle", "heal"]);
 
 // a kind's picture for the type grid: one telling frame, rendered in the
@@ -71,7 +74,7 @@ export class VfxPanel {
       let v = { ...l.vfx, kind: k.id, ...k.defaults };
       if (isRemoteKind(k.id)) {
         const start = Math.max(0, this.doc.frames.findIndex(f => f.id === v.start));
-        v = fitRemoteFrames({ ...v, remoteFrameBudget: undefined }, this.doc.frames.length - start);
+        v = fitRemoteFrames({ ...v, remoteFrameBudget: undefined, stages: undefined }, this.doc.frames.length - start);
       }
       if (!k.side) v.view = "front";
       // a layer still named after its type takes the new type's name
@@ -106,15 +109,22 @@ export class VfxPanel {
     // dragging 持续 fits from where the drag began, so going shorter and back
     // gives the same charge / flight / impact again
     l.vfx = this.timed({ ...("length" in patch ? this.liveBase : l.vfx), ...patch }, patch);
+    // 蓄力 / 飞行 / 命中消散 follow 持续 while it is dragged
+    if ("length" in patch) for (const f of this.liveSync || []) f(vfxSettings(l));
     this.ed.markDirty();
     this.ed.requestRender();
   }
 
   // a flight whose frames on show change (持续, its start) is fitted to them
-  // again: it plays whole within them, charge → flight to the end point → impact
+  // again: it plays whole within them, charge → flight to the end point →
+  // impact, each stage scaled by the proportions last set (stageWeights).
+  // Setting a stage itself sets those proportions.
   timed(v, patch) {
-    if (!hasFlight(v) || !("length" in patch || "start" in patch)) return remoteSettings(v);
-    return fitRemoteFrames(v, vfxShownFrames(v, this.doc.frames.map((f) => f.id)));
+    if (!hasFlight(v)) return remoteSettings(v);
+    if ("length" in patch || "start" in patch) return fitRemoteFrames(v, vfxShownFrames(v, this.doc.frames.map((f) => f.id)));
+    const r = remoteSettings(v);
+    if (STAGE_KEYS.some((k) => k in patch)) r.stages = [r.chargeFrames, r.travelFrames, r.impactFrames];
+    return r;
   }
 
   // the region on this frame (a key when keyed per frame, else the fixed one)
@@ -149,13 +159,16 @@ export class VfxPanel {
     const remote = isRemoteKind(s.kind), name = remote ? "远程特效" : "特效";
     const ids = this.doc.frames.map((f) => f.id);
     const row = (label, ...kids) => { const r = el("div", { class: "tm-row" }, el("span", { class: "tm-label" }, label), ...kids); P.append(r); return r; };
-    const slider = (label, key, min, max, unit, title, fmt) => {
+    this.liveSync = [];
+    const slider = (label, key, min, max, unit, title, fmt, range) => {
       const show = (v) => (fmt ? fmt(v) : v + unit);
       const val = el("span", { class: "mono tm-num" }, show(s[key]));
       const r = el("input", { type: "range", min, max, value: s[key] });
       r.oninput = () => { this.liveEdit({ [key]: +r.value }); val.textContent = show(+r.value); };
       r.onchange = () => this.endLive();
       row(label, r, val).title = title || "";
+      // shown again from the settings when another slider changes this one
+      if (STAGE_KEYS.includes(key)) this.liveSync.push((v) => { if (range) { const q = range(v); r.min = q.min; r.max = q.max; } r.value = v[key]; val.textContent = show(v[key]); });
     };
     const choose = (label, key, options, onPick) => {
       const sel = el("select", { class: "ed-select" }, ...options.map(([v, n]) => el("option", { value: String(v), selected: String(s[key]) === String(v) }, n)));
@@ -246,7 +259,11 @@ export class VfxPanel {
     row("开始", el("span", { class: "mono" }, "第 " + (st + 1) + " 帧"),
       btn("从本帧开始", "让特效从当前帧开始", () => this.edit({ start: ids[here] }), st !== here));
     if (!hasFlight(s)) slider("特效帧数", "frames", 2, 64, " 帧", "特效本身有几帧：越多播得越慢、越细");
-    else row("总长", el("span", { class: "mono" }, s.frames + " 帧 · 蓄力 → 飞行 → 命中"), el("span"));
+    else {
+      const total = el("span", { class: "mono" }, s.frames + " 帧 · 蓄力 → 飞行 → 命中");
+      row("总长", total, el("span"));
+      this.liveSync.push((v) => { total.textContent = v.frames + " 帧 · 蓄力 → 飞行 → 命中"; });
+    }
     const loop = el("input", { type: "checkbox", checked: !!s.loop, onchange: () => this.edit({ loop: loop.checked }) });
     P.append(el("label", { class: "ed-check" }, loop, remote
       ? hasFlight(s) ? "循环播放整次发射（蓄力 → 飞行 → 命中）" : "循环播放（原地燃烧、拖尾流动，供游戏移动）"
@@ -258,7 +275,7 @@ export class VfxPanel {
       P.append(el("div", { class: "ed-panel-title" }, "路径 · 拖尾 · 命中"));
       for (const d of FLIGHT_FIELDS) if (flightFieldVisible(d, s)) {
         if (d.options) choose(d.label, d.key, d.options);
-        else { const range = flightFieldRange(d, s); slider(d.label, d.key, range.min, range.max, d.unit); }
+        else { const range = flightFieldRange(d, s); slider(d.label, d.key, range.min, range.max, d.unit, "", null, (v) => flightFieldRange(d, v)); }
       }
       if (s.kind === "arrow") P.append(el("p", { class: "ed-hint" }, "包裹光覆盖整个箭身，并随核心大小自动适配。头部宽度独立于拖尾宽度；头部弧度从 0 的尖头逐渐变为 100 的圆钝头。拖尾保留为 0 时仍保留箭身包裹光。"));
       P.append(el("p", { class: "ed-hint" }, hasFlight(s)

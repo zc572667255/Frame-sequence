@@ -102,6 +102,29 @@ for (const count of [1, 2, 3, 8, 12, 36, 64, 80, 120]) for (const fi of new Set(
   panel.liveEdit({ length: 0 });
   assert.equal(layer.vfx.frames, 23, "dragging 持续 back gives the whole timing again");
   panel.endLive();
+  // 命中消散 set by hand, then 持续 changed again and again in separate drags:
+  // every stage scales by the same proportions, without drifting
+  const stages = (v) => [v.chargeFrames, v.travelFrames, v.impactFrames];
+  panel.edit({ impactFrames: 8 });
+  const set = stages(layer.vfx);
+  assert.deepEqual(layer.vfx.stages, set, "a stage set by hand sets the proportions");
+  const seen = [];
+  panel.liveSync = [(v) => seen.push(v.impactFrames)];
+  const tally = {};
+  for (const length of [8, 16, 4, 30, 8, 12, 0, 8, 16, 0]) {
+    panel.liveEdit({ length });
+    panel.endLive();
+    const v = remoteSettings(layer.vfx), shown = Math.min(length || 23, 23);
+    assert.equal(v.frames, shown, "持续 " + length + ": the whole launch fills it");
+    const expect = Math.round(shown * set[2] / (set[0] + set[1] + set[2]));
+    assert.ok(Math.abs(v.impactFrames - expect) <= 1, "持续 " + length + ": 命中消散 " + v.impactFrames + " ≈ " + expect);
+    if (length in tally) assert.deepEqual(stages(v), tally[length], "持续 " + length + " again: the same stages");
+    tally[length] = stages(v);
+    reaches(v, shown, "持续 " + length + " after 命中消散 set");
+  }
+  assert.deepEqual(stages(layer.vfx), set, "back to 自动: the stages as set");
+  assert.equal(seen.length, 10, "the stage sliders follow 持续 while it is dragged");
+  assert.ok(seen.at(-2) < seen.at(-1), "命中消散 grows with 持续");
 }
 console.log("新建远程特效按现有动画帧数生成、不补帧、切换类型、单帧、长动画、连发、撤销与导出检查通过");
 
