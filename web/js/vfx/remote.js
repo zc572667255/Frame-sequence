@@ -10,7 +10,7 @@ export const REMOTE_DEFAULTS = {
   flightCount: 1, flightInterval: 3, flightSpread: 12,
   bodySize: 7, trailFrames: 8, trailWidth: 70, impactKind: "auto", impactSize: 22,
   headWidth: 100, headCurve: 35,
-  slashAngle: 90, // 剑气: angle to the ground, degrees (90 upright, less leans forwards, more leans back)
+  slashAngle: 90, slashShape: "full", slashThick: 70, // 剑气: angle to the ground (90 upright … 0 parallel to it), 外形 (kinds/slash.js SLASH_SHAPES), thickness (% of half its length)
 };
 export const FLIGHT_FIELDS = [
   { label: "移动路径", key: "flightPath", options: FLIGHT_PATHS, always: true },
@@ -35,11 +35,13 @@ export const FLIGHT_FIELDS = [
   { label: "拖尾宽度", key: "trailWidth", min: 0, max: 180, unit: "%" },
   { label: "头部宽度", key: "headWidth", min: 20, max: 250, unit: "%", kind: "arrow", always: true },
   { label: "头部弧度", key: "headCurve", min: 0, max: 100, unit: "%", kind: "arrow", always: true },
-  { label: "地面夹角", key: "slashAngle", min: 0, max: 180, unit: "°", kind: "slash", always: true },
+  { label: "剑气外形", key: "slashShape", options: [["full", "两头尖"], ["half", "半头"]], kind: "slash", always: true },
+  { label: "地面夹角", key: "slashAngle", min: 0, max: 90, unit: "°", kind: "slash", always: true },
+  { label: "剑气厚度", key: "slashThick", min: 10, max: 150, unit: "%", kind: "slash", always: true },
   { label: "命中效果", key: "impactKind", options: FLIGHT_IMPACTS },
   { label: "命中范围", key: "impactSize", min: 5, max: 40, unit: "%" },
 ];
-export const flightFieldVisible = (f, s) => !(s.kind === "slash" && f.key === "trailFrames") && (!f.kind || f.kind === s.kind) && (f.always || (hasFlight(s) && (!f.path || f.path.includes(s.flightPath))));
+export const flightFieldVisible = (f, s) => !(s.kind === "slash" && (f.key === "trailFrames" || f.key === "trailWidth")) && (!f.kind || f.kind === s.kind) && (f.always || (hasFlight(s) && (!f.path || f.path.includes(s.flightPath))));
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, Number(v) || 0));
 const mix = (a, b, t) => a + (b - a) * t;
 const smooth = (t) => t * t * (3 - 2 * t);

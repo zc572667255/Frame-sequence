@@ -1,8 +1,8 @@
 // 剑气 (2D, side view), drawn the same way as vfx/kinds/slash.js: a crescent
-// of sword light pointed at both tips, painted as two attack-trail halves of
-// the palette (_tg_glow) meeting in its thick middle, flying along the path
-// (left to right by default) and fading out, leaned forwards or back by its
-// angle to the ground.
+// of sword light painted as attack-trail runs of the palette (_tg_glow), each
+// from a tip to its thick middle — both halves (两头尖) or the upper one only
+// (半头) — flying along the path (left to right by default) and fading out,
+// laid down from upright towards parallel to the ground by its angle.
 export const SLASH_GD = `
 var _tg_plain := false  # 剑气：完全照拖尾本身的画法（不用远程弹体包裹光的简化）
 
@@ -10,28 +10,32 @@ var _tg_plain := false  # 剑气：完全照拖尾本身的画法（不用远程
 func _slash_fade(u: float) -> float:
 	return 1.0 - _smooth(0.7, 1.0, u)
 
-# 屏幕上弦的方向（下尖 → 上尖）和鼓起的方向：ground 是和地面的夹角（度，90 竖直，小于 90 往前倾，大于 90 往后仰）
-func _slash_axes(travel: float, ground: float) -> Array:
-	var th := clampf(ground, 0.0, 180.0) * PI / 180.0
-	var fwd := -1.0 if cos(travel) < -1e-9 else 1.0
-	var chord := Vector2(fwd * cos(th), -sin(th))
-	var bulge := Vector2(-chord.y, chord.x)
-	var lead := bulge.x * fwd
-	if lead < -1e-9 or (absf(lead) <= 1e-9 and bulge.y > 0.0): bulge = -bulge
-	return [chord, bulge]
+# 飞行方向自己的坐标：x 沿着飞行，y 横过它、朝屏幕下方（不管往哪边飞，上面总是上面）
+func _slash_frame(travel: float) -> Array:
+	var x := Vector2.from_angle(travel)
+	var y := Vector2(-x.y, x.x)
+	if y.y < 0.0 or (absf(y.y) < 1e-9 and y.x < 0.0): y = -y
+	return [x, y]
 
-# 月牙分成两段拖尾，各从一个尖画到正中（所以两头都尖，正中最粗最亮）：截面 {a 内侧, b 外侧（亮边）, u}
-func _slash_runs(at: Vector2, travel: float, half: float, thick: float, ground: float) -> Array:
-	var axes := _slash_axes(travel, ground)
-	var chord: Vector2 = axes[0]
-	var bulge: Vector2 = axes[1]
+# 月牙分成几段拖尾，各从一个尖画到正中（所以尖是尖的，正中最粗最亮）：截面 {a 内侧, b 外侧（亮边）, u}。
+# ground 是和地面的夹角（度，90 竖直 … 0 平行地面，越放倒从侧面看越扁，下面的尖稍微更靠后）；
+# shape："full" 两头尖（上下两段），"half" 半头（只有上面一段，正中平切）
+func _slash_runs(at: Vector2, travel: float, half: float, thick: float, ground: float, shape: String) -> Array:
+	var th := clampf(ground, 0.0, 90.0) * PI / 180.0
+	var squash := 0.3 + 0.7 * sin(th)
+	var shear := 0.25 * cos(th)
+	var fr := _slash_frame(travel)
+	var X: Vector2 = fr[0]
+	var Y: Vector2 = fr[1]
 	var span := 140.0 * PI / 180.0
 	var A := half / sin(span / 2.0)
 	var sag := A * (1.0 - cos(span / 2.0))
-	var runs := [[], []]
+	var n_runs := 1 if shape == "half" else 2
+	var runs := []
+	for side in n_runs: runs.append([])
 	for k in 17:
 		var u := k / 16.0
-		for side in 2:
+		for side in n_runs:
 			var s := 0.5 * u if side == 0 else 1.0 - 0.5 * u
 			var phi := -span / 2.0 + span * s
 			var W := thick * (0.04 + 0.96 * pow(sin(PI * s), 0.8))
@@ -39,18 +43,20 @@ func _slash_runs(at: Vector2, travel: float, half: float, thick: float, ground: 
 			var ny := sin(phi)
 			var ox := A * nx - A * cos(span / 2.0) - sag / 2.0
 			var oy := A * ny
-			runs[side].append({"a": at + bulge * (ox - nx * W) + chord * (oy - ny * W), "b": at + bulge * ox + chord * oy, "u": u})
+			var ix := ox - nx * W
+			var iy := oy - ny * W
+			runs[side].append({"a": at + X * (ix - iy * shear) + Y * (iy * squash), "b": at + X * (ox - oy * shear) + Y * (oy * squash), "u": u})
 	return runs
 
 # 画一道剑气（k：第几个残影，用来换随机）
 func _slash_at(at: Vector2, travel: float, r: float, scale0: float, alpha: float, k: int, key: int) -> void:
 	if alpha <= 0.01 or scale0 <= 0.0: return
 	var half := r * 4.0 * scale0
-	var thick := half * 0.5 * maxf(0.1, trail_width / 70.0)
-	var runs := _slash_runs(at, travel, half, thick, slash_angle)
+	var thick := half * clampf(slash_thick, 10.0, 150.0) / 100.0
+	var runs := _slash_runs(at, travel, half, thick, slash_angle, slash_shape)
 	_tg_plain = true
 	_tg_loop_n = 0.0
-	for side in 2:
+	for side in runs.size():
 		_tg_glow(runs[side], key * 4 + k * 2 + side, int(floor(_t * frames + 0.0001)), alpha, 1.0, false, side)
 	_tg_plain = false
 
