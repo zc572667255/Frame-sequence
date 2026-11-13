@@ -12,6 +12,7 @@ import { pathAt } from "../remote.js";
 //   地面夹角: 0 … 360°, turned round its line of flight (slashTilt): 90°
 //         upright, 0° flat on the ground, a thin ">" seen from the side.
 //   月牙弧度: how far round its arc it reaches, tip to tip (slashSpan).
+//   左右倾斜: leaned over on screen, its top forward or back (slashAxes).
 // godot/slash.js draws exactly the same.
 
 // 月牙弧度: how far round its arc the crescent reaches, tip to tip (degrees,
@@ -60,9 +61,18 @@ export function slashTilt(ground) {
   return { squash: Math.abs(sq) < 0.001 ? (sq < 0 ? -0.001 : 0.001) : sq, shear: SLASH_LEAN * Math.cos(th) };
 }
 
-export function slashFrameOf(at, travel, half, ground, span = SLASH_SPAN) {
+// 左右倾斜 (degrees, -90 … 90): the crescent leaned over on screen round its
+// middle, after it is laid down (地面夹角) — above 0 its top leans forward,
+// the way it flies, below 0 back. Its axes turned that far.
+export const SLASH_LEAN_RANGE = [-90, 90];
+export function slashAxes(travel, lean = 0) {
+  const { x, y } = slashFrame(travel), l = Math.max(-90, Math.min(90, Number(lean) || 0)) * Math.PI / 180, c = Math.cos(l), s = Math.sin(l);
+  return { x: [x[0] * c + y[0] * s, x[1] * c + y[1] * s], y: [y[0] * c - x[0] * s, y[1] * c - x[1] * s] };
+}
+
+export function slashFrameOf(at, travel, half, ground, span = SLASH_SPAN, lean = 0) {
   const { squash, shear } = slashTilt(ground);
-  const { x: X, y: Y } = slashFrame(travel);
+  const { x: X, y: Y } = slashAxes(travel, lean);
   const A = half / Math.sin(span / 2), sag = A * (1 - Math.cos(span / 2));
   const place = (x, y) => { const px = x - y * shear, py = y * squash; return [at[0] + X[0] * px + Y[0] * py, at[1] + X[1] * px + Y[1] * py]; };
   // and back: a point on screen in the upright crescent's own frame
@@ -76,8 +86,8 @@ export const SLASH_END_FADE = 0.3;
 // there is kept (0 past a tip, rising smoothly to 1 in the middle). It goes by
 // where along the arc the point lies (its angle round the arc's centre), so
 // the glow round it fades with it; 半头 fades at its upper tip only
-export function slashEnds(at, travel, half, ground, shape = "full", span = SLASH_SPAN) {
-  const { unplace, cx } = slashFrameOf(at, travel, half, ground, span);
+export function slashEnds(at, travel, half, ground, shape = "full", span = SLASH_SPAN, lean = 0) {
+  const { unplace, cx } = slashFrameOf(at, travel, half, ground, span, lean);
   return (p) => {
     const [x, y] = unplace(p), s = (Math.atan2(y, x - cx) + span / 2) / span;
     return smooth(0, SLASH_END_FADE, s) * (shape === "half" ? 1 : smooth(0, SLASH_END_FADE, 1 - s));
@@ -111,8 +121,8 @@ export function slashInset(A, thick, phi, span = SLASH_SPAN) {
   return Math.max(A - t, thick * 0.02);
 }
 
-export function slashRuns(at, travel, half, thick, ground, shape = "full", span = SLASH_SPAN) {
-  const { place, A, sag } = slashFrameOf(at, travel, half, ground, span);
+export function slashRuns(at, travel, half, thick, ground, shape = "full", span = SLASH_SPAN, lean = 0) {
+  const { place, A, sag } = slashFrameOf(at, travel, half, ground, span, lean);
   const section = (s, u) => {
     const phi = -span / 2 + span * s, W = slashInset(A, thick, phi, span);
     const nx = Math.cos(phi), ny = Math.sin(phi), ox = A * nx - A * Math.cos(span / 2) - sag / 2, oy = A * ny;
@@ -128,8 +138,8 @@ export function slashRuns(at, travel, half, thick, ground, shape = "full", span 
 // along the crescent's arc towards a tip and a little past it, the way that
 // end points, bright at its start and fading out. amount: the palette's
 // speed lines (0..1); each line is a polyline of { p, a } and a width
-export function slashLines(at, travel, half, thick, ground, shape, amount, seed, frame, alpha, span = SLASH_SPAN) {
-  const { place, A, cx } = slashFrameOf(at, travel, half, ground, span), out = [];
+export function slashLines(at, travel, half, thick, ground, shape, amount, seed, frame, alpha, span = SLASH_SPAN, lean = 0) {
+  const { place, A, cx } = slashFrameOf(at, travel, half, ground, span, lean), out = [];
   const S = rng(seed * 131 + 3), P = rng(seed * 131 + frame * 557 + 1), sides = shape === "half" ? [-1] : [-1, 1];
   for (let k = 0, N = Math.round(Math.max(0, amount) * 22); k < N; k++) {
     const dir = sides[k % sides.length], from = (0.05 + 0.3 * S()) * span / 2, to = (1 + 0.1 + 0.3 * S()) * span / 2;
@@ -146,11 +156,11 @@ export function slashLines(at, travel, half, thick, ground, shape, amount, seed,
 // one crescent, painted onto g (canvas coordinates)
 export function drawSlashAt(g, c, s, at, travel, r, scale, alpha, k) {
   if (alpha <= 0.01 || scale <= 0) return;
-  const span = slashSpan(s), half = r * 4 * scale, thick = slashDepth(half, span) * Math.max(10, Math.min(90, s.slashThick ?? 60)) / 100, ground = s.slashAngle ?? 90;
+  const span = slashSpan(s), half = r * 4 * scale, thick = slashDepth(half, span) * Math.max(10, Math.min(90, s.slashThick ?? 60)) / 100, ground = s.slashAngle ?? 90, lean = s.slashLean ?? 0;
   // (the flowing-blade layer smears past a pointed tip; the straight speed
   // lines are drawn curving instead, below)
-  const look = glowStyle(c.pal.preset), style = { ...look, flow: 0, speedLines: 0 }, ends = slashEnds(at, travel, half, ground, s.slashShape, span);
-  slashRuns(at, travel, half, thick, ground, s.slashShape, span).forEach((run, side) => {
+  const look = glowStyle(c.pal.preset), style = { ...look, flow: 0, speedLines: 0 }, ends = slashEnds(at, travel, half, ground, s.slashShape, span, lean);
+  slashRuns(at, travel, half, thick, ground, s.slashShape, span, lean).forEach((run, side) => {
     const cv = renderGlow([run], style, c.w, c.h, { seed: c.seed * 4 + k * 2 + side, frame: c.i, alpha, fade: 0.3, fx: false });
     if (!cv) return;
     // both ends weaken and fade out, not just thin
@@ -160,7 +170,7 @@ export function drawSlashAt(g, c, s, at, travel, r, scale, alpha, k) {
   });
   g.globalCompositeOperation = c.pal.dark ? "source-over" : "lighter";
   g.lineCap = "round";
-  for (const line of slashLines(at, travel, half, thick, ground, s.slashShape, (+look.speedLines || 0) / 100, c.seed * 4 + k * 2, c.i, alpha, span)) {
+  for (const line of slashLines(at, travel, half, thick, ground, s.slashShape, (+look.speedLines || 0) / 100, c.seed * 4 + k * 2, c.i, alpha, span, lean)) {
     g.lineWidth = line.width;
     for (let j = 1; j < line.pts.length; j++) {
       const p = line.pts[j - 1], q = line.pts[j], tone = j < 5 ? c.pal.core : c.pal.rim;

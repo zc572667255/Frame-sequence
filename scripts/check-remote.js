@@ -348,6 +348,30 @@ for (const shape of ["full", "half"]) for (const travel of [0, Math.PI]) {
   assert.ok(FLIGHT_FIELDS.some(f => f.key === "slashCurve" && f.min === 60 && f.max === 240 && flightFieldVisible(f, { kind: "slash", flightPath: "straight" })), "月牙弧度 is offered for 剑气");
   assert.equal(VFX_KINDS.find(k => k.id === "slash").defaults.slashCurve, 170);
 }
+// 左右倾斜: leaned over on screen round its middle, its top towards the way it
+// flies (> 0) or back (< 0), whichever way it flies; the shape itself unchanged
+{
+  const span = SLASH_SPAN, d = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
+  for (const ground of [90, 30, 200]) for (const shape of ["full", "half"]) {
+    assert.deepEqual(slashRuns([100, 100], 0, 40, 20, ground, shape, span, 0), slashRuns([100, 100], 0, 40, 20, ground, shape), "0°: as before");
+    for (const travel of [0, Math.PI]) {
+      const base = slashRuns([100, 100], travel, 40, 20, ground, shape, span, 0)[0], fwd = Math.cos(travel);
+      for (const lean of [-90, -40, 25, 90]) {
+        const run = slashRuns([100, 100], travel, 40, 20, ground, shape, span, lean)[0];
+        assert.ok(run.every((q, i) => Math.abs(d(q.b, [100, 100]) - d(base[i].b, [100, 100])) < 1e-6 && Math.abs(d(q.a, q.b) - d(base[i].a, base[i].b)) < 1e-6), lean + "°: the same crescent, only turned round its middle");
+        if (ground === 90) {
+          const top = run[0].b; // its upper tip, upright straight above its back
+          assert.ok(Math.sign((top[0] - base[0].b[0]) * fwd) === Math.sign(lean), lean + "° flying " + (fwd > 0 ? "right" : "left") + ": its top leans " + (lean > 0 ? "forward" : "back"));
+        }
+        const ends = slashEnds([100, 100], travel, 40, ground, shape, span, lean), m = q => [(q.a[0] + q.b[0]) / 2, (q.a[1] + q.b[1]) / 2];
+        assert.ok(ends(m(run[shape === "half" ? 16 : 16])) > 0.99 && ends(m(run[1])) < 0.2, lean + "°: its ends still fade where they are");
+        assert.ok(slashLines([100, 100], travel, 40, 20, ground, shape, 0.35, 7, 3, 1, span, lean).every(l => l.pts.every(q => q.p.every(Number.isFinite))));
+      }
+    }
+  }
+  assert.ok(FLIGHT_FIELDS.some(f => f.key === "slashLean" && f.min === -90 && f.max === 90 && flightFieldVisible(f, { kind: "slash", flightPath: "straight" })), "左右倾斜 is offered for 剑气");
+  assert.equal(VFX_KINDS.find(k => k.id === "slash").defaults.slashLean, 0);
+}
 for (const travel of [0, Math.PI, 0.3, -0.4]) assert.ok(slashFrame(travel).y[1] > 0, "up stays up whichever way it flies");
 for (const k of [0.1, 0.6, 0.9, 1.5]) {
   const run = slashRuns([0, 0], 0, 40, slashDepth(40) * k, 90, "full")[0];
@@ -405,7 +429,7 @@ assert.equal(slashFade(0), 1); assert.equal(slashFade(1), 0);
   const k = VFX_KINDS.find(x => x.id === "slash");
   assert.ok(k.defaults.startX < k.defaults.endX && k.defaults.startY === k.defaults.endY && k.defaults.slashAngle === 90, "剑气 flies left to right, upright, by default");
 }
-console.log("剑气两头尖 / 半头、鼓面朝前、0°~360° 连续旋转的地面夹角、60°~240° 月牙弧度、横向飞行与消失检查通过");
+console.log("剑气两头尖 / 半头、鼓面朝前、0°~360° 连续旋转的地面夹角、-90°~90° 左右倾斜、60°~240° 月牙弧度、横向飞行与消失检查通过");
 
 // 攻击拖尾 两头尖: drawn once, whole (no end is the trail's own tail), both ends faded
 {

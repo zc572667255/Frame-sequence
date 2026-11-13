@@ -25,7 +25,7 @@ func _slash_span() -> float:
 # 画月牙的这一段时间里，按 at/travel/half/ground/shape 设好两头变淡
 func _slash_mask_begin(at: Vector2, travel: float, half: float, ground: float, shape: String) -> void:
 	var tilt := _slash_tilt(ground)
-	var fr := _slash_frame(travel)
+	var fr := _slash_axes(travel)
 	var span := _slash_span()
 	var A := half / sin(span / 2.0)
 	var sag := A * (1.0 - cos(span / 2.0))
@@ -60,6 +60,14 @@ func _slash_frame(travel: float) -> Array:
 	if y.y < 0.0 or (absf(y.y) < 1e-9 and y.x < 0.0): y = -y
 	return [x, y]
 
+# 左右倾斜（度，-90 … 90）：放倒（地面夹角）之后再绕正中在屏幕上斜过去，大于 0 上端往前（飞行方向）倾，小于 0 往后倾
+func _slash_axes(travel: float) -> Array:
+	var fr := _slash_frame(travel)
+	var l := clampf(slash_lean, -90.0, 90.0) * PI / 180.0
+	var x: Vector2 = fr[0]
+	var y: Vector2 = fr[1]
+	return [x * cos(l) + y * sin(l), y * cos(l) - x * sin(l)]
+
 # 月牙是一整段拖尾：截面 {a 内侧, b 外侧（亮边）, u}。两头尖：从上尖一直画到下尖，两头尖完全靠厚度收出来，
 # u 从拖尾中段开始，两头都不会淡没；半头：从上尖画到正中平切处（拖尾最粗的头）。
 # ground 是和地面的夹角（度，0 … 360，见 _slash_tilt）
@@ -67,7 +75,7 @@ func _slash_runs(at: Vector2, travel: float, half: float, thick: float, ground: 
 	var tilt := _slash_tilt(ground)
 	var squash := tilt.x
 	var shear := tilt.y
-	var fr := _slash_frame(travel)
+	var fr := _slash_axes(travel)
 	var X: Vector2 = fr[0]
 	var Y: Vector2 = fr[1]
 	var span := _slash_span()
@@ -122,7 +130,7 @@ func _slash_lines(at: Vector2, travel: float, half: float, thick: float, ground:
 	var tilt := _slash_tilt(ground)
 	var squash := tilt.x
 	var shear := tilt.y
-	var fr := _slash_frame(travel)
+	var fr := _slash_axes(travel)
 	var X: Vector2 = fr[0]
 	var Y: Vector2 = fr[1]
 	var span := _slash_span()
