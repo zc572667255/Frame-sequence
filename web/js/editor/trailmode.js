@@ -648,20 +648,19 @@ export class TrailMode {
     };
     // the plane of the swing: in the picture (chops, diagonal cuts) or a
     // horizontal sweep around the body seen in perspective (an ellipse)
-    const flat = t.plane === "flat" || t.plane === "spiral", spiral = t.plane === "spiral";
-    const plane = el("select", { class: "ed-select", title: "横扫：刀在水平面上绕身体转，从正面看是一个压扁的椭圆，远侧那一半在角色身后。螺旋：一样绕身体转，但一边转一边升高或降低（可以先升后降），不在一个平面上" },
-      ...[["screen", "画面内（竖劈、斜劈、上挑）"], ["flat", "横扫（水平绕身，椭圆透视）"], ["spiral", "螺旋（绕身转，高度一边转一边变）"]]
+    if (t.plane === "spiral") t.plane = "flat"; // 螺旋 was dropped: shown and drawn as 横扫
+    const flat = t.plane === "flat";
+    const plane = el("select", { class: "ed-select", title: "横扫：刀在水平面上绕身体转，从正面看是一个压扁的椭圆，远侧那一半在角色身后" },
+      ...[["screen", "画面内（竖劈、斜劈、上挑）"], ["flat", "横扫（水平绕身，椭圆透视）"]]
         .map(([v, n]) => el("option", { value: v, selected: (t.plane || "screen") === v }, n)));
-    plane.onchange = () => this.edit(() => { t.plane = plane.value; if (plane.value !== "screen") t.rotate = true; });
+    plane.onchange = () => this.edit(() => { t.plane = plane.value; if (plane.value === "flat") t.rotate = true; });
     P.append(el("div", { class: "tm-row" }, el("span", { class: "tm-label" }, "挥动平面"), plane));
     if (flat) {
       trailSlider("压扁", "squash", 10, 100, 100, "%", 0.35, "椭圆的高度和宽度之比：越小越扁（视线越平），100% 是正圆（从头顶往下看）");
       trailSlider("倾斜", "tilt", -60, 60, 1, "°", 0, "整个挥动平面的倾斜角：斜着横扫（比如从左下扫到右上）时调它");
       const ad = el("input", { type: "checkbox", checked: t.autoDepth !== false, onchange: () => this.edit(() => { t.autoDepth = ad.checked; }) });
       P.append(el("label", { class: "ed-check" }, ad, "远侧自动绕到角色后方（刀尖朝里的那半圈）"));
-      P.append(el("p", { class: "ed-hint" }, spiral
-        ? "棍子按画面上看到的样子画：刀朝左右时最长，朝向或背向镜头时变短；刀尖比椭圆高就是抬起来了、低就是压下去了，一圈里可以先升后降。插值保持刀长不变，沿椭圆转、同时平滑地升降。「压扁」设成刀平着转时椭圆的扁度。开着「远侧自动」时，每帧的「前方 / 后方」按钮不起作用。"
-        : "棍子按画面上看到的样子画：刀朝左右时棍子长，刀朝向镜头或背向镜头时棍子变短（透视），插值会把它们连成椭圆。转一整圈时如果刀尖有高有低（螺旋），改用「螺旋」。开着「远侧自动」时，每帧的「前方 / 后方」按钮不起作用。"));
+      P.append(el("p", { class: "ed-hint" }, "棍子按画面上看到的样子画：刀朝左右时棍子长，刀朝向镜头或背向镜头时棍子变短（透视），插值会把它们连成椭圆。开着「远侧自动」时，每帧的「前方 / 后方」按钮不起作用。"));
     }
     // which way round the blade travels between sticks: with few frames a big
     // swing is ambiguous, and "the smaller turn" can take it under instead of over

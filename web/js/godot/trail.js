@@ -68,7 +68,7 @@ export function trailEntry(raw, frameIds) {
     name: clean(t.name),
     length: Math.max(1, t.length | 0), dissolve: Math.max(0, t.dissolve ?? 3) | 0,
     rotate: t.rotate !== false, turn: t.turn || "auto", bow: +t.bow || 0, smooth: t.smooth !== false,
-    plane: t.plane === "flat" || t.plane === "spiral" ? t.plane : "screen", squash: +t.squash || 0.35, tilt: +t.tilt || 0, autoDepth: t.autoDepth !== false,
+    plane: t.plane === "flat" ? "flat" : "screen", squash: +t.squash || 0.35, tilt: +t.tilt || 0, autoDepth: t.autoDepth !== false,
     shape: st.shape || "head", taper: st.taper ?? 0.25, headArc: st.headArc ?? 0.5,
     fade: st.fade ?? 0.6, opacity: (st.opacity ?? 100) / 100, fineness: Math.max(2, Math.min(64, st.fineness | 0 || 20)),
     color: colorSpec(st),
@@ -781,8 +781,6 @@ func _sections(s: Array, smooth: bool, fineness: int, rotate: bool, turn: String
 # 横扫：在倾斜、压扁的挥动平面里插值，刀尖在屏幕上走椭圆
 func _swept(t: Dictionary, sticks: Array) -> Array:
 	var fine := int(t["fineness"])
-	if t["plane"] == "spiral":
-		return _spiral(t, sticks)
 	if t["plane"] != "flat":
 		return _sections(sticks, t["smooth"], fine, t["rotate"], t["turn"])
 	var sq := clampf(float(t["squash"]), 0.05, 1.0)
@@ -800,105 +798,6 @@ func _swept(t: Dictionary, sticks: Array) -> Array:
 		var b: Vector2 = q["b"]
 		var back: bool = (b.y - a.y < 0.0) if t["autoDepth"] else q["back"]
 		out.append({"a": Vector2(a.x * c - a.y * sq * sn, a.x * sn + a.y * sq * c), "b": Vector2(b.x * c - b.y * sq * sn, b.x * sn + b.y * sq * c), "back": back, "u": q["u"]})
-	return out
-
-
-# 螺旋：和横扫一样绕身体转，但不在一个平面上——刀一边转一边升高或降低（可以先升后降）。
-# 按横扫的样子看（先去掉倾斜、压扁 k），棍子相对握柄是 [L cos φ, k L sin φ + h]：刀长 L 不变（棍子侧对时最长），
-# φ 是绕身体的角度（sin φ > 0 朝向镜头），h 是这一刻抬高了多少。cos φ = dx / L；每根棍子在前半圈还是后半圈
-# 选成「刀朝一个方向转、转得最少、高度变得最少」（两种朝向的动态规划）。棍子之间握柄、φ、h 各自平滑插值
-func _spiral(t: Dictionary, sticks: Array) -> Array:
-	var n := clampi(int(t["fineness"]), 2, 64)
-	var m := sticks.size()
-	var k := clampf(float(t["squash"]), 0.05, 1.0)
-	var tl := deg_to_rad(float(t["tilt"]))
-	var c := cos(tl)
-	var s := sin(tl)
-	var d := []
-	var side := 0.0
-	var flat_len := 0.0
-	for q in sticks:
-		var v: Vector2 = q["b"] - q["a"]
-		var u := Vector2(v.x * c + v.y * s, -v.x * s + v.y * c)
-		d.append(u)
-		side = maxf(side, absf(u.x))
-		flat_len = maxf(flat_len, Vector2(u.x, u.y / k).length())
-	var L := maxf(1e-3, flat_len if side < 0.25 * flat_len else side)  # 没有一根侧对时按横扫的长度
-	var base := []
-	for u in d:
-		base.append(acos(clampf(u.x / L, -1.0, 1.0)))
-	var best_total := INF
-	var best_sides := []
-	var best_dir := 1.0
-	var dirs := [1.0] if t["turn"] == "cw" else ([-1.0] if t["turn"] == "ccw" else [1.0, -1.0])
-	for dir in dirs:
-		var cost := [0.0, 0.0]
-		var from := []
-		for i in range(1, m):
-			var nxt := [INF, INF]
-			var pick := [0, 0]
-			for b in 2:
-				for a in 2:
-					var fb: float = base[i] if b == 1 else -float(base[i])
-					var fa: float = base[i - 1] if a == 1 else -float(base[i - 1])
-					var step := fposmod(dir * (fb - fa), TAU)
-					var hb: float = (d[i] as Vector2).y - k * L * sin(fb)
-					var ha: float = (d[i - 1] as Vector2).y - k * L * sin(fa)
-					var v: float = float(cost[a]) + step + (2.0 * (step - PI) if step > PI else 0.0) + 1.5 * absf(hb - ha) / (k * L)
-					if v < float(nxt[b]):
-						nxt[b] = v
-						pick[b] = a
-			from.append(pick)
-			cost = nxt
-		var sd := 1 if float(cost[1]) <= float(cost[0]) else 0
-		var total := minf(float(cost[0]), float(cost[1]))
-		if total < best_total:
-			var sides := [sd]
-			for i in range(m - 2, -1, -1):
-				sd = int(from[i][sd])
-				sides.push_front(sd)
-			best_total = total
-			best_sides = sides
-			best_dir = dir
-	var phi := []
-	var h := []
-	for i in m:
-		var f: float = base[i] if int(best_sides[i]) == 1 else -float(base[i])
-		if i > 0:
-			var p: float = phi[i - 1]
-			while best_dir * (f - p) < 0.0:
-				f += best_dir * TAU
-			while best_dir * (f - p) >= TAU:
-				f -= best_dir * TAU
-		phi.append(f)
-		h.append((d[i] as Vector2).y - k * L * sin(f))
-	var pa := []
-	for q in sticks:
-		pa.append(q["a"])
-	var ea := _extend(pa)
-	var ef := _extend(phi)
-	var eh := _extend(h)
-	var out := []
-	for i in range(m - 1):
-		for j in range(n):
-			var tt := float(j) / n
-			var a: Vector2 = _cr(ea[i], ea[i + 1], ea[i + 2], ea[i + 3], tt) if t["smooth"] else (sticks[i]["a"] as Vector2).lerp(sticks[i + 1]["a"], tt)
-			var f: float = _cr(ef[i], ef[i + 1], ef[i + 2], ef[i + 3], tt) if t["smooth"] else lerpf(phi[i], phi[i + 1], tt)
-			var hh: float = _cr(eh[i], eh[i + 1], eh[i + 2], eh[i + 3], tt) if t["smooth"] else lerpf(h[i], h[i + 1], tt)
-			var o := Vector2(L * cos(f), k * L * sin(f) + hh)
-			var back: bool = (sin(f) < 0.0) if t["autoDepth"] else (sticks[i] if tt < 0.5 else sticks[i + 1])["back"]
-			out.append({"a": a, "b": a + Vector2(o.x * c - o.y * s, o.x * s + o.y * c), "back": back})
-	var last: Dictionary = sticks[m - 1]
-	var fl: float = phi[m - 1]
-	var ol := Vector2(L * cos(fl), k * L * sin(fl) + float(h[m - 1]))
-	out.append({"a": last["a"], "b": (last["a"] as Vector2) + Vector2(ol.x * c - ol.y * s, ol.x * s + ol.y * c), "back": (sin(fl) < 0.0) if t["autoDepth"] else last["back"]})
-	var total := 0.0
-	out[0]["u"] = 0.0
-	for i in range(1, out.size()):
-		total += ((out[i]["a"] + out[i]["b"]) * 0.5).distance_to((out[i - 1]["a"] + out[i - 1]["b"]) * 0.5)
-		out[i]["u"] = total
-	for q in out:
-		q["u"] = q["u"] / total if total > 0.0 else 0.0
 	return out
 
 

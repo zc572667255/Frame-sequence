@@ -72,7 +72,9 @@ export function newTrail(id, name, style) {
 }
 
 export function normalizeTrail(t) {
-  return { ...newTrail(t.id, t.name), ...t, style: { ...STYLE_DEFAULTS, ...(t.style || {}) }, keys: t.keys || {} };
+  const out = { ...newTrail(t.id, t.name), ...t, style: { ...STYLE_DEFAULTS, ...(t.style || {}) }, keys: t.keys || {} };
+  if (out.plane === "spiral") out.plane = "flat"; // 螺旋 (tried, then dropped): a 横扫 again
+  return out;
 }
 
 // What the trail shows on frame `fi` (frameIds: the animation's frame order):
@@ -181,18 +183,6 @@ function cr(p0, p1, p2, p3, t) {
 
 const cr1 = (p0, p1, p2, p3, t) => cr([p0, 0], [p1, 0], [p2, 0], [p3, 0], t)[0];
 
-// i → the i-th of m values (numbers or points), carried on past both ends as
-// it was going: from the last three (it keeps bending the same way), or two
-function extendAt(m, get) {
-  return (i) => {
-    if (i >= 0 && i < m) return get(i);
-    const [p, q, r] = i < 0 ? [0, 1, 2] : [m - 1, m - 2, m - 3];
-    const A = get(p), B = get(q), C = m >= 3 ? get(r) : null;
-    const f = (x, y, z) => (C ? 3 * x - 3 * y + z : 2 * x - y);
-    return typeof A === "number" ? f(A, B, C) : [f(A[0], B[0], C && C[0]), f(A[1], B[1], C && C[1])];
-  };
-}
-
 // dense cross-sections through the sticks, with u ∈ [0, 1] by arc length of the
 // stick midpoints (0 = oldest stick / tail, 1 = current stick / head).
 // rotate: interpolate each stick as (inner point, angle, length) — a blade turning
@@ -223,7 +213,13 @@ function sections(S, smooth, fineness, rotate, turn) {
   // rest. Instead the swing is carried on past its ends as it was going: from
   // the last three sticks (it keeps bending the same way), or two.
   const m = S.length;
-  const ext = (get) => extendAt(m, get);
+  const ext = (get) => (i) => {
+    if (i >= 0 && i < m) return get(i);
+    const [p, q, r] = i < 0 ? [0, 1, 2] : [m - 1, m - 2, m - 3];
+    const A = get(p), B = get(q), C = m >= 3 ? get(r) : null;
+    const f = (x, y, z) => (C ? 3 * x - 3 * y + z : 2 * x - y);
+    return typeof A === "number" ? f(A, B, C) : [f(A[0], B[0], C && C[0]), f(A[1], B[1], C && C[1])];
+  };
   const PA = ext((i) => S[i].a), PB = ext((i) => S[i].b), PT = ext((i) => ang[i]), PL = ext((i) => lens[i]);
   const out = [];
   for (let k = 0; k < S.length - 1; k++) {
@@ -263,10 +259,9 @@ function sections(S, smooth, fineness, rotate, turn) {
 // runs on an ellipse. Only the y scale differs between the two spaces, so the
 // pivot of the stretch doesn't matter. With autoDepth the part where the blade
 // points away from the viewer (up, on the plane) goes behind the character.
-export function sweptSections(trail, sticks) {
+function sweptSections(trail, sticks) {
   const smooth = trail.smooth !== false, fineness = trail.style.fineness, turn = trail.turn || "auto";
-  if (trail.plane === "spiral") return spiralSections(trail, sticks, smooth, fineness, turn);
-  if (trail.plane !== "flat") return sections(sticks, smooth, fineness, trail.rotate !== false, turn);
+  if (trail.plane !== "flat" && trail.plane !== "spiral") return sections(sticks, smooth, fineness, trail.rotate !== false, turn);
   const k = Math.max(0.05, Math.min(1, +trail.squash || 0.35));
   const th = ((+trail.tilt || 0) * Math.PI) / 180, c = Math.cos(th), s = Math.sin(th);
   const toPlane = (p) => [p[0] * c + p[1] * s, (-p[0] * s + p[1] * c) / k];
@@ -277,83 +272,6 @@ export function sweptSections(trail, sticks) {
     a: fromPlane(q.a), b: fromPlane(q.b),
     z: trail.autoDepth !== false ? (q.b[1] - q.a[1] < 0 ? "back" : "front") : q.z,
   }));
-}
-
-// 螺旋 (spiral): a sweep round the body like 横扫, but not in one plane — the
-// blade circles while it rises or sinks (a whirling spin attack), so the
-// sticks do not lie on one ellipse. Seen the 横扫 way (tilt undone, squash k),
-// a stick's screen offset from the grip is
-//     [L cos φ, k L sin φ + h]
-// — the blade of length L at angle φ round the body (sin φ > 0 towards the
-// viewer), lifted by h. The blade keeps its length (L: the longest the sticks
-// show side on), so cos φ = dx / L; which side each stick is on (the sign of
-// sin φ) is picked so the blade turns one way round, as little as it can,
-// with h changing as little as it can. Between the sticks the grip, φ and h
-// are blended (the tip runs round the ellipse while it rises or sinks) and
-// with autoDepth the far half goes behind the character.
-function spiralSections(trail, sticks, smooth, fineness, turn) {
-  const n = Math.max(2, Math.min(64, fineness | 0 || 20)), TAU = 2 * Math.PI, m = sticks.length;
-  const k = Math.max(0.05, Math.min(1, +trail.squash || 0.35));
-  const th = ((+trail.tilt || 0) * Math.PI) / 180, c = Math.cos(th), s = Math.sin(th);
-  const untilt = (p) => [p[0] * c + p[1] * s, -p[0] * s + p[1] * c], tilt = (p) => [p[0] * c - p[1] * s, p[0] * s + p[1] * c];
-  const d = sticks.map((q) => untilt([q.b[0] - q.a[0], q.b[1] - q.a[1]]));
-  // (no stick ever side on — all pointing at or away from the viewer: then
-  // the length the 横扫 way)
-  const side = Math.max(...d.map((v) => Math.abs(v[0]))), flatLen = Math.max(...d.map((v) => Math.hypot(v[0], v[1] / k)));
-  const L = Math.max(1e-3, side < 0.25 * flatLen ? flatLen : side);
-  const base = d.map((v) => Math.acos(Math.max(-1, Math.min(1, v[0] / L))));        // 0 … π: the front half's angle
-  const phiOf = (i, side) => side > 0 ? base[i] : -base[i];
-  const hOf = (i, side) => d[i][1] - k * L * Math.sin(phiOf(i, side));
-  // one way round (dir +1: φ growing, -1: shrinking): the sides that turn least
-  // and change the height least (dynamic programming over the two sides)
-  const solve = (dir) => {
-    let cost = [0, 0], from = [];
-    for (let i = 1; i < m; i++) {
-      const next = [Infinity, Infinity], pick = [0, 0];
-      for (let b = 0; b < 2; b++) for (let a = 0; a < 2; a++) {
-        let step = (dir * (phiOf(i, b ? 1 : -1) - phiOf(i - 1, a ? 1 : -1))) % TAU;
-        if (step < 0) step += TAU;
-        const lift = Math.abs(hOf(i, b ? 1 : -1) - hOf(i - 1, a ? 1 : -1)) / (k * L);
-        const v = cost[a] + step + (step > Math.PI ? 2 * (step - Math.PI) : 0) + 1.5 * lift;
-        if (v < next[b]) { next[b] = v; pick[b] = a; }
-      }
-      from.push(pick); cost = next;
-    }
-    let side = cost[1] <= cost[0] ? 1 : 0;
-    const total = Math.min(cost[0], cost[1]), sides = [side];
-    for (let i = m - 2; i >= 0; i--) { side = from[i][side]; sides.unshift(side); }
-    return { total, sides: sides.map((x) => (x ? 1 : -1)), dir };
-  };
-  const ways = turn === "cw" ? [solve(1)] : turn === "ccw" ? [solve(-1)] : [solve(1), solve(-1)];
-  const best = ways.reduce((x, y) => (y.total < x.total ? y : x));
-  const phi = [], h = [];
-  best.sides.forEach((side, i) => {
-    let a = phiOf(i, side);
-    if (i) { const p = phi[i - 1]; while (best.dir * (a - p) < 0) a += best.dir * TAU; while (best.dir * (a - p) >= TAU) a -= best.dir * TAU; }
-    phi.push(a); h.push(hOf(i, side));
-  });
-  const PA = extendAt(m, (i) => sticks[i].a), PF = extendAt(m, (i) => phi[i]), PH = extendAt(m, (i) => h[i]);
-  const at = (a, f, hh) => { const o = tilt([L * Math.cos(f), k * L * Math.sin(f) + hh]); return [a[0] + o[0], a[1] + o[1]]; };
-  const depth = (f, q) => (trail.autoDepth !== false ? (Math.sin(f) < 0 ? "back" : "front") : q.z || "front");
-  const out = [];
-  for (let i = 0; i < m - 1; i++) for (let j = 0; j < n; j++) {
-    const t = j / n;
-    const a = smooth ? cr(PA(i - 1), PA(i), PA(i + 1), PA(i + 2), t) : lerp(sticks[i].a, sticks[i + 1].a, t);
-    const f = smooth ? cr1(PF(i - 1), PF(i), PF(i + 1), PF(i + 2), t) : phi[i] + (phi[i + 1] - phi[i]) * t;
-    const hh = smooth ? cr1(PH(i - 1), PH(i), PH(i + 1), PH(i + 2), t) : h[i] + (h[i + 1] - h[i]) * t;
-    out.push({ a, b: at(a, f, hh), z: depth(f, t < 0.5 ? sticks[i] : sticks[i + 1]) });
-  }
-  const last = sticks[m - 1];
-  out.push({ a: last.a.slice(), b: at(last.a, phi[m - 1], h[m - 1]), z: depth(phi[m - 1], last) });
-  let len = 0;
-  out[0].u = 0;
-  for (let i = 1; i < out.length; i++) {
-    const m0 = lerp(out[i - 1].a, out[i - 1].b, 0.5), m1 = lerp(out[i].a, out[i].b, 0.5);
-    len += Math.hypot(m1[0] - m0[0], m1[1] - m0[1]);
-    out[i].u = len;
-  }
-  for (const q of out) q.u = len ? q.u / len : 0;
-  return out;
 }
 
 // Bow the whole sweep sideways by bow * sin(πu): zero at both ends, largest in
