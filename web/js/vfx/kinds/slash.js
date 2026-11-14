@@ -9,10 +9,11 @@ import { pathAt } from "../remote.js";
 // at the far end.
 //   外形: 两头尖 — the whole crescent, pointed at both tips; 半头 — only its
 //         upper half, cut off flat at its thick middle, which rides the path.
-//   地面夹角: 0 … 360°, turned round its line of flight (slashTilt): 90°
-//         upright, 0° flat on the ground, a thin ">" seen from the side.
+//   地面夹角: 0 … 360°, turned round its line of flight, the axis from the
+//         start point to the end point (slashTilt): 90° upright, 0° flat.
 //   月牙弧度: how far round its arc it reaches, tip to tip (slashSpan).
-//   左右倾斜: leaned over on screen, its top forward or back (slashAxes).
+//   左右倾斜: leaned over while upright, its top forward or back, before it
+//         is laid down (slashLeanOf).
 // godot/slash.js draws exactly the same.
 
 // 月牙弧度: how far round its arc the crescent reaches, tip to tip (degrees,
@@ -48,35 +49,44 @@ export function slashFrame(travel) {
 // (x forward, y down, its middle at the origin) on screen; its outer edge is
 // the circle of radius A round [cx, 0], at angle phi (0 its middle, -SPAN/2
 // its upper tip)
-// The ground angle, 0 … 360: the crescent turned round its line of flight, as
-// seen from the side and a little above. 90 upright, 0 (and 180) flat on the
-// ground, squashed, its lower tip trailing; in between it turns smoothly —
-// edge on (a thin streak) about 163° and 343°, upside down at 270 — with no
-// jump anywhere, and 360 is 0 again. squash: how tall it shows (signed: below
-// 0 it is upside down), shear: how far its lower tip trails.
-export const SLASH_SKEW = 0.3, SLASH_LEAN = 0.25;
+// The ground angle, 0 … 360: the crescent turned round its line of flight —
+// the axis from the start point to the end point — as seen from the side and
+// a little above. Every point keeps its place along the flight; only how far
+// it stands off the line changes. 90 upright, 0 (and 180) flat on the ground,
+// squashed; edge on (a thin streak) about 163° and 343°, upside down at 270,
+// with no jump anywhere, and 360 is 0 again. squash: how tall it shows
+// (signed: below 0 it is upside down).
+export const SLASH_SKEW = 0.3;
 export function slashTilt(ground) {
   const th = (Number(ground) || 0) * Math.PI / 180, sq = Math.sin(th) + SLASH_SKEW * Math.cos(th);
   // never quite 0: the way back from the screen (unplace) divides by it
-  return { squash: Math.abs(sq) < 0.001 ? (sq < 0 ? -0.001 : 0.001) : sq, shear: SLASH_LEAN * Math.cos(th) };
+  return { squash: Math.abs(sq) < 0.001 ? (sq < 0 ? -0.001 : 0.001) : sq };
 }
 
-// 左右倾斜 (degrees, -90 … 90): the crescent leaned over on screen round its
-// middle, after it is laid down (地面夹角) — above 0 its top leans forward,
-// the way it flies, below 0 back. Its axes turned that far.
+// 左右倾斜 (degrees, -90 … 90): the crescent leaned over round its middle
+// while it still stands upright (地面夹角 90°), above 0 its top forward, the
+// way it flies, below 0 back — and only then laid down by the ground angle.
+// As [cos, sin] of the lean.
 export const SLASH_LEAN_RANGE = [-90, 90];
-export function slashAxes(travel, lean = 0) {
-  const { x, y } = slashFrame(travel), l = Math.max(-90, Math.min(90, Number(lean) || 0)) * Math.PI / 180, c = Math.cos(l), s = Math.sin(l);
-  return { x: [x[0] * c + y[0] * s, x[1] * c + y[1] * s], y: [y[0] * c - x[0] * s, y[1] * c - x[1] * s] };
+export function slashLeanOf(lean = 0) {
+  const l = Math.max(-90, Math.min(90, Number(lean) || 0)) * Math.PI / 180;
+  return [Math.cos(l), Math.sin(l)];
 }
 
 export function slashFrameOf(at, travel, half, ground, span = SLASH_SPAN, lean = 0) {
-  const { squash, shear } = slashTilt(ground);
-  const { x: X, y: Y } = slashAxes(travel, lean);
+  const { squash } = slashTilt(ground);
+  const { x: X, y: Y } = slashFrame(travel), [lc, ls] = slashLeanOf(lean);
   const A = half / Math.sin(span / 2), sag = A * (1 - Math.cos(span / 2));
-  const place = (x, y) => { const px = x - y * shear, py = y * squash; return [at[0] + X[0] * px + Y[0] * py, at[1] + X[1] * px + Y[1] * py]; };
+  // leaned first (upright), then turned round the flight line
+  const place = (x0, y0) => {
+    const px = x0 * lc - y0 * ls, py = (x0 * ls + y0 * lc) * squash;
+    return [at[0] + X[0] * px + Y[0] * py, at[1] + X[1] * px + Y[1] * py];
+  };
   // and back: a point on screen in the upright crescent's own frame
-  const unplace = ([qx, qy]) => { const dx = qx - at[0], dy = qy - at[1], py = dx * Y[0] + dy * Y[1], y = py / squash; return [dx * X[0] + dy * X[1] + y * shear, y]; };
+  const unplace = ([qx, qy]) => {
+    const dx = qx - at[0], dy = qy - at[1], y = (dx * Y[0] + dy * Y[1]) / squash, x = dx * X[0] + dy * X[1];
+    return [x * lc + y * ls, -x * ls + y * lc];
+  };
   return { place, unplace, A, sag, cx: -A * Math.cos(span / 2) - sag / 2 };
 }
 

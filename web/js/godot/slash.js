@@ -9,14 +9,14 @@ var _tg_plain := false  # 剑气：完全照拖尾本身的画法（不用远程
 var _sm_on := false
 var _sm := {}
 
-# 和地面的夹角（度，0 … 360）→ Vector2(squash, shear)：月牙绕着飞行方向转，从侧面稍微偏上看。
-# 90 竖直，0（和 180）平行地面、扁扁的、下面的尖靠后；中间连续转过去，没有跳变：约 163° 和 343° 侧对（一道细线），
-# 270 倒过来，360 又回到 0。squash 显示多高（有正负，小于 0 是倒过来的），shear 下面的尖靠后多少
-func _slash_tilt(ground: float) -> Vector2:
+# 和地面的夹角（度，0 … 360）→ squash：月牙绕着飞行线（起点到终点这条轴）转，从侧面稍微偏上看。
+# 每一点沿着飞行方向的位置不变，只有离飞行线多远在变：90 竖直，0（和 180）平行地面、扁扁的；
+# 约 163° 和 343° 侧对（一道细线），270 倒过来，360 又回到 0，中间没有跳变。有正负，小于 0 是倒过来的
+func _slash_tilt(ground: float) -> float:
 	var th := ground * PI / 180.0
 	var sq := sin(th) + 0.3 * cos(th)
 	if absf(sq) < 0.001: sq = -0.001 if sq < 0.0 else 0.001  # 从屏幕换回月牙坐标要除以它
-	return Vector2(sq, 0.25 * cos(th))
+	return sq
 
 # 月牙弧度：从一个尖到另一个尖绕弧多少（度，60 … 240，默认 170）。弦长不变：小了更平、更浅，大了更深，过了 180 两个尖往回卷成「C」
 func _slash_span() -> float:
@@ -25,19 +25,19 @@ func _slash_span() -> float:
 # 画月牙的这一段时间里，按 at/travel/half/ground/shape 设好两头变淡
 func _slash_mask_begin(at: Vector2, travel: float, half: float, ground: float, shape: String) -> void:
 	var tilt := _slash_tilt(ground)
-	var fr := _slash_axes(travel)
+	var fr := _slash_frame(travel)
 	var span := _slash_span()
 	var A := half / sin(span / 2.0)
 	var sag := A * (1.0 - cos(span / 2.0))
-	_sm = {"at": at, "X": fr[0], "Y": fr[1], "squash": tilt.x, "shear": tilt.y, "cx": -A * cos(span / 2.0) - sag / 2.0, "span": span, "half": shape == "half"}
+	_sm = {"at": at, "X": fr[0], "Y": fr[1], "squash": tilt, "cx": -A * cos(span / 2.0) - sag / 2.0, "span": span, "half": shape == "half"}
 	_sm_on = true
 
 # 屏幕上一点留下多少光：过了尖是 0，往中间平滑升到 1（按它在弧上的角度，所以周围的光晕跟着一起淡）
 func _slash_ends(p: Vector2) -> float:
 	var d: Vector2 = p - (_sm.at as Vector2)
 	var y: float = d.dot(_sm.Y) / float(_sm.squash)
-	var x: float = d.dot(_sm.X) + y * float(_sm.shear)
-	var s := (atan2(y, x - float(_sm.cx)) + float(_sm.span) / 2.0) / float(_sm.span)
+	var q := Vector2(d.dot(_sm.X), y).rotated(-clampf(slash_lean, -90.0, 90.0) * PI / 180.0)
+	var s := (atan2(q.y, q.x - float(_sm.cx)) + float(_sm.span) / 2.0) / float(_sm.span)
 	return _smooth(0.0, 0.3, s) * (1.0 if _sm.half else _smooth(0.0, 0.3, 1.0 - s))
 
 func _slash_mask_cols(pts: PackedVector2Array, cols: PackedColorArray) -> PackedColorArray:
@@ -60,22 +60,18 @@ func _slash_frame(travel: float) -> Array:
 	if y.y < 0.0 or (absf(y.y) < 1e-9 and y.x < 0.0): y = -y
 	return [x, y]
 
-# 左右倾斜（度，-90 … 90）：放倒（地面夹角）之后再绕正中在屏幕上斜过去，大于 0 上端往前（飞行方向）倾，小于 0 往后倾
-func _slash_axes(travel: float) -> Array:
-	var fr := _slash_frame(travel)
-	var l := clampf(slash_lean, -90.0, 90.0) * PI / 180.0
-	var x: Vector2 = fr[0]
-	var y: Vector2 = fr[1]
-	return [x * cos(l) + y * sin(l), y * cos(l) - x * sin(l)]
+# 左右倾斜（度，-90 … 90）：先在竖直（地面夹角 90°）的时候绕正中斜过去，大于 0 上端往前（飞行方向）倾，小于 0 往后倾，
+# 然后再按地面夹角绕飞行线转。月牙自己坐标里的一点 → 斜过去之后
+func _slash_lean(p: Vector2) -> Vector2:
+	return p.rotated(clampf(slash_lean, -90.0, 90.0) * PI / 180.0)
 
 # 月牙是一整段拖尾：截面 {a 内侧, b 外侧（亮边）, u}。两头尖：从上尖一直画到下尖，两头尖完全靠厚度收出来，
 # u 从拖尾中段开始，两头都不会淡没；半头：从上尖画到正中平切处（拖尾最粗的头）。
 # ground 是和地面的夹角（度，0 … 360，见 _slash_tilt）
 func _slash_runs(at: Vector2, travel: float, half: float, thick: float, ground: float, shape: String) -> Array:
 	var tilt := _slash_tilt(ground)
-	var squash := tilt.x
-	var shear := tilt.y
-	var fr := _slash_axes(travel)
+	var squash := tilt
+	var fr := _slash_frame(travel)
 	var X: Vector2 = fr[0]
 	var Y: Vector2 = fr[1]
 	var span := _slash_span()
@@ -92,9 +88,9 @@ func _slash_runs(at: Vector2, travel: float, half: float, thick: float, ground: 
 		var ny := sin(phi)
 		var ox := A * nx - A * cos(span / 2.0) - sag / 2.0
 		var oy := A * ny
-		var ix := ox - nx * W
-		var iy := oy - ny * W
-		run.append({"a": at + X * (ix - iy * shear) + Y * (iy * squash), "b": at + X * (ox - oy * shear) + Y * (oy * squash), "u": u})
+		var pin := _slash_lean(Vector2(ox - nx * W, oy - ny * W))
+		var po := _slash_lean(Vector2(ox, oy))
+		run.append({"a": at + X * pin.x + Y * (pin.y * squash), "b": at + X * po.x + Y * (po.y * squash), "u": u})
 	return [run]
 
 # 内侧边也是一段圆弧（穿过两个尖、正中离外弧 thick 的圆），所以凹进去的地方永远是凹的：thick 不超过月牙鼓出的深度。
@@ -128,9 +124,8 @@ func _slash_at(at: Vector2, travel: float, r: float, scale0: float, alpha: float
 # 光丝：配色里拖尾的速度线，但顺着月牙的弧线走：从正中附近沿着弧往一个尖去，过了尖再顺着弯一点，开头亮、往外淡去
 func _slash_lines(at: Vector2, travel: float, half: float, thick: float, ground: float, shape: String, quantity: float, key: int, frame: int, alpha: float) -> void:
 	var tilt := _slash_tilt(ground)
-	var squash := tilt.x
-	var shear := tilt.y
-	var fr := _slash_axes(travel)
+	var squash := tilt
+	var fr := _slash_frame(travel)
 	var X: Vector2 = fr[0]
 	var Y: Vector2 = fr[1]
 	var span := _slash_span()
@@ -154,9 +149,8 @@ func _slash_lines(at: Vector2, travel: float, half: float, thick: float, ground:
 		for j in 17:
 			var f := j / 16.0
 			var phi := dir * (from + (to - from) * f)
-			var x := cx + cos(phi) * rad
-			var y := sin(phi) * rad
-			pts.append(at + X * (x - y * shear) + Y * (y * squash))
+			var q := _slash_lean(Vector2(cx + cos(phi) * rad, sin(phi) * rad))
+			pts.append(at + X * q.x + Y * (q.y * squash))
 			var aj := a * (0.85 - 0.35 * f / 0.3 if f < 0.3 else 0.5 * (1.0 - (f - 0.3) / 0.7))
 			cols.append(_col(core_color if j < 5 else rim_color, aj))
 		_line(pts, cols, width)

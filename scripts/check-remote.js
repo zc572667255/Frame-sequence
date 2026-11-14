@@ -6,7 +6,7 @@ import { ribbonSections, materialAt, flameFlow } from "../web/js/vfx/remotetrail
 import { flightTrailWindow } from "../web/js/vfx/remote.js";
 import { alongPath, iceSwirl, iceLance, iceColors } from "../web/js/vfx/kinds/ice.js";
 import { iceBurst } from "../web/js/vfx/kinds/icehit.js";
-import { slashRuns, slashFrame, slashFade, slashCopies, slashLines, slashEnds, slashDepth, slashSpan, SLASH_SPAN } from "../web/js/vfx/kinds/slash.js";
+import { slashRuns, slashFrame, slashFade, slashCopies, slashLines, slashEnds, slashDepth, slashSpan, slashTilt, SLASH_SPAN } from "../web/js/vfx/kinds/slash.js";
 import { paletteOf } from "../web/js/vfx/common.js";
 import { shapeOf } from "../web/js/vfx/catalog.js";
 import { thunderDischarge } from "../web/js/vfx/kinds/thunderhit.js";
@@ -288,7 +288,7 @@ for (const ground of [0, 30, 60, 90]) for (const travel of [0, Math.PI, 0.3]) fo
       for (let i = 2; i < 31; i++) assert.ok(inner[i - 1] + inner[i + 1] - 2 * inner[i] <= 1e-6, "the inner edge never bulges back into the hollow");
     }
     if (ground === 90) { assert.ok(Math.abs(height - 80) < 1e-6, "upright: the whole crescent, as tall as its chord"); assert.ok(Math.abs(along(bottom) - along(top)) < 1e-6, "upright: both tips level"); }
-    if (ground === 0) { assert.ok(Math.abs(height - 24) < 1e-6, "parallel to the ground: flattened, seen from the side"); assert.ok(along(bottom) < along(top) - 1, "lying down, the lower tip trails further back"); }
+    if (ground === 0) { assert.ok(Math.abs(height - 24) < 1e-6, "parallel to the ground: flattened, seen from the side"); assert.ok(Math.abs(along(bottom) - along(top)) < 1e-6, "lying down, both tips still level along the flight"); }
   }
 }
 // turned all the way round its line of flight, 0 … 360, smoothly: no jump
@@ -312,9 +312,9 @@ for (const shape of ["full", "half"]) for (const travel of [0, Math.PI]) {
   else {
     assert.ok(Math.abs(across(down[0].b) - 40) < 1e-6 && Math.abs(across(down.at(-1).b) + 40) < 1e-6, "upside down at 270°, as tall as upright");
     const tips = (r) => { const [a, b] = [r[0].b, r.at(-1).b]; return across(a) < across(b) ? [a, b] : [b, a]; }; // [upper, lower] on screen
-    const [u0, l0] = tips(at(30)), [u1, l1] = tips(at(135));
-    assert.ok(along(l0) < along(u0) - 1, "30°: its top leans forward");
-    assert.ok(along(u1) < along(l1) - 1, "135°: its top leans back");
+    // turned round the flight line (start → end): every point keeps its place along the flight
+    for (const g of [0, 30, 135, 163, 250, 300]) assert.ok(at(g).every((q, i) => Math.abs(along(q.b) - along(up[i].b)) < 1e-6 && Math.abs(along(q.a) - along(up[i].a)) < 1e-6), g + "°: turned round the flight line, nothing slides along it");
+    void tips;
     assert.ok(same(at(200), [...at(20)].reverse()), "two-tipped, half a turn on looks the same (its tips swapped)");
   }
   const edge = at(163.3);
@@ -348,23 +348,29 @@ for (const shape of ["full", "half"]) for (const travel of [0, Math.PI]) {
   assert.ok(FLIGHT_FIELDS.some(f => f.key === "slashCurve" && f.min === 60 && f.max === 240 && flightFieldVisible(f, { kind: "slash", flightPath: "straight" })), "月牙弧度 is offered for 剑气");
   assert.equal(VFX_KINDS.find(k => k.id === "slash").defaults.slashCurve, 170);
 }
-// 左右倾斜: leaned over on screen round its middle, its top towards the way it
-// flies (> 0) or back (< 0), whichever way it flies; the shape itself unchanged
+// 左右倾斜: leaned over round its middle while it stands upright (地面夹角
+// 90°), its top towards the way it flies (> 0) or back (< 0), whichever way it
+// flies — and only then laid down by the ground angle
 {
   const span = SLASH_SPAN, d = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
-  for (const ground of [90, 30, 200]) for (const shape of ["full", "half"]) {
+  for (const ground of [90, 30, 0, 200]) for (const shape of ["full", "half"]) {
     assert.deepEqual(slashRuns([100, 100], 0, 40, 20, ground, shape, span, 0), slashRuns([100, 100], 0, 40, 20, ground, shape), "0°: as before");
     for (const travel of [0, Math.PI]) {
-      const base = slashRuns([100, 100], travel, 40, 20, ground, shape, span, 0)[0], fwd = Math.cos(travel);
+      const { x: X, y: Y } = slashFrame(travel), fwd = Math.cos(travel), { squash } = slashTilt(ground);
+      const along = p => (p[0] - 100) * X[0] + (p[1] - 100) * X[1], across = p => (p[0] - 100) * Y[0] + (p[1] - 100) * Y[1];
+      const upright0 = slashRuns([100, 100], travel, 40, 20, 90, shape, span, 0)[0];
       for (const lean of [-90, -40, 25, 90]) {
-        const run = slashRuns([100, 100], travel, 40, 20, ground, shape, span, lean)[0];
-        assert.ok(run.every((q, i) => Math.abs(d(q.b, [100, 100]) - d(base[i].b, [100, 100])) < 1e-6 && Math.abs(d(q.a, q.b) - d(base[i].a, base[i].b)) < 1e-6), lean + "°: the same crescent, only turned round its middle");
-        if (ground === 90) {
-          const top = run[0].b; // its upper tip, upright straight above its back
-          assert.ok(Math.sign((top[0] - base[0].b[0]) * fwd) === Math.sign(lean), lean + "° flying " + (fwd > 0 ? "right" : "left") + ": its top leans " + (lean > 0 ? "forward" : "back"));
+        const run = slashRuns([100, 100], travel, 40, 20, ground, shape, span, lean)[0], upright = slashRuns([100, 100], travel, 40, 20, 90, shape, span, lean)[0];
+        // upright, the lean is a plain turn round its middle
+        assert.ok(upright.every((q, i) => Math.abs(d(q.b, [100, 100]) - d(upright0[i].b, [100, 100])) < 1e-6 && Math.abs(d(q.a, q.b) - d(upright0[i].a, upright0[i].b)) < 1e-6), lean + "°: upright, the same crescent turned round its middle");
+        assert.ok(Math.sign((upright[0].b[0] - upright0[0].b[0]) * fwd) === Math.sign(lean), lean + "° flying " + (fwd > 0 ? "right" : "left") + ": its top leans " + (lean > 0 ? "forward" : "back"));
+        // then turned round the flight line: the leaned upright crescent, only its distance off the line scaled
+        for (const [i, q] of run.entries()) for (const k of ["a", "b"]) {
+          const a = along(upright[i][k]), c = across(upright[i][k]);
+          assert.ok(Math.abs(along(q[k]) - a) < 1e-6 && Math.abs(across(q[k]) - c * squash) < 1e-6, lean + "° at " + ground + "°: leaned first, then turned round the flight line");
         }
         const ends = slashEnds([100, 100], travel, 40, ground, shape, span, lean), m = q => [(q.a[0] + q.b[0]) / 2, (q.a[1] + q.b[1]) / 2];
-        assert.ok(ends(m(run[shape === "half" ? 16 : 16])) > 0.99 && ends(m(run[1])) < 0.2, lean + "°: its ends still fade where they are");
+        assert.ok(ends(m(run[16])) > 0.99 && ends(m(run[1])) < 0.2, lean + "° at " + ground + "°: its ends still fade where they are");
         assert.ok(slashLines([100, 100], travel, 40, 20, ground, shape, 0.35, 7, 3, 1, span, lean).every(l => l.pts.every(q => q.p.every(Number.isFinite))));
       }
     }
