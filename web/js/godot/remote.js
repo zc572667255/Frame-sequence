@@ -12,7 +12,7 @@ function properties(p) {
     flight_count: p.flightCount | 0, flight_interval: p.flightInterval | 0, flight_spread: +p.flightSpread,
     flight_frame_budget: p.remoteFrameBudget ?? 64,
     remote_size: +(p.remoteSize ?? 50), body_box: `Vector2(${+(+(p.bodyBox?.[0] ?? 1.5)).toFixed(4)}, ${+(+(p.bodyBox?.[1] ?? 1.5)).toFixed(4)})`, trail_frames: +p.trailFrames, trail_width: +p.trailWidth,
-    head_width: +p.headWidth, head_curve: +p.headCurve, slash_angle: +p.slashAngle, slash_shape: JSON.stringify(p.slashShape || "full"), slash_thick: +(p.slashThick ?? 60), slash_curve: +(p.slashCurve ?? 170), slash_lean: +(p.slashLean ?? 0),
+    head_width: +p.headWidth, head_curve: +p.headCurve, slash_angle: +p.slashAngle, slash_shape: JSON.stringify(p.slashShape || "full"), slash_thick: +(p.slashThick ?? 60), slash_curve: +(p.slashCurve ?? 170), slash_lean: +(p.slashLean ?? 0), slash_strands: +(p.slashStrands ?? 25),
     impact_kind: JSON.stringify(p.impactKind), impact_size: +p.impactSize,
   };
 }

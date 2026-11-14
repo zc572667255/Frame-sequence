@@ -336,7 +336,9 @@ export function rays(runs, w, h, coreC, rimC, seed, frame, alpha, maxW, amount) 
 // disappears behind the blade); where it comes round the front it goes into
 // `front`, over the blade but see-through, wider and with a thin bright core.
 // The winding turns on every frame. Returns { back, front } canvases.
-export function curls(runs, w, h, coreC, rimC, seed, frame, alpha, maxW, amount, loop = 0) {
+// reach < 1 (剑气): the bands stay inside the blade, swinging that share as
+// far, and fade with amount instead of only thinning out.
+export function curls(runs, w, h, coreC, rimC, seed, frame, alpha, maxW, amount, loop = 0, reach = 1) {
   const r = runs[runs.length - 1];
   if (r.length < 2) return null;
   const N = 2 + Math.round(amount * 2);
@@ -347,7 +349,7 @@ export function curls(runs, w, h, coreC, rimC, seed, frame, alpha, maxW, amount,
   const bandW = Math.max(3, maxW / 6), coreW = Math.max(0.8, maxW / 45);
   for (let k = 0; k < N; k++) {
     const u0 = 0.02 + 0.3 * S(), u1 = Math.min(1, u0 + 0.6 + 0.4 * S());
-    const turns = 0.6 + 0.4 * S(), amp = 0.75 + 0.2 * S();
+    const turns = 0.6 + 0.4 * S(), amp = (0.75 + 0.2 * S()) * reach;
     // round a loop: whole turns per cycle, near the speed it would have
     const ph0 = S() * 6.28, rate = 0.45 + 0.25 * S(), phase = ph0 + frame * (loop ? Math.max(1, Math.round(rate * loop / 6.28)) * 6.28 / loop : rate);
     const fat = 0.7 + 0.5 * S();
@@ -360,7 +362,7 @@ export function curls(runs, w, h, coreC, rimC, seed, frame, alpha, maxW, amount,
       fr.push(z >= 0);
       ws.push(fat * Math.pow(Math.sin(Math.PI * t), 0.8) * (0.55 + 0.45 * Math.max(0, z)));
     }
-    const a = alpha * (0.55 + 0.45 * u1);
+    const a = alpha * (0.55 + 0.45 * u1) * (reach < 1 ? Math.min(1, amount * 2.5) : 1);
     const band = (g, i0, i1, scale) => {
       const lo = [], hi = [];
       for (let i = i0; i <= i1; i++) {

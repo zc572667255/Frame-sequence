@@ -18,6 +18,8 @@ import { FLIGHT_FIELDS, flightFieldVisible } from "../web/js/vfx/remote.js";
 import { projectileBounds, projectileShape, PROJECTILES } from "../web/js/vfx/kinds/arrow.js";
 import { vfxRegion, vfxRect, vfxSettings } from "../web/js/vfx/layer.js";
 import { vfxData } from "../web/js/godot/vfx.js";
+import { codeParamsFrom as gdParams } from "../web/js/godot/code.js";
+import { remoteProps as gdProps } from "../web/js/godot/remote.js";
 import { VFX_KINDS } from "../web/js/vfx/effects.js";
 
 const close = (a, b) => assert.ok(Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-6, `${a} != ${b}`);
@@ -375,6 +377,9 @@ for (const shape of ["full", "half"]) for (const travel of [0, Math.PI]) {
       }
     }
   }
+  assert.ok(FLIGHT_FIELDS.some(f => f.key === "slashStrands" && f.min === 0 && f.max === 100 && flightFieldVisible(f, { kind: "slash", flightPath: "straight" })), "剑气光丝 is offered for 剑气");
+  assert.equal(VFX_KINDS.find(k => k.id === "slash").defaults.slashStrands, 25);
+  assert.ok(gdProps(gdParams({ ...VFX_KINDS.find(k => k.id === "slash").defaults, kind: "slash", slashStrands: 70 }, 64, 64, 12).remote).includes("slash_strands = 70"), "Godot gets 剑气光丝");
   assert.ok(FLIGHT_FIELDS.some(f => f.key === "slashLean" && f.min === -90 && f.max === 90 && flightFieldVisible(f, { kind: "slash", flightPath: "straight" })), "左右倾斜 is offered for 剑气");
   assert.equal(VFX_KINDS.find(k => k.id === "slash").defaults.slashLean, 0);
 }
@@ -383,7 +388,7 @@ for (const k of [0.1, 0.6, 0.9, 1.5]) {
   const run = slashRuns([0, 0], 0, 40, slashDepth(40) * k, 90, "full")[0];
   assert.ok(run[16].a[0] > run[0].b[0], "however thick, the hollow never fills or bulges");
 }
-// 光丝 curve along the arc towards the tips and on past them, never straight
+// 光丝 curve along the arc towards the tips, ending inside the crescent before them, never straight
 for (const shape of ["full", "half"]) for (const ground of [90, 40, 0]) {
   const lines = slashLines([100, 100], 0, 40, 20, ground, shape, 0.35, 7, 3, 1);
   assert.equal(lines.length, Math.round(0.35 * 22));
@@ -392,7 +397,8 @@ for (const shape of ["full", "half"]) for (const ground of [90, 40, 0]) {
     assert.ok(pts.at(-1).a < 1e-9, "each fades out at its far end");
     const [p0, p1, p2] = [pts[0].p, pts[8].p, pts[16].p], bend = Math.abs((p1[0] - p0[0]) * (p2[1] - p0[1]) - (p1[1] - p0[1]) * (p2[0] - p0[0]));
     assert.ok(bend > 1, "it curves, it is not a straight line");
-    assert.ok(p2[0] < p0[0], "it runs from the middle back past a tip");
+    assert.ok(p2[0] < p0[0], "it runs from the middle back towards a tip");
+    if (ground === 90) assert.ok(Math.abs(p2[1] - 100) < 40 * 0.97, "it ends before the tip, never sticking out of the crescent");
     if (shape === "half") assert.ok(p2[1] < 100, "半头: only the upper half has strands");
   }
 }

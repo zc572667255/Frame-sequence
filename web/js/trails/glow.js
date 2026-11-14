@@ -242,7 +242,7 @@ export function renderGlow(runs, style, fullW, fullH, ctx = {}) {
     if (Rk) og.drawImage(Rk, 0, 0);
 
     // ---- wind wound round the blade: its back half goes under the blade
-    const Cw = pct("curls") > 0 ? curls(runs, w, h, coreC, rimC, seed, frame, alpha, maxW, pct("curls"), ctx.loop | 0) : null;
+    const Cw = pct("curls") > 0 ? curls(runs, w, h, coreC, rimC, seed, frame, alpha, maxW, pct("curls"), ctx.loop | 0, st.curlReach ?? 1) : null;
     if (Cw) { og.globalCompositeOperation = "lighter"; og.drawImage(Cw.back, 0, 0); og.globalCompositeOperation = "source-over"; }
 
     // ---- flames: tongues of fire off the blade

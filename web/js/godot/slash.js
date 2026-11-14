@@ -135,9 +135,9 @@ func _slash_at(at: Vector2, travel: float, r: float, scale0: float, alpha: float
 	_sm_on = false
 	_tg_plain = false
 	var li := TG_KEYS.find("speedLines")
-	_slash_lines(at, travel, half, thick, slash_angle, slash_shape, trail_look[li] if li >= 0 and li < trail_look.size() else 0.0, key * 4 + k * 2, frame, alpha)
+	_slash_lines(at, travel, half, thick, slash_angle, slash_shape, (trail_look[li] if li >= 0 and li < trail_look.size() else 0.0) * clampf(slash_strands, 0.0, 100.0) / 100.0 * 1.4, key * 4 + k * 2, frame, alpha)
 
-# 光丝：配色里拖尾的速度线，但顺着月牙的弧线走：从正中附近沿着弧往一个尖去，过了尖再顺着弯一点，开头亮、往外淡去
+# 光丝：配色里拖尾的速度线，但顺着月牙的弧线走：从正中附近沿着弧往一个尖去，在尖前面（尖淡没的地方）就收住，不伸出月牙，开头亮、往外淡去
 func _slash_lines(at: Vector2, travel: float, half: float, thick: float, ground: float, shape: String, quantity: float, key: int, frame: int, alpha: float) -> void:
 	var tilt := _slash_tilt(ground)
 	var squash := tilt
@@ -154,8 +154,8 @@ func _slash_lines(at: Vector2, travel: float, half: float, thick: float, ground:
 	_add = additive
 	for k in roundi(maxf(0.0, quantity) * 22.0):
 		var dir: float = sides[k % sides.size()]
-		var from := (0.05 + 0.3 * S.next()) * span / 2.0
-		var to := (1.1 + 0.3 * S.next()) * span / 2.0
+		var from := (0.02 + 0.28 * S.next()) * span / 2.0
+		var to := (0.7 + 0.22 * S.next()) * span / 2.0
 		var depth := thick * (0.05 + 0.6 * S.next())
 		var width := maxf(0.6, thick / (30.0 + 50.0 * S.next()))
 		var a := alpha * (0.35 + 0.5 * P.next())

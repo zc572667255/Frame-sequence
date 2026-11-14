@@ -3178,6 +3178,9 @@ func _tg_glow(r: Array, seed: int, frame: int, alpha: float, gain: float, top: b
 	if _tg_plain:
 		L["flow"] = 0.0  # 剑气：流动的刀身在细尖处会拖出一团，不画
 		L["speedLines"] = 0.0  # 剑气：直的速度线改成顺着弧线走的光丝（_slash_lines）
+		# 剑气光丝：刀身上的细丝和卷流按 slash_strands 减少
+		L["strands"] = L["strands"] * clampf(slash_strands, 0.0, 100.0) / 100.0
+		L["curls"] = L["curls"] * clampf(slash_strands, 0.0, 100.0) / 100.0
 	if _remote_active() and not full_preset and not _tg_plain:
 		L["core"] = 0.24
 		L["haze"] = 0.1
@@ -3660,7 +3663,7 @@ func _tg_curls(r: Array, core: Color, rim: Color, seed: int, frame: int, alpha: 
 		var u0 := 0.02 + 0.3 * S.next()
 		var u1 := minf(1.0, u0 + 0.6 + 0.4 * S.next())
 		var turns := 0.6 + 0.4 * S.next()
-		var amp := 0.75 + 0.2 * S.next()
+		var amp := (0.75 + 0.2 * S.next()) * (0.45 if _tg_plain else 1.0)  # 剑气：卷流留在月牙里面
 		var phase := S.next() * 6.28
 		var rate := 0.45 + 0.25 * S.next()
 		# 循环时每圈正好转整数圈
@@ -3678,7 +3681,7 @@ func _tg_curls(r: Array, core: Color, rim: Color, seed: int, frame: int, alpha: 
 			var z := cos(ang)
 			fr.append(z >= 0.0)
 			ws.append(fat * pow(maxf(0.0, sin(PI * t)), 0.8) * (0.55 + 0.45 * maxf(0.0, z)))
-		var a := alpha * (0.55 + 0.45 * u1)
+		var a := alpha * (0.55 + 0.45 * u1) * (minf(1.0, amount * 2.5) if _tg_plain else 1.0)
 		var i0 := 0
 		for i in range(1, n + 1):
 			if i < n and fr[i] == fr[i0]:

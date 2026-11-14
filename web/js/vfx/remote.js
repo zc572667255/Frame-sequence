@@ -10,7 +10,7 @@ export const REMOTE_DEFAULTS = {
   flightCount: 1, flightInterval: 3, flightSpread: 12,
   bodySize: 7, trailFrames: 8, trailWidth: 70, impactKind: "auto", impactSize: 22,
   headWidth: 100, headCurve: 35,
-  slashAngle: 90, slashShape: "full", slashThick: 60, slashCurve: 170, slashLean: 0, // 剑气: angle to the ground (0 … 360, turned round its line of flight: 90 upright, 0 parallel to it), 外形 (kinds/slash.js SLASH_SHAPES), thickness (% of how deep the crescent bows), 弧度 (degrees round its arc, tip to tip), 左右倾斜 (degrees, its top forward > 0 or back < 0)
+  slashAngle: 90, slashShape: "full", slashThick: 60, slashCurve: 170, slashLean: 0, slashStrands: 25, // 剑气: angle to the ground (0 … 360, turned round its line of flight: 90 upright, 0 parallel to it), 外形 (kinds/slash.js SLASH_SHAPES), thickness (% of how deep the crescent bows), 弧度 (degrees round its arc, tip to tip), 左右倾斜 (degrees, its top forward > 0 or back < 0)
 };
 export const FLIGHT_FIELDS = [
   { label: "移动路径", key: "flightPath", options: FLIGHT_PATHS, always: true },
@@ -39,6 +39,7 @@ export const FLIGHT_FIELDS = [
   { label: "左右倾斜", key: "slashLean", min: -90, max: 90, unit: "°", kind: "slash", always: true },
   { label: "剑气厚度", key: "slashThick", min: 10, max: 90, unit: "%", kind: "slash", always: true },
   { label: "月牙弧度", key: "slashCurve", min: 60, max: 240, unit: "°", kind: "slash", always: true },
+  { label: "剑气光丝", key: "slashStrands", min: 0, max: 100, unit: "%", kind: "slash", always: true },
   { label: "命中效果", key: "impactKind", options: FLIGHT_IMPACTS },
   { label: "命中范围", key: "impactSize", min: 5, max: 40, unit: "%" },
 ];

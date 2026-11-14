@@ -26,6 +26,13 @@ const HALF_SECTIONS = 16;
 // where along the trail a whole crescent starts: past the trail's faded tail
 export const SLASH_U0 = 0.35;
 export const SLASH_SHAPES = [["full", "两头尖"], ["half", "半头"]];
+// 剑气光丝 (slashStrands %, 0 … 100, 25 by default): how much of the trail's
+// thin-line layers it gets — its many fine lines along the blade (strands),
+// its curls, and the curved strands — at 100 as the attack trail has them
+export const SLASH_STRANDS = 25;
+// the wind curls (白风, 疾风 …) swing only this share as far, staying inside the crescent
+export const SLASH_CURL_REACH = 0.45;
+export const slashStrandsOf = (s) => Math.max(0, Math.min(100, Number(s?.slashStrands ?? SLASH_STRANDS) || 0)) / 100;
 
 // after it arrives: fading out over the 命中消散 frames (hit 0 → 1)
 export const slashFade = (hit) => 1 - smooth(0, 1, hit);
@@ -145,14 +152,14 @@ export function slashRuns(at, travel, half, thick, ground, shape = "full", span 
 }
 
 // 光丝: the trail's speed lines, but curving: each runs from near the middle
-// along the crescent's arc towards a tip and a little past it, the way that
-// end points, bright at its start and fading out. amount: the palette's
+// along the crescent's arc towards a tip, ending before it inside the
+// crescent (where the tip fades), bright at its start and fading out. amount: the palette's
 // speed lines (0..1); each line is a polyline of { p, a } and a width
 export function slashLines(at, travel, half, thick, ground, shape, amount, seed, frame, alpha, span = SLASH_SPAN, lean = 0) {
   const { place, A, cx } = slashFrameOf(at, travel, half, ground, span, lean), out = [];
   const S = rng(seed * 131 + 3), P = rng(seed * 131 + frame * 557 + 1), sides = shape === "half" ? [-1] : [-1, 1];
   for (let k = 0, N = Math.round(Math.max(0, amount) * 22); k < N; k++) {
-    const dir = sides[k % sides.length], from = (0.05 + 0.3 * S()) * span / 2, to = (1 + 0.1 + 0.3 * S()) * span / 2;
+    const dir = sides[k % sides.length], from = (0.02 + 0.28 * S()) * span / 2, to = (0.7 + 0.22 * S()) * span / 2;
     const depth = thick * (0.05 + 0.6 * S()), width = Math.max(0.6, thick / (30 + 50 * S())), a = alpha * (0.35 + 0.5 * P()), rad = A - depth, pts = [];
     for (let j = 0; j <= 16; j++) {
       const f = j / 16, phi = dir * (from + (to - from) * f);
@@ -169,7 +176,7 @@ export function drawSlashAt(g, c, s, at, travel, r, scale, alpha, k) {
   const span = slashSpan(s), half = r * 4 * scale, thick = slashDepth(half, span) * Math.max(10, Math.min(90, s.slashThick ?? 60)) / 100, ground = s.slashAngle ?? 90, lean = s.slashLean ?? 0;
   // (the flowing-blade layer smears past a pointed tip; the straight speed
   // lines are drawn curving instead, below)
-  const look = glowStyle(c.pal.preset), style = { ...look, flow: 0, speedLines: 0 }, ends = slashEnds(at, travel, half, ground, s.slashShape, span, lean);
+  const look = glowStyle(c.pal.preset), fine = slashStrandsOf(s), style = { ...look, flow: 0, speedLines: 0, strands: (+look.strands || 0) * fine, curls: (+look.curls || 0) * fine, curlReach: SLASH_CURL_REACH }, ends = slashEnds(at, travel, half, ground, s.slashShape, span, lean);
   slashRuns(at, travel, half, thick, ground, s.slashShape, span, lean).forEach((run, side) => {
     const cv = renderGlow([run], style, c.w, c.h, { seed: c.seed * 4 + k * 2 + side, frame: c.i, alpha, fade: 0.3, fx: false });
     if (!cv) return;
@@ -180,7 +187,7 @@ export function drawSlashAt(g, c, s, at, travel, r, scale, alpha, k) {
   });
   g.globalCompositeOperation = c.pal.dark ? "source-over" : "lighter";
   g.lineCap = "round";
-  for (const line of slashLines(at, travel, half, thick, ground, s.slashShape, (+look.speedLines || 0) / 100, c.seed * 4 + k * 2, c.i, alpha, span, lean)) {
+  for (const line of slashLines(at, travel, half, thick, ground, s.slashShape, (+look.speedLines || 0) / 100 * fine * 1.4, c.seed * 4 + k * 2, c.i, alpha, span, lean)) {
     g.lineWidth = line.width;
     for (let j = 1; j < line.pts.length; j++) {
       const p = line.pts[j - 1], q = line.pts[j], tone = j < 5 ? c.pal.core : c.pal.rim;
