@@ -1,6 +1,6 @@
 import { defineNode } from "../registry.js";
-import { makeStage, readPixel, toolButton } from "../view.js";
-import { mapRaster, stillOf } from "../data.js";
+import { makeStage, makePlayer, readPixel, toolButton } from "../view.js";
+import { mapRaster, asFrames } from "../data.js";
 import { removeBackground } from "../../imaging/background.js";
 import { el, hexToRgb, rgbToHex } from "../../core/util.js";
 
@@ -15,7 +15,16 @@ function addSample(ctx, c) {
 
 function toggleSampling(ctx, on) {
   ctx.setLocal({ mode: on ? "sample" : null });
-  if (on) ctx.toast("在卡片的图上点击背景取色，可以连点多个位置；按 Esc 结束。");
+  if (on) ctx.toast("在卡片的图上点击背景取色，可以连点多个位置；用卡片下方的 ◀ ▶（或 Alt + 滚轮）换到其他帧取色；按 Esc 结束。");
+}
+
+// the input frame the card is showing (ctx.local.fi), as a canvas: what is
+// sampled is always the original colour there, also where it is cleared already
+function shownInput(ctx) {
+  const v = asFrames(ctx.input("src"));
+  if (!v || !v.frames.length) return null;
+  const i = Math.max(0, Math.min(v.frames.length - 1, ctx.local.fi | 0));
+  return v.frames[i].canvas;
 }
 
 defineNode({
@@ -48,30 +57,69 @@ defineNode({
 
   mount(ctx) {
     const stage = makeStage();
+    const frameLabel = el("span", { class: "mono stage-badge" });
     ctx.body.append(stage.el);
+    stage.el.append(frameLabel);
     const pick = toolButton("取样", "在图上点击取背景色（Esc 结束）", () => toggleSampling(ctx, ctx.local.mode !== "sample"));
     ctx.tools.append(pick);
+
+    // the card shows one frame of the result at a time, paused: step through
+    // them to sample the background where it shows on any frame
+    const player = makePlayer(stage, {
+      fps: () => 8,
+      autoplay: false,
+      emptyText: "连接图像或序列帧",
+      onFrame: (i, n, playing) => {
+        ctx.local.fi = i; // shared with the inspector (取四角颜色), not saved
+        frameLabel.textContent = n > 1 ? (i + 1) + "/" + n : "";
+        counter.textContent = n > 1 ? "第 " + (i + 1) + " / " + n + " 帧" : "";
+        playBtn.textContent = playing ? "❚❚" : "▶";
+        transport.style.display = n > 1 ? "" : "none";
+      },
+    });
+    const counter = el("span", { class: "mono" });
+    const playBtn = el("button", { class: "tool-btn", title: "播放 / 暂停", onclick: (e) => { e.stopPropagation(); player.toggle(); } }, "▶");
+    const transport = el("div", { class: "transport" },
+      el("button", { class: "tool-btn", title: "上一帧（Alt + 滚轮也可以）", onclick: (e) => { e.stopPropagation(); player.step(-1); } }, "◀"),
+      playBtn,
+      el("button", { class: "tool-btn", title: "下一帧（Alt + 滚轮也可以）", onclick: (e) => { e.stopPropagation(); player.step(1); } }, "▶"),
+      counter);
+    ctx.body.append(transport);
+    stage.el.addEventListener("wheel", (e) => {
+      if (!e.altKey) return;
+      e.preventDefault(); e.stopPropagation();
+      player.step(e.deltaY > 0 ? 1 : -1);
+    }, { passive: false });
 
     stage.canvas.addEventListener("pointerdown", (e) => {
       if (ctx.local.mode !== "sample" || e.button !== 0) return;
       e.stopPropagation();
-      const src = stillOf(ctx.input("src"));
+      if (player.playing) player.pause();
+      const src = shownInput(ctx);
       if (!src) return;
       const { x, y } = stage.point(e);
       const c = readPixel(src, x, y);
-      if (!c) { ctx.toast("这里已经是透明的，换个位置取样。"); return; }
-      if (!addSample(ctx, c)) ctx.toast("这个颜色已经取过了。");
+      const n = (asFrames(ctx.input("src")) || { frames: [] }).frames.length, where = n > 1 ? "（第 " + ((ctx.local.fi | 0) + 1) + " 帧）" : "";
+      if (!c) { ctx.toast("这里原本就是透明的，换个位置取样。"); return; }
+      if (!addSample(ctx, c)) ctx.toast("这个颜色" + where + "已经取过了。");
+      else if (n > 1) ctx.toast("取到 " + rgbToHex(c) + where + "：所有帧里容差内的这个颜色都会被清除。");
     });
 
+    let lastKey = null;
     return {
       render() {
         const sampling = ctx.local.mode === "sample";
         pick.classList.toggle("active", sampling);
         stage.el.classList.toggle("picking", sampling);
         const v = ctx.output("out") || ctx.input("src");
-        const still = stillOf(v);
-        if (still) stage.show(still, null, v.ver); else stage.message("连接图像或序列帧");
+        const key = (v ? v.ver : "-") + ":" + sampling;
+        if (key === lastKey) return;
+        lastKey = key;
+        // stays on the frame it was on when the result changes (a new sample)
+        player.setValue(asFrames(v));
+        if (sampling && player.playing) player.pause(); else player.redraw();
       },
+      destroy() { player.destroy(); },
     };
   },
 
@@ -82,7 +130,8 @@ defineNode({
         sync: (b) => { b.textContent = ctx.local.mode === "sample" ? "取样中…点击结束" : "在图上取样"; },
       }],
       ["取四角颜色", () => {
-        const src = stillOf(ctx.input("src"));
+        // the corners of the frame the card is showing
+        const src = shownInput(ctx);
         if (!src) return;
         const w = src.width, h = src.height;
         let list = [...(ctx.params().samples || [])];
@@ -108,6 +157,7 @@ defineNode({
       )));
     });
 
+    f.hint("取样色对所有帧都生效。序列帧可以用卡片下方的 ◀ ▶（或在图上 Alt + 滚轮）换到其他帧，在那一帧上取它残留的背景色；「取四角颜色」取的是当前显示这一帧的四角。");
     f.slider("容差", "tol", { min: 0, max: 120 });
     f.check("仅清除与画布边缘相连的区域", "connected", {
       hint: "只清掉从四边蔓延进来的背景，角色身上碰巧同色的像素会保留。人物身上被打出洞时勾上它。",
