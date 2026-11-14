@@ -103,6 +103,22 @@ func _slash_inset(A: float, thick: float, phi: float, span: float) -> float:
 	var t := d * cos(phi) + sqrt(maxf(0.0, d * d * cos(phi) * cos(phi) - d * d + B * B))
 	return maxf(A - t, thick * 0.02)
 
+# 剑气在半径 1（半弦长 4）时看得见的半宽、半高（淡没的尖不算，加上一圈光），给「特效大小」用
+func _slash_box() -> Vector2:
+	var span := _slash_span()
+	var thick := 4.0 / sin(span / 2.0) * (1.0 - cos(span / 2.0)) * clampf(slash_thick, 10.0, 90.0) / 100.0
+	var run: Array = _slash_runs(Vector2.ZERO, 0.0, 4.0, thick, slash_angle, slash_shape)[0]
+	var n := run.size() - 1
+	var b := Vector2.ZERO
+	for i in run.size():
+		# 两头淡没的尖不算（淡到 0.2 以下）
+		var s := 0.5 * i / n if slash_shape == "half" else float(i) / n
+		if _smooth(0.0, 0.3, s) * (1.0 if slash_shape == "half" else _smooth(0.0, 0.3, 1.0 - s)) < 0.2: continue
+		for k in ["a", "b"]:
+			var v: Vector2 = run[i][k]
+			b = Vector2(maxf(b.x, absf(v.x)), maxf(b.y, absf(v.y)))
+	return b + Vector2(0.15, 0.15)
+
 # 画一道剑气（k：第几个残影，用来换随机）
 func _slash_at(at: Vector2, travel: float, r: float, scale0: float, alpha: float, k: int, key: int) -> void:
 	if alpha <= 0.01 or scale0 <= 0.0: return

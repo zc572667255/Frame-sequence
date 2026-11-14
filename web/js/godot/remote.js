@@ -1,6 +1,9 @@
 import { REMOTE_DEFAULTS, remoteFrameLimit } from "../vfx/remote.js";
+import { remoteSizeOf, remoteBox } from "../vfx/remotesize.js";
 
-export const remoteParams = (s) => ({ ...Object.fromEntries(Object.entries(REMOTE_DEFAULTS).map(([k, v]) => [k, s[k] ?? v])), remoteFrameBudget: remoteFrameLimit(s) });
+// w × h: the canvas, for 特效大小 (an old layer's size as the % it comes to there)
+export const remoteParams = (s, w = 64, h = 64) => ({ ...Object.fromEntries(Object.entries(REMOTE_DEFAULTS).map(([k, v]) => [k, s[k] ?? v])), remoteFrameBudget: remoteFrameLimit(s),
+  remoteSize: +remoteSizeOf(s, w, h).toFixed(3), bodyBox: remoteBox(s) });
 function properties(p) {
   return {
     flight_path: JSON.stringify(p.flightPath), flight_start: `Vector2(${+p.startX}, ${+p.startY})`, flight_end: `Vector2(${+p.endX}, ${+p.endY})`, flight_control: `Vector2(${+p.controlX}, ${+p.controlY})`,
@@ -8,7 +11,7 @@ function properties(p) {
     charge_frames: p.chargeFrames | 0, travel_frames: p.travelFrames | 0, impact_frames: p.impactFrames | 0,
     flight_count: p.flightCount | 0, flight_interval: p.flightInterval | 0, flight_spread: +p.flightSpread,
     flight_frame_budget: p.remoteFrameBudget ?? 64,
-    body_size: +p.bodySize, trail_frames: +p.trailFrames, trail_width: +p.trailWidth,
+    remote_size: +(p.remoteSize ?? 50), body_box: `Vector2(${+(+(p.bodyBox?.[0] ?? 1.5)).toFixed(4)}, ${+(+(p.bodyBox?.[1] ?? 1.5)).toFixed(4)})`, trail_frames: +p.trailFrames, trail_width: +p.trailWidth,
     head_width: +p.headWidth, head_curve: +p.headCurve, slash_angle: +p.slashAngle, slash_shape: JSON.stringify(p.slashShape || "full"), slash_thick: +(p.slashThick ?? 60), slash_curve: +(p.slashCurve ?? 170), slash_lean: +(p.slashLean ?? 0),
     impact_kind: JSON.stringify(p.impactKind), impact_size: +p.impactSize,
   };
@@ -150,8 +153,14 @@ func _remote_points(frame: float, index: int) -> PackedVector2Array:
 		out.append(_remote_path(_remote_progress((lerpf(oldest, newest, float(i) / n) - charge_frames) / maxf(1.0, travel_frames)), index))
 	return out
 
+# 特效大小（remote_size %）：100% 时弹体的框（朝右飞时的宽和高）刚好碰到画布的宽或高，哪个先碰到算哪个，保持比例。
+# body_box 是弹体半宽、半高（以半径为单位，导出时量好的）；剑气按它自己的月牙现算
+func _remote_box() -> Vector2:
+	return _slash_box() if kind == 18 else body_box
+
 func _remote_radius() -> float:
-	return minf(_w, _h) * body_size / 100.0 * size / 0.9
+	var b := _remote_box()
+	return maxf(0.01, minf(_w / 2.0 / b.x, _h / 2.0 / b.y)) * maxf(0.0, remote_size) / 100.0
 
 func _remote_color(heat: float) -> Color:
 	var stops := [colors[0]] + Array(colors) + [core_color]

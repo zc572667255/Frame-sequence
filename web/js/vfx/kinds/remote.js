@@ -14,6 +14,7 @@ import { shock } from "./shock.js";
 import { hit } from "./hit.js";
 import { accentAmounts, drawAccents } from "../accents.js";
 import { drawSlashAt } from "./slash.js";
+import { remoteRadius } from "../remotesize.js";
 
 // Each material has its own geometry, independent of palette and flight path.
 export function remoteBody(g, c, r) {
@@ -88,7 +89,7 @@ function impact(g, c, s, atPoint, t, angle) {
 
 export function remote(g, c, settings) {
   const s = remoteSettings({ ...REMOTE_DEFAULTS, ...settings });
-  const radius = Math.min(c.w, c.h) * Math.max(2, Math.min(16, s.bodySize)) / 100 * s.size / 90;
+  const radius = remoteRadius(s, c.w, c.h);
   const frame = c.t * s.frames;
   if (!hasFlight(s) && c.kind === "slash") return void drawSlashAt(g, c, s, [c.cx, c.cy], 0, radius, 1, 1, 0);
   if (!hasFlight(s)) {

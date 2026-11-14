@@ -80,7 +80,8 @@ export function makeForm(ctx, container, shared) {
       });
       num.addEventListener("change", () => sync());
       const sync = () => {
-        const v = get(key) ?? o.fallback ?? 0;
+        // o.value: what to show when the store has nothing (worked out from other settings)
+        const v = get(key) ?? (o.value ? o.value() : null) ?? o.fallback ?? 0;
         if (document.activeElement !== range) range.value = v;
         if (document.activeElement !== num) num.value = v;
       };

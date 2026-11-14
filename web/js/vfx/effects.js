@@ -38,13 +38,13 @@ import { remote } from "./kinds/remote.js";
 
 // kinds: name, what it is for, and the settings it starts with
 export const VFX_KINDS = [
-  { id: "thunder", name: "雷电", help: "蓝白电核与分叉电弧；命中时短促闪光、多次放电、飞散电火花和逐渐冷却的放射电纹", defaults: { palette: "animebolt", loop: true, size: 90, glow: 40, acc: "none" }, round: true },
-  { id: "ice", name: "冰矛", help: "单尖冰锥，带碎裂断口、纵向冰纹与透光切面，使用拖尾特效的「冰晶」拖尾；命中时冰块翻滚碎裂，留下冰裂纹", defaults: { palette: "frost", loop: true, size: 90, glow: 30, acc: "none", flightPath: "straight" }, round: true },
-  { id: "wind", name: "风刃", help: "白色翻滚气团、两端渐隐的细长流线与逐渐扩散的空气尾迹，命中时扩散", defaults: { palette: "air", loop: true, size: 90, glow: 20, acc: "none" }, round: true },
-  { id: "sand", name: "沙流", help: "流动的沙粒与金色细丝，沿路径飞行，命中时扬起散沙", defaults: { palette: "sand", loop: true, size: 90, glow: 20, acc: "none", flightPath: "wave" }, round: true },
-  { id: "slash", name: "剑气", help: "一道月牙形的剑气，光效和配色与同名攻击拖尾一样（烈焰斩是火焰、冰晶带冰晶、雷光带闪电……）；从左往右横着飞出去，鼓起的一面朝前，完整地飞到终点，再在「命中消散」的帧数里淡出消失。「剑气外形」两头尖是整个月牙，半头只留上半截、下面平切贴着飞行线；「地面夹角」0°~360°，整个剑气绕起点到终点这条飞行线连续旋转：90° 竖直，0° 和 180° 平行地面、从侧面看是扁扁的一道，约 163° 和 343° 侧对成一道细线，270° 倒过来，360° 回到 0°；「左右倾斜」-90°~90° 是剑气竖直时往前或往后斜（正数上端往飞行方向倾，负数往后倾），斜好之后再按地面夹角绕飞行线转；「剑气厚度」调粗细；「月牙弧度」60°~240° 调弯的程度，越小越平、越大越弯，过了 180° 两个尖往回卷", defaults: { palette: "blaze", loop: true, size: 90, glow: 40, acc: "none", flightPath: "straight", startX: 12, startY: 55, endX: 88, endY: 55, chargeFrames: 2, travelFrames: 16, impactFrames: 4, slashAngle: 90, slashShape: "full", slashThick: 60, slashCurve: 170, slashLean: 0 }, round: true },
+  { id: "thunder", name: "雷电", help: "蓝白电核与分叉电弧；命中时短促闪光、多次放电、飞散电火花和逐渐冷却的放射电纹", defaults: { remoteSize: 20, palette: "animebolt", loop: true, size: 90, glow: 40, acc: "none" }, round: true },
+  { id: "ice", name: "冰矛", help: "单尖冰锥，带碎裂断口、纵向冰纹与透光切面，使用拖尾特效的「冰晶」拖尾；命中时冰块翻滚碎裂，留下冰裂纹", defaults: { remoteSize: 65, palette: "frost", loop: true, size: 90, glow: 30, acc: "none", flightPath: "straight" }, round: true },
+  { id: "wind", name: "风刃", help: "白色翻滚气团、两端渐隐的细长流线与逐渐扩散的空气尾迹，命中时扩散", defaults: { remoteSize: 20, palette: "air", loop: true, size: 90, glow: 20, acc: "none" }, round: true },
+  { id: "sand", name: "沙流", help: "流动的沙粒与金色细丝，沿路径飞行，命中时扬起散沙", defaults: { remoteSize: 20, palette: "sand", loop: true, size: 90, glow: 20, acc: "none", flightPath: "wave" }, round: true },
+  { id: "slash", name: "剑气", help: "一道月牙形的剑气，光效和配色与同名攻击拖尾一样（烈焰斩是火焰、冰晶带冰晶、雷光带闪电……）；从左往右横着飞出去，鼓起的一面朝前，完整地飞到终点，再在「命中消散」的帧数里淡出消失。「剑气外形」两头尖是整个月牙，半头只留上半截、下面平切贴着飞行线；「地面夹角」0°~360°，整个剑气绕起点到终点这条飞行线连续旋转：90° 竖直，0° 和 180° 平行地面、从侧面看是扁扁的一道，约 163° 和 343° 侧对成一道细线，270° 倒过来，360° 回到 0°；「左右倾斜」-90°~90° 是剑气竖直时往前或往后斜（正数上端往飞行方向倾，负数往后倾），斜好之后再按地面夹角绕飞行线转；「剑气厚度」调粗细；「月牙弧度」60°~240° 调弯的程度，越小越平、越大越弯，过了 180° 两个尖往回卷", defaults: { remoteSize: 60, palette: "blaze", loop: true, size: 90, glow: 40, acc: "none", flightPath: "straight", startX: 12, startY: 55, endX: 88, endY: 55, chargeFrames: 2, travelFrames: 16, impactFrames: 4, slashAngle: 90, slashShape: "full", slashThick: 60, slashCurve: 170, slashLean: 0 }, round: true },
   { id: "hit", name: "命中火花", help: "打中的一瞬间：白热闪光、尖刺和飞溅的火花", defaults: { palette: "radiant", frames: 7, loop: false, size: 80 } },
-  { id: "fireball", name: "火球", help: "翻滚燃烧的火球：明亮火核、不规则火舌、向后撕开的火尾、烟和冷却的余烬。循环时原地燃烧供游戏移动；不循环时飞过画幅后消散。用旋转改变飞行方向", defaults: { palette: "blaze", frames: 24, loop: true, size: 90, glow: 35, acc: "none" }, round: true },
+  { id: "fireball", name: "火球", help: "翻滚燃烧的火球：明亮火核、不规则火舌、向后撕开的火尾、烟和冷却的余烬。循环时原地燃烧供游戏移动；不循环时飞过画幅后消散。用旋转改变飞行方向", defaults: { remoteSize: 25, palette: "blaze", frames: 24, loop: true, size: 90, glow: 35, acc: "none" }, round: true },
   { id: "explosion", name: "爆炸", help: "火球膨胀、冷却成烟往上飘，带飞散的火星", defaults: { palette: "inferno", frames: 12, loop: false, size: 80 } },
   { id: "shock", name: "冲击波", help: "向外扩散的环，可以压扁成地面上的冲击波；侧面是竖起来侧对着的环", defaults: { palette: "frost", frames: 8, loop: false, size: 80 }, side: true },
   { id: "dust", name: "烟尘", help: "落地、急停、冲刺扬起的烟尘，向两侧散开", defaults: { palette: "quake", frames: 10, loop: false, size: 80 } },
@@ -56,7 +56,7 @@ export const VFX_KINDS = [
   { id: "cloud", name: "云朵", help: "不规则的积云：轮廓坑坑洼洼、高低不一、底边不平，有时旁边飘着扯下来的碎云；像照片里的积云：大鼓包上叠着小鼓包，朝阳（左上）的一面白，背面、里面和云底是柔和的浅灰蓝阴影，边缘半透明地化开；大云都是实心的，偶尔有小块的薄云。每朵云的形状、大小、浓淡都随机（「换一个随机样子」换一批）；粒子越多、画幅越宽，云越多，宽画幅就是一整片天际线。云团会翻滚起伏，默认横向飘动（循环时每朵正好飘过一圈：帧数越多飘得越慢）", defaults: { palette: "frost", frames: 48, loop: true, size: 90, acc: "none", w: 384, h: 160, drift: true } },
   { id: "ribbon", name: "流光", help: "柔和流动的光带：几束细丝交织起伏、扭转，带闪烁的光尘", defaults: { palette: "dream", frames: 16, loop: true, size: 95 } },
   { id: "wings", name: "翅膀", help: "光做的翅膀，重神不重形：一扇从肩部放出的发光笔触、淡淡的光幕，光沿笔触流向翼尖，翼尖飘落光点；循环时扇动一次，不循环时展开后散成光点。正面是一对，侧面是向后展开的近翼和后面的远翼", defaults: { palette: "radiant", frames: 16, loop: true, size: 95 }, side: true },
-  { id: "arrow", name: "箭矢", help: "远程攻击的飞行道具，外面包着拖尾的光效，光往后拖成彗星的样子；「外观」是随配色变色、用代码画出来的形状：箭矢、匕首、长枪、棍棒、飞斧、手里剑、球，以及透明核心（没有实体，像放出去的法术）；棍棒、飞斧、手里剑默认边飞边转（「自转」可改）。光效和同名拖尾一样（烈焰斩是火焰、冰晶是冰晶、雷光是闪电、疾风是风刃……）。朝右飞，用「旋转」改方向：都在画幅的内切圆里，转到任何角度都不会出框；循环时停在原地、光在流动（游戏里移动它），不循环时从左飞过画幅、拖尾随后散去", defaults: { palette: "blaze", frames: 8, loop: true, size: 95, shape: "arrow" }, round: true },
+  { id: "arrow", name: "箭矢", help: "远程攻击的飞行道具，外面包着拖尾的光效，光往后拖成彗星的样子；「外观」是随配色变色、用代码画出来的形状：箭矢、匕首、长枪、棍棒、飞斧、手里剑、球，以及透明核心（没有实体，像放出去的法术）；棍棒、飞斧、手里剑默认边飞边转（「自转」可改）。光效和同名拖尾一样（烈焰斩是火焰、冰晶是冰晶、雷光是闪电、疾风是风刃……）。朝右飞，用「旋转」改方向：都在画幅的内切圆里，转到任何角度都不会出框；循环时停在原地、光在流动（游戏里移动它），不循环时从左飞过画幅、拖尾随后散去", defaults: { remoteSize: 40, palette: "blaze", frames: 8, loop: true, size: 95, shape: "arrow" }, round: true },
 ];
 
 for (const kind of VFX_KINDS) if (isRemoteKind(kind.id)) {

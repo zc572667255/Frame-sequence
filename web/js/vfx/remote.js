@@ -30,7 +30,6 @@ export const FLIGHT_FIELDS = [
   { label: "连发数量", key: "flightCount", min: 1, max: 5, unit: " 个" },
   { label: "发射间隔", key: "flightInterval", min: 0, max: 6, unit: " 帧" },
   { label: "散射幅度", key: "flightSpread", min: 0, max: 35, unit: "%" },
-  { label: "弹体大小", key: "bodySize", min: 2, max: 16, unit: "%" },
   { label: "拖尾保留", key: "trailFrames", min: 0, max: 24, unit: " 帧" },
   { label: "拖尾宽度", key: "trailWidth", min: 0, max: 180, unit: "%" },
   { label: "头部宽度", key: "headWidth", min: 20, max: 250, unit: "%", kind: "arrow", always: true },

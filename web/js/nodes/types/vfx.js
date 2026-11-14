@@ -12,6 +12,7 @@ import { GLOW_PRESETS } from "../../trails/glow.js";
 import { GROUND_AURAS } from "../../vfx/kinds/auras.js";
 import { PROJECTILES, SPINS } from "../../vfx/kinds/arrow.js";
 import { remoteSettings, hasFlight, remoteFrameLimit, FLIGHT_FIELDS, flightFieldVisible } from "../../vfx/remote.js";
+import { remoteSizeOf, REMOTE_SIZE_RANGE } from "../../vfx/remotesize.js";
 
 const GROUND = new Set(["shock", "dust", "circle", "heal"]);
 
@@ -93,7 +94,10 @@ function registerEffectNode(remote) {
     }
     f.custom(el("span"), () => { frameCount.style.display = hasFlight(p()) ? "none" : ""; });
     f.check("循环（最后一帧接回第一帧）", "loop");
-    f.slider("大小", "size", { min: 20, max: 100, unit: "%" });
+    if (remote) f.slider("特效大小", "remoteSize", { min: REMOTE_SIZE_RANGE[0], max: REMOTE_SIZE_RANGE[1], unit: "%",
+      // an old card's size as the 特效大小 it comes to on its canvas
+      value: () => { const s = p(); return Math.round(Math.max(REMOTE_SIZE_RANGE[0], Math.min(REMOTE_SIZE_RANGE[1], remoteSizeOf(s, s.w, s.h)))); } });
+    else f.slider("大小", "size", { min: 20, max: 100, unit: "%" });
     f.slider("粒子", "amount", { min: 0, max: 200, unit: "%" });
     f.slider("辉光", "glow", { min: 0, max: 150, unit: "%" });
     const view = f.select("视角", "view", [["front", "正面"], ["side", "侧面"]], { wide: true });

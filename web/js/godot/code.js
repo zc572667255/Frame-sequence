@@ -105,7 +105,7 @@ export function codeParamsFrom(s, w, h, fps, name) {
     accents: (() => { const a = accentAmounts(s, pal.preset) || {}; return ACCENTS.map((x) => +(a[x.id] || 0)); })(),
     ...trailGlow(pal, s.kind === "ice"),
     ...arrowCore(s, pal),
-    remote: remoteParams(s),
+    remote: remoteParams(s, w, h),
   };
 }
 

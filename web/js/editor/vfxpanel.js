@@ -7,6 +7,7 @@ import { isRemoteKind } from "../vfx/catalog.js";
 import { remoteSettings, fitRemoteFrames, hasFlight, FLIGHT_FIELDS, flightFieldVisible, flightFieldRange } from "../vfx/remote.js";
 import { PROJECTILES, SPINS } from "../vfx/kinds/arrow.js";
 import { vfxSettings, vfxShownFrames, renderVfxAsync } from "../vfx/layer.js";
+import { remoteSizeOf, REMOTE_SIZE_RANGE } from "../vfx/remotesize.js";
 import { ACCENTS, ACC_MODES, autoAccents } from "../vfx/accents.js";
 import { GLOW_PRESETS } from "../trails/glow.js";
 import { GROUND_AURAS } from "../vfx/kinds/auras.js";
@@ -29,7 +30,7 @@ function vfxThumb(kind, palette, style) {
   let got = thumbs.get(key);
   if (!got) {
     const tall = kind.id === "aura" || kind.id === "burn";
-    got = renderVfxAsync({ ...VFX_DEFAULTS, ...kind.defaults, kind: kind.id, flightPath: "sprite", bodySize: 16, palette, style, pxSize: 1, w: tall ? 36 : 48, h: 48, size: 90 }, THUMB_FRAME[kind.id] || 0)
+    got = renderVfxAsync({ ...VFX_DEFAULTS, ...kind.defaults, kind: kind.id, flightPath: "sprite", bodySize: 16, remoteSize: null, palette, style, pxSize: 1, w: tall ? 36 : 48, h: 48, size: 90 }, THUMB_FRAME[kind.id] || 0)
       .then((src) => { thumbs.set(key, src); return src; });
     thumbs.set(key, got);
   }
@@ -287,7 +288,11 @@ export class VfxPanel {
 
     // look
     P.append(el("div", { class: "ed-panel-title" }, "效果"));
-    slider("特效大小", "size", 20, 100, "%", remote ? "调整画布内的特效大小，绘制范围固定为整个画幅" : "特效在画幅框里占多大：画幅框不变，只缩放特效（超出画幅框的部分会被裁掉）");
+    if (remote) {
+      // an old layer's size shown as the 特效大小 it comes to on this canvas
+      s.remoteSize = Math.round(Math.max(REMOTE_SIZE_RANGE[0], Math.min(REMOTE_SIZE_RANGE[1], remoteSizeOf(s, this.doc.w, this.doc.h))));
+      slider("特效大小", "remoteSize", ...REMOTE_SIZE_RANGE, "%", "按画布的宽高算：100% 时特效刚好碰到画布的宽或高（哪个先碰到算哪个），保持比例，不会超出画布");
+    } else slider("特效大小", "size", 20, 100, "%", "特效在画幅框里占多大：画幅框不变，只缩放特效（超出画幅框的部分会被裁掉）");
     slider("粒子", "amount", 0, 200, "%");
     slider("辉光", "glow", 0, 150, "%");
     if (hasSide(s.kind)) choose("视角", "view", [["front", "正面"], ["side", "侧面"]]);

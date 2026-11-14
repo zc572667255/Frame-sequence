@@ -449,3 +449,38 @@ console.log("剑气两头尖 / 半头、鼓面朝前、0°~360° 连续旋转的
   }
 }
 console.log("攻击拖尾两头尖整段画出、两头对称淡出检查通过");
+
+// 特效大小 (remoteSize): at 100% the body's box just touches the canvas's
+// width or height, whichever it reaches first, keeping its proportions —
+// on wide, tall and square canvases alike; old layers keep their old size
+{
+  const { remoteRadius, remoteSizeOf, remoteBox, remoteFullRadius } = await import("../web/js/vfx/remotesize.js");
+  const { codeParamsFrom } = await import("../web/js/godot/code.js");
+  const { remoteProps } = await import("../web/js/godot/remote.js");
+  const looks = [["fireball"], ["thunder"], ["ice"], ["wind"], ["sand"], ["slash"], ["slash", { slashShape: "half", slashAngle: 30, slashLean: 40, slashCurve: 230 }], ...["arrow", "spear", "ball", "core"].map(shape => ["arrow", { shape }])];
+  for (const [kind, extra] of looks) {
+    const s = { ...VFX_KINDS.find(k => k.id === kind).defaults, kind, ...extra };
+    assert.ok(s.remoteSize > 0 && s.remoteSize <= 100, kind + ": new effects have a 特效大小");
+    const [ex, ey] = remoteBox(s);
+    assert.ok(ex > 0 && ey > 0, kind + ": a box");
+    for (const [w, h] of [[640, 160], [160, 640], [300, 300], [64, 32]]) {
+      const r = remoteRadius({ ...s, remoteSize: 100 }, w, h), gapX = w / 2 - ex * r, gapY = h / 2 - ey * r;
+      assert.ok(gapX > -1e-6 && gapY > -1e-6, kind + " " + w + "×" + h + ": 100% never past the canvas");
+      assert.ok(Math.min(gapX, gapY) < 1e-6, kind + " " + w + "×" + h + ": 100% touches its width or height");
+      assert.ok(Math.abs(remoteRadius({ ...s, remoteSize: 40 }, w, h) - r * 0.4) < 1e-9, "40% is 0.4 of that");
+      // an old layer: the size it had, and the 特效大小 that gives it
+      const old = { ...s, remoteSize: undefined, bodySize: 9, size: 80 }, was = Math.min(w, h) * 0.09 * 80 / 90;
+      assert.ok(Math.abs(remoteRadius(old, w, h) - was) < 1e-9, kind + ": an old layer keeps its size");
+      assert.ok(Math.abs(remoteRadius({ ...s, remoteSize: remoteSizeOf(old, w, h) }, w, h) - was) < 1e-6, kind + ": shown as the 特效大小 that gives it");
+      // Godot gets the same
+      const code = codeParamsFrom(old, w, h, 12), props = remoteProps(code.remote).join("\n");
+      assert.ok(Math.abs(code.remote.remoteSize / 100 * remoteFullRadius(old, w, h) - was) < 1e-3, kind + ": Godot draws it as big");
+      assert.ok(props.includes("remote_size = ") && props.includes("body_box = Vector2(") && !props.includes("body_size"));
+    }
+  }
+  // wider than tall: a wide canvas lets a long body (冰矛) grow by its width
+  const ice = { ...VFX_KINDS.find(k => k.id === "ice").defaults, kind: "ice", remoteSize: 100 };
+  assert.ok(remoteRadius(ice, 640, 160) > remoteRadius(ice, 160, 160) * 1.5, "a wide canvas holds a long body bigger");
+  assert.ok(!FLIGHT_FIELDS.some(f => f.key === "bodySize"), "弹体大小 is folded into 特效大小");
+  console.log("远程特效大小按画布宽高：100% 刚好碰到宽或高、保持比例不出框、旧图层大小不变、Godot 一致检查通过");
+}
