@@ -359,7 +359,24 @@ function spiralSections(trail, sticks, smooth, fineness, turn) {
 // Bow the whole sweep sideways by bow * sin(πu): zero at both ends, largest in
 // the middle — the parabola-like arc of an overhead chop. Positive bulges toward
 // the blade tips (outward), negative toward the hand.
-function applyBow(out, bow) {
+// "Sideways" is across the line from the sweep's first middle to its last —
+// fine for a chop, but a blade that turns most of the way round (a spin,
+// 360°) nearly comes back to where it began: that line shrinks to nothing and
+// points anywhere. So the more the blade turns past a quarter, the more each
+// part bulges along its own blade instead (out to its tip, in to the hand),
+// and by as much as a quarter turn of it would: the loop swells or tightens
+// evenly and keeps its shape.
+export function bowTurn(out) {
+  let turn = 0, prev = null;
+  for (const q of out) {
+    const a = Math.atan2(q.b[1] - q.a[1], q.b[0] - q.a[0]);
+    if (prev != null && Math.hypot(q.b[0] - q.a[0], q.b[1] - q.a[1]) > 1e-6) { let d = a - prev; d -= Math.round(d / (2 * Math.PI)) * 2 * Math.PI; turn += d; }
+    if (Math.hypot(q.b[0] - q.a[0], q.b[1] - q.a[1]) > 1e-6) prev = a;
+  }
+  return Math.abs(turn);
+}
+
+export function applyBow(out, bow) {
   if (!bow || out.length < 3) return out;
   const m = (q) => lerp(q.a, q.b, 0.5);
   const p0 = m(out[0]), p1 = m(out[out.length - 1]);
@@ -374,10 +391,18 @@ function applyBow(out, bow) {
   if (nx * ox + ny * oy < 0) { nx = -nx; ny = -ny; }
   let pathLen = 0;
   for (let i = 1; i < out.length; i++) { const a = m(out[i - 1]), b = m(out[i]); pathLen += Math.hypot(b[0] - a[0], b[1] - a[1]); }
-  const amp = Math.max(-1, Math.min(1, bow)) * Math.max(chord, pathLen) * 0.35;
+  const T = bowTurn(out), Q = Math.PI / 2;
+  // past a quarter turn: along each blade (w → 1 by half a turn), sized as a quarter turn's worth
+  const w = Math.max(0, Math.min(1, (T - Q) / Q)), size = T > Q ? Q / T : 1;
+  const amp = Math.max(-1, Math.min(1, bow)) * Math.max(chord, pathLen) * 0.35 * size;
   return out.map((q) => {
     const d = Math.sin(Math.PI * q.u) * amp;
-    return { ...q, a: [q.a[0] + nx * d, q.a[1] + ny * d], b: [q.b[0] + nx * d, q.b[1] + ny * d] };
+    let ux = nx, uy = ny;
+    if (w > 0) {
+      const bx = q.b[0] - q.a[0], by = q.b[1] - q.a[1], bl = Math.hypot(bx, by);
+      if (bl > 1e-6) { ux = (1 - w) * nx + w * bx / bl; uy = (1 - w) * ny + w * by / bl; const ul = Math.hypot(ux, uy) || 1; ux /= ul; uy /= ul; }
+    }
+    return { ...q, a: [q.a[0] + ux * d, q.a[1] + uy * d], b: [q.b[0] + ux * d, q.b[1] + uy * d] };
   });
 }
 

@@ -672,7 +672,7 @@ export class TrailMode {
       ...turns.map(([v, n]) => el("option", { value: v, selected: (t.turn || "auto") === v }, n)));
     turn.onchange = () => this.edit(() => { t.turn = turn.value; if (turn.value !== "auto") t.rotate = true; });
     P.append(el("div", { class: "tm-row" }, el("span", { class: "tm-label" }, "挥动方向"), turn));
-    trailSlider("弧度", "bow", -100, 100, 100, "%", 0, "整段拖尾额外弯曲：正值向刀尖一侧外鼓（如从上往下劈的抛物线），负值向握柄一侧内收");
+    trailSlider("弧度", "bow", -100, 100, 100, "%", 0, "整段拖尾额外弯曲：正值向刀尖一侧外鼓（如从上往下劈的抛物线），负值向握柄一侧内收。转半圈以上（旋转斩）时沿每一处的刀身方向均匀胀开 / 收紧，不会被拉偏");
     trailSlider("收尾消散", "dissolve", 0, 8, 1, " 帧", 3, "最后一根棍子之后，拖尾继续显示几帧：头停住、尾追上来、逐渐变淡消失");
     const rot = el("input", { type: "checkbox", checked: t.rotate !== false, onchange: () => this.edit(() => { t.rotate = rot.checked; }) });
     P.append(el("label", { class: "ed-check" }, rot, "按握柄旋转插值（帧与帧之间刀尖走圆弧）"));

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { REMOTE_DEFAULTS, remoteSettings, hasFlight, pathAt, flightState, flightTrail } from "../web/js/vfx/remote.js";
 import { migrate } from "../web/js/core/store.js";
-import { crescentRuns, crescentEnds, CRESCENT_U0, sweptSections, newTrail } from "../web/js/trails/model.js";
+import { crescentRuns, crescentEnds, CRESCENT_U0, sweptSections, newTrail, applyBow, bowTurn } from "../web/js/trails/model.js";
 import { ribbonSections, materialAt, flameFlow } from "../web/js/vfx/remotetrail.js";
 import { flightTrailWindow } from "../web/js/vfx/remote.js";
 import { alongPath, iceSwirl, iceLance, iceColors } from "../web/js/vfx/kinds/ice.js";
@@ -490,6 +490,35 @@ console.log("攻击拖尾两头尖整段画出、两头对称淡出检查通过"
     assert.ok(sp.depth > 0.97, name + ": the far half behind");
   }
 }
+// 弧度 on a blade that turns a long way round: past a quarter turn the bow
+// goes along each blade (in to the hand at -100%, out to the tips at +100%),
+// so a half or whole turn swells or tightens evenly instead of being dragged
+// off along the line between its nearly meeting ends; a chop is as before
+{
+  const arc = (deg, n = 40) => Array.from({ length: n + 1 }, (_, i) => {
+    const f = i / n, a = (-90 + deg * f) * Math.PI / 180;
+    return { a: [200, 200], b: [200 + Math.cos(a) * 100, 200 + Math.sin(a) * 100], u: f, z: "front" };
+  });
+  for (const deg of [180, 270, 350, 360]) for (const bow of [-1, -0.5, 0.6, 1]) {
+    const secs = arc(deg), bent = applyBow(secs, bow);
+    assert.ok(Math.abs(bowTurn(secs) - deg * Math.PI / 180) < 1e-6);
+    bent.forEach((q, i) => {
+      const o = secs[i], dx = q.b[0] - o.b[0], dy = q.b[1] - o.b[1], moved = Math.hypot(dx, dy);
+      if (moved < 1e-6) return;
+      const bx = (o.b[0] - o.a[0]) / 100, by = (o.b[1] - o.a[1]) / 100, along = (dx * bx + dy * by) / moved;
+      assert.ok(along * Math.sign(bow) > 0.999, deg + "° at " + bow * 100 + "%: each part moves along its own blade (" + along.toFixed(3) + ")");
+      assert.ok(moved <= 0.35 * Math.PI / 2 * 100 * Math.abs(bow) * 1.01, deg + "°: by no more than a quarter turn's worth");
+    });
+    // the loop keeps its shape: every point the same distance from the hand at the same u on both halves
+    const r = (q) => Math.hypot(q.b[0] - 200, q.b[1] - 200);
+    for (let i = 0; i <= 40; i++) assert.ok(Math.abs(r(bent[i]) - r(bent[40 - i])) < 1e-6, deg + "°: tightens / swells evenly");
+  }
+  // a chop (a quarter turn or less) bows exactly as before: across the line between its ends
+  const chop = arc(80), bent = applyBow(chop, 0.5), p0 = [(chop[0].a[0] + chop[0].b[0]) / 2, (chop[0].a[1] + chop[0].b[1]) / 2], p1 = [(chop[40].a[0] + chop[40].b[0]) / 2, (chop[40].a[1] + chop[40].b[1]) / 2];
+  const cx = p1[0] - p0[0], cy = p1[1] - p0[1];
+  bent.forEach((q, i) => { const dx = q.a[0] - chop[i].a[0], dy = q.a[1] - chop[i].a[1]; assert.ok(Math.abs(dx * cx + dy * cy) < 1e-6, "a chop bows across its chord, as before"); });
+}
+console.log("拖尾弧度：转半圈到一整圈时沿刀身均匀胀开 / 收紧、不被拉偏，普通劈砍不变检查通过");
 console.log("拖尾螺旋：绕身转一周、一边转一边升降（可先升后降）、穿过每根棍子、远侧在后检查通过");
 
 // 特效大小 (remoteSize): at 100% the body's box just touches the canvas's

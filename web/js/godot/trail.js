@@ -917,10 +917,30 @@ func _bow(out: Array, bow: float) -> Array:
 	var path := 0.0
 	for i in range(1, out.size()):
 		path += ((out[i]["a"] + out[i]["b"]) * 0.5).distance_to((out[i - 1]["a"] + out[i - 1]["b"]) * 0.5)
-	var amp := clampf(bow, -1.0, 1.0) * maxf(chord, path) * 0.35
+	# 刀转得越过四分之一圈（转一整圈时首尾几乎重合，首尾连线又短又乱指），就越改成沿每一处自己的刀身方向鼓出 / 收进，
+	# 大小按四分之一圈算：整个圈均匀地胀开或收紧，形状不乱
+	var turn := 0.0
+	var has_prev := false
+	var prev := 0.0
+	for q in out:
+		var bd: Vector2 = q["b"] - q["a"]
+		if bd.length() > 1e-6:
+			var an := bd.angle()
+			if has_prev:
+				turn += wrapf(an - prev, -PI, PI)
+			prev = an
+			has_prev = true
+	turn = absf(turn)
+	var w := clampf((turn - PI / 2.0) / (PI / 2.0), 0.0, 1.0)
+	var size := (PI / 2.0) / turn if turn > PI / 2.0 else 1.0
+	var amp := clampf(bow, -1.0, 1.0) * maxf(chord, path) * 0.35 * size
 	var res := []
 	for q in out:
-		var dv: Vector2 = nrm * sin(PI * q["u"]) * amp
+		var dir := nrm
+		var bd: Vector2 = q["b"] - q["a"]
+		if w > 0.0 and bd.length() > 1e-6:
+			dir = (nrm * (1.0 - w) + bd.normalized() * w).normalized()
+		var dv: Vector2 = dir * sin(PI * q["u"]) * amp
 		res.append({"a": q["a"] + dv, "b": q["b"] + dv, "back": q["back"], "u": q["u"]})
 	return res
 
