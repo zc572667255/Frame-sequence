@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { REMOTE_DEFAULTS, remoteSettings, hasFlight, pathAt, flightState, flightTrail } from "../web/js/vfx/remote.js";
 import { migrate } from "../web/js/core/store.js";
-import { crescentRuns, crescentEnds, CRESCENT_U0, applyBow, bowTurn } from "../web/js/trails/model.js";
+import { crescentRuns, crescentEnds, CRESCENT_U0, applyBow, bowTurn, ribbonSections as trailRibbon, newTrail } from "../web/js/trails/model.js";
 import { ribbonSections, materialAt, flameFlow } from "../web/js/vfx/remotetrail.js";
 import { flightTrailWindow } from "../web/js/vfx/remote.js";
 import { alongPath, iceSwirl, iceLance, iceColors } from "../web/js/vfx/kinds/ice.js";
@@ -485,6 +485,27 @@ console.log("攻击拖尾两头尖整段画出、两头对称淡出检查通过"
   bent.forEach((q, i) => { const dx = q.a[0] - chop[i].a[0], dy = q.a[1] - chop[i].a[1]; assert.ok(Math.abs(dx * cx + dy * cy) < 1e-6, "a chop bows across its chord, as before"); });
 }
 console.log("拖尾弧度：转半圈到一整圈时沿刀身均匀胀开 / 收紧、不被拉偏，普通劈砍不变检查通过");
+
+// 横扫 round a full turn: the head's rounded cap is made in the swing's plane
+// and squashed with the rest, so it bulges forward only as far as the squash
+// lets it (not up to 1 / squash times further, into the trail's own start);
+// and 弧度 bends in the plane too, never pushing a slice past the hand (a
+// foreshortened blade folding over into a stray arc)
+{
+  const k = 0.35, g = [350, 250];
+  for (const n of [5, 9]) for (const bow of [0, -1, -0.5, 0.6]) {
+    const sticks = Array.from({ length: n }, (_, i) => { const a = Math.PI - i * 2 * Math.PI / (n - 1); return { a: g, b: [g[0] + Math.cos(a) * 280, g[1] + Math.sin(a) * 280 * k], z: "front" }; });
+    const t = { ...newTrail("t", "t"), plane: "flat", squash: k, bow, length: 12 };
+    const secs = trailRibbon(t, sticks, 0), cap = secs.filter((q) => q.u === 1).slice(1);
+    const head = secs.find((q) => q.u === 1), hm = [(head.a[0] + head.b[0]) / 2, (head.a[1] + head.b[1]) / 2], half = Math.hypot(head.b[0] - head.a[0], head.b[1] - head.a[1]) / 2;
+    const reach = Math.max(...cap.map((q) => Math.abs((q.a[1] + q.b[1]) / 2 - hm[1])));
+    assert.ok(reach <= 0.5 * half * k * 1.05 + 1e-6, n + " keys, 弧度 " + bow * 100 + "%: the head's cap bulges forward " + reach.toFixed(1) + " px, no more than the plane's squash allows");
+    // no slice pushed past the hand: every blade still points out from the grip the way the unbent one does
+    const plain = trailRibbon({ ...t, bow: 0 }, sticks, 0);
+    secs.forEach((q, i) => { if (q.u === 1) return; const o = plain[i], d0 = [o.b[0] - o.a[0], o.b[1] - o.a[1] / k], d1 = [q.b[0] - q.a[0], q.b[1] - q.a[1] / k]; assert.ok(d0[0] * d1[0] + d0[1] * d1[1] >= 0, n + " keys, 弧度 " + bow * 100 + "%: no slice folds past the hand"); });
+  }
+}
+console.log("横扫转一整圈：头部圆弧在挥动平面里做、不伸进拖尾开头，弧度不把刀收过握柄检查通过");
 
 // 特效大小 (remoteSize): at 100% the body's box just touches the canvas's
 // width or height, whichever it reaches first, keeping its proportions —

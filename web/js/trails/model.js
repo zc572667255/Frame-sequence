@@ -259,19 +259,30 @@ function sections(S, smooth, fineness, rotate, turn) {
 // runs on an ellipse. Only the y scale differs between the two spaces, so the
 // pivot of the stretch doesn't matter. With autoDepth the part where the blade
 // points away from the viewer (up, on the plane) goes behind the character.
-function sweptSections(trail, sticks) {
-  const smooth = trail.smooth !== false, fineness = trail.style.fineness, turn = trail.turn || "auto";
-  if (trail.plane !== "flat" && trail.plane !== "spiral") return sections(sticks, smooth, fineness, trail.rotate !== false, turn);
+// bow: 横扫 bends the sweep in its own plane (applyBow there, before it is
+// squashed back), so a blade pointing at or away from the viewer — short on
+// screen — bends as much as any other; the other planes bend on screen later
+// 横扫: screen ↔ the swing's own plane (tilt undone, height divided by squash)
+function planeMaps(trail) {
   const k = Math.max(0.05, Math.min(1, +trail.squash || 0.35));
   const th = ((+trail.tilt || 0) * Math.PI) / 180, c = Math.cos(th), s = Math.sin(th);
-  const toPlane = (p) => [p[0] * c + p[1] * s, (-p[0] * s + p[1] * c) / k];
-  const fromPlane = (p) => { const y = p[1] * k; return [p[0] * c - y * s, p[0] * s + y * c]; };
-  const flat = sections(sticks.map((q) => ({ ...q, a: toPlane(q.a), b: toPlane(q.b) })), smooth, fineness, true, turn);
-  return flat.map((q) => ({
+  return {
+    toPlane: (p) => [p[0] * c + p[1] * s, (-p[0] * s + p[1] * c) / k],
+    fromPlane: (p) => { const y = p[1] * k; return [p[0] * c - y * s, p[0] * s + y * c]; },
+  };
+}
+
+export function sweptSections(trail, sticks, bow = 0) {
+  const smooth = trail.smooth !== false, fineness = trail.style.fineness, turn = trail.turn || "auto";
+  if (trail.plane !== "flat" && trail.plane !== "spiral") return sections(sticks, smooth, fineness, trail.rotate !== false, turn);
+  const { toPlane, fromPlane } = planeMaps(trail);
+  const flat = applyBow(sections(sticks.map((q) => ({ ...q, a: toPlane(q.a), b: toPlane(q.b) })), smooth, fineness, true, turn), bow);
+  const out = flat.map((q) => ({
     ...q,
     a: fromPlane(q.a), b: fromPlane(q.b),
     z: trail.autoDepth !== false ? (q.b[1] - q.a[1] < 0 ? "back" : "front") : q.z,
   }));
+  return out;
 }
 
 // Bow the whole sweep sideways by bow * sin(πu): zero at both ends, largest in
@@ -283,7 +294,9 @@ function sweptSections(trail, sticks) {
 // points anywhere. So the more the blade turns past a quarter, the more each
 // part bulges along its own blade instead (out to its tip, in to the hand),
 // and by as much as a quarter turn of it would: the loop swells or tightens
-// evenly and keeps its shape.
+// evenly and keeps its shape. Along the blade only its tip moves (the hand end
+// stays: drawn in, the blade gets shorter, it never folds past the hand to
+// the other side of the loop), and never in past a sixth of its length.
 export function bowTurn(out) {
   let turn = 0, prev = null;
   for (const q of out) {
@@ -315,12 +328,12 @@ export function applyBow(out, bow) {
   const amp = Math.max(-1, Math.min(1, bow)) * Math.max(chord, pathLen) * 0.35 * size;
   return out.map((q) => {
     const d = Math.sin(Math.PI * q.u) * amp;
-    let ux = nx, uy = ny;
-    if (w > 0) {
-      const bx = q.b[0] - q.a[0], by = q.b[1] - q.a[1], bl = Math.hypot(bx, by);
-      if (bl > 1e-6) { ux = (1 - w) * nx + w * bx / bl; uy = (1 - w) * ny + w * by / bl; const ul = Math.hypot(ux, uy) || 1; ux /= ul; uy /= ul; }
-    }
-    return { ...q, a: [q.a[0] + ux * d, q.a[1] + uy * d], b: [q.b[0] + ux * d, q.b[1] + uy * d] };
+    const bx = q.b[0] - q.a[0], by = q.b[1] - q.a[1], bl = Math.hypot(bx, by);
+    if (!(w > 0) || bl <= 1e-6) return { ...q, a: [q.a[0] + nx * d, q.a[1] + ny * d], b: [q.b[0] + nx * d, q.b[1] + ny * d] };
+    // across the chord, fading out; along the blade, fading in — the tip only
+    const dc = d * (1 - w), dt = Math.max(d * w, -bl * (5 / 6));
+    const ex = bx / bl, ey = by / bl;
+    return { ...q, a: [q.a[0] + nx * dc, q.a[1] + ny * dc], b: [q.b[0] + nx * dc + ex * dt, q.b[1] + ny * dc + ey * dt] };
   });
 }
 
@@ -354,17 +367,24 @@ function profile(st, u) {
 
 // the ribbon's cross-sections: width profile applied about each stick's middle,
 // plus a rounded head cap bulging forward along the swing
-function ribbonSections(trail, sticks, trim) {
+export function ribbonSections(trail, sticks, trim) {
   if (sticks.length < 2) return [];
   const st = trail.style;
-  const swept = applyBow(sweptSections(trail, sticks), trail.bow || 0);
+  const swept = trail.plane === "flat" ? sweptSections(trail, sticks, trail.bow || 0) : applyBow(sweptSections(trail, sticks), trail.bow || 0);
   const out = trimSections(swept, trim).map((q) => {
     const w = profile(st, q.u), m = lerp(q.a, q.b, 0.5);
     return { a: lerp(m, q.a, w), b: lerp(m, q.b, w), z: q.z, u: q.u };
   });
   if (out.length < 2) return [];
   const arc = Math.max(0, Math.min(1, st.headArc ?? 0.5));
-  const H = out[out.length - 1], P = out[out.length - 2];
+  // 横扫: the cap is rounded in the swing's plane and squashed back with the
+  // rest — worked out on screen, where a side-on blade looks long but its way
+  // forward is squashed, it bulged up to 1 / squash times too far, ran on into
+  // the trail's own start on a full turn and broke it off there
+  const flatCap = trail.plane === "flat" || trail.plane === "spiral";
+  const { toPlane, fromPlane } = flatCap ? planeMaps(trail) : { toPlane: (p) => p, fromPlane: (p) => p };
+  const H0 = out[out.length - 1], P0 = out[out.length - 2];
+  const H = H0 && { ...H0, a: toPlane(H0.a), b: toPlane(H0.b) }, P = P0 && { ...P0, a: toPlane(P0.a), b: toPlane(P0.b) };
   if (arc > 0 && P && st.shape !== "crescent") {
     const m = lerp(H.a, H.b, 0.5), pm = lerp(P.a, P.b, 0.5);
     let dx = m[0] - pm[0], dy = m[1] - pm[1];
@@ -375,8 +395,8 @@ function ribbonSections(trail, sticks, trim) {
     for (let i = 1; i <= steps; i++) {
       const th = (i / steps) * Math.PI / 2, c = Math.cos(th), sn = Math.sin(th);
       out.push({
-        a: [m[0] - hv[0] * c + dx * bulge * sn, m[1] - hv[1] * c + dy * bulge * sn],
-        b: [m[0] + hv[0] * c + dx * bulge * sn, m[1] + hv[1] * c + dy * bulge * sn],
+        a: fromPlane([m[0] - hv[0] * c + dx * bulge * sn, m[1] - hv[1] * c + dy * bulge * sn]),
+        b: fromPlane([m[0] + hv[0] * c + dx * bulge * sn, m[1] + hv[1] * c + dy * bulge * sn]),
         z: H.z, u: 1,
       });
     }
@@ -803,11 +823,15 @@ export function renderTrail(trail, state, w, h, assets, z) {
 // splatter go with the front pass.
 function renderGlowTrail(t, state, w, h, z) {
   const all = state.sticks.length >= 2 ? ribbonSections(t, state.sticks, state.trim || 0) : [];
+  // A run of this depth goes on to the next section, where the other depth
+  // takes over: the stretch between the last far section and the first near
+  // one belongs to the run it starts from (as with band trails), so the two
+  // halves meet with no gap between them.
   const runs = [];
   let cur = null;
   for (let i = 0; i < all.length; i++) {
     if (!z || all[i].z === z) { if (!cur) runs.push(cur = []); cur.push(all[i]); }
-    else cur = null;
+    else if (cur) { cur.push(all[i]); cur = null; }
   }
   // pixel art and cel shading keep the glow tight: a wide soft halo would turn
   // into a flat plate of the faintest opacity step around the trail

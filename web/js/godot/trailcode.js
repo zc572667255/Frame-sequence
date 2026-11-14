@@ -2205,6 +2205,8 @@ func _set_mids(P: Pass, secs: Array) -> void:
 
 
 # 光效：同一深度、连续的截面分成一段段
+# 这一深度的一段一直接到下一个截面（另一深度从那里接手）：远侧最后一个截面到近侧第一个截面之间那一节
+# 归它起头的那一段（和色带一样），前后两半接在一起，中间没有缺口
 func _glow_runs(secs: Array, back: bool) -> Array:
 	var runs := []
 	var cur = null
@@ -2214,7 +2216,8 @@ func _glow_runs(secs: Array, back: bool) -> Array:
 				cur = []
 				runs.append(cur)
 			cur.append(q)
-		else:
+		elif cur != null:
+			cur.append(q)
 			cur = null
 	return runs
 

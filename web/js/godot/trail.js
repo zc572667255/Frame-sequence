@@ -793,7 +793,8 @@ func _swept(t: Dictionary, sticks: Array) -> Array:
 		var b: Vector2 = q["b"]
 		flat.append({"a": Vector2(a.x * c + a.y * sn, (-a.x * sn + a.y * c) / sq), "b": Vector2(b.x * c + b.y * sn, (-b.x * sn + b.y * c) / sq), "back": q["back"]})
 	var out := []
-	for q in _sections(flat, t["smooth"], fine, true, t["turn"]):
+	# 横扫：弧度在挥动平面里弯（压扁回去之前），朝向 / 背向镜头、屏幕上看着短的刀也弯得一样多
+	for q in _bow(_sections(flat, t["smooth"], fine, true, t["turn"]), float(t["bow"])):
 		var a: Vector2 = q["a"]
 		var b: Vector2 = q["b"]
 		var back: bool = (b.y - a.y < 0.0) if t["autoDepth"] else q["back"]
@@ -833,14 +834,17 @@ func _bow(out: Array, bow: float) -> Array:
 	var w := clampf((turn - PI / 2.0) / (PI / 2.0), 0.0, 1.0)
 	var size := (PI / 2.0) / turn if turn > PI / 2.0 else 1.0
 	var amp := clampf(bow, -1.0, 1.0) * maxf(chord, path) * 0.35 * size
+	# 沿刀身方向只动刀尖（握柄那头不动：收进来就是刀变短，不会翻过握柄跑到圈的另一边），最多收进刀长的 5/6
 	var res := []
 	for q in out:
-		var dir := nrm
+		var d := sin(PI * q["u"]) * amp
 		var bd: Vector2 = q["b"] - q["a"]
-		if w > 0.0 and bd.length() > 1e-6:
-			dir = (nrm * (1.0 - w) + bd.normalized() * w).normalized()
-		var dv: Vector2 = dir * sin(PI * q["u"]) * amp
-		res.append({"a": q["a"] + dv, "b": q["b"] + dv, "back": q["back"], "u": q["u"]})
+		if w <= 0.0 or bd.length() <= 1e-6:
+			res.append({"a": q["a"] + nrm * d, "b": q["b"] + nrm * d, "back": q["back"], "u": q["u"]})
+			continue
+		var dc := d * (1.0 - w)
+		var dt := maxf(d * w, -bd.length() * 5.0 / 6.0)
+		res.append({"a": q["a"] + nrm * dc, "b": q["b"] + nrm * dc + bd.normalized() * dt, "back": q["back"], "u": q["u"]})
 	return res
 
 
@@ -877,7 +881,8 @@ func _profile(t: Dictionary, u: float) -> float:
 # 截面按宽度系数收窄，头部加圆弧帽
 func _ribbon(t: Dictionary, sticks: Array, trim: float) -> Array:
 	var out := []
-	for q in _trim(_bow(_swept(t, sticks), float(t["bow"])), trim):
+	var swept := _swept(t, sticks)
+	for q in _trim(swept if t["plane"] == "flat" else _bow(swept, float(t["bow"])), trim):
 		var w := _profile(t, q["u"])
 		var m: Vector2 = (q["a"] + q["b"]) * 0.5
 		out.append({"a": m.lerp(q["a"], w), "b": m.lerp(q["b"], w), "back": q["back"], "u": q["u"]})
@@ -885,14 +890,35 @@ func _ribbon(t: Dictionary, sticks: Array, trim: float) -> Array:
 		return []
 	var arc := clampf(float(t["headArc"]), 0.0, 1.0)
 	if arc > 0.0 and t["shape"] != "crescent":
+		# 横扫：头部圆弧在挥动平面里做，再和别的部分一起压扁回去（在屏幕上做，侧对的刀看着长、往前的方向却被压扁，
+		# 圆弧会鼓出去最多 1/压扁 倍，转一整圈时伸进拖尾自己的开头，在那里断开）
+		var flat_cap: bool = t["plane"] == "flat"
+		var sq := clampf(float(t["squash"]), 0.05, 1.0)
+		var tl := deg_to_rad(float(t["tilt"]))
+		var c := cos(tl)
+		var sn := sin(tl)
 		var hd: Dictionary = out[out.size() - 1]
 		var pr: Dictionary = out[out.size() - 2]
-		var m: Vector2 = (hd["a"] + hd["b"]) * 0.5
-		var dir: Vector2 = (m - (pr["a"] + pr["b"]) * 0.5).normalized()
-		var hv: Vector2 = (hd["b"] - hd["a"]) * 0.5
+		var ha: Vector2 = hd["a"]
+		var hb: Vector2 = hd["b"]
+		var pa: Vector2 = pr["a"]
+		var pb: Vector2 = pr["b"]
+		if flat_cap:
+			ha = Vector2(ha.x * c + ha.y * sn, (-ha.x * sn + ha.y * c) / sq)
+			hb = Vector2(hb.x * c + hb.y * sn, (-hb.x * sn + hb.y * c) / sq)
+			pa = Vector2(pa.x * c + pa.y * sn, (-pa.x * sn + pa.y * c) / sq)
+			pb = Vector2(pb.x * c + pb.y * sn, (-pb.x * sn + pb.y * c) / sq)
+		var m: Vector2 = (ha + hb) * 0.5
+		var dir: Vector2 = (m - (pa + pb) * 0.5).normalized()
+		var hv: Vector2 = (hb - ha) * 0.5
 		var bulge := arc * hv.length()
 		for i in range(1, 7):
 			var th := float(i) / 6.0 * PI * 0.5
 			var fwd: Vector2 = dir * bulge * sin(th)
-			out.append({"a": m - hv * cos(th) + fwd, "b": m + hv * cos(th) + fwd, "back": hd["back"], "u": 1.0})
+			var qa: Vector2 = m - hv * cos(th) + fwd
+			var qb: Vector2 = m + hv * cos(th) + fwd
+			if flat_cap:
+				qa = Vector2(qa.x * c - qa.y * sq * sn, qa.x * sn + qa.y * sq * c)
+				qb = Vector2(qb.x * c - qb.y * sq * sn, qb.x * sn + qb.y * sq * c)
+			out.append({"a": qa, "b": qb, "back": hd["back"], "u": 1.0})
 	return out`;
