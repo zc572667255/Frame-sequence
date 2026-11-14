@@ -21,6 +21,28 @@ import { controlKit, headTailControls, glowControls } from "./effectpanel.js";
 import { trailData, trailGodot, trailJSON, attachStrips } from "../godot/trail.js";
 import { trailCodeData, trailCodeGodot } from "../godot/trailcode.js";
 
+// 横扫的圆盘 (the swing's plane, shown on the canvas): the circle the blade
+// tip runs on in the swing's plane, round this frame's grip and through its
+// tip, squashed by 俯视程度 (squash) and turned by 平面倾斜 (tilt) the way the
+// trail is drawn. Its handles sit just outside it: a square at the top of the
+// short axis (drag up / down: 俯视程度) and a circle at the right end of the
+// long axis (drag round the centre: 平面倾斜). off: their gap, document px.
+const SQUASH_RANGE = [0.1, 1], TILT_RANGE = [-60, 60];
+function swingDisc(t, s, off) {
+  if (!s || t.plane !== "flat") return null;
+  const k = Math.max(0.05, Math.min(1, +t.squash || 0.35)), th = ((+t.tilt || 0) * Math.PI) / 180, c = Math.cos(th), sn = Math.sin(th);
+  const d = [s.b[0] - s.a[0], s.b[1] - s.a[1]];
+  // the tip's distance from the grip in the plane: tilt undone, height / squash
+  const R = Math.hypot(d[0] * c + d[1] * sn, (-d[0] * sn + d[1] * c) / k);
+  if (!(R > 2)) return null;
+  const at = (x, y) => [s.a[0] + x * c - y * k * sn, s.a[1] + x * sn + y * k * c]; // plane → screen, round the grip
+  const ring = Array.from({ length: 73 }, (_, i) => { const a = (i / 72) * Math.PI * 2; return { p: at(R * Math.cos(a), R * Math.sin(a)), far: Math.sin(a) < 0 }; });
+  const major = [c, sn], minorUp = [sn, -c]; // the long axis to the right, the short one up
+  const end = [s.a[0] + major[0] * (R + off), s.a[1] + major[1] * (R + off)];
+  const top = [s.a[0] + minorUp[0] * (R * k + off), s.a[1] + minorUp[1] * (R * k + off)];
+  return { centre: s.a, R, k, tilt: +t.tilt || 0, ring, end, top, minorUp, off };
+}
+
 // a new trail starts as the 梦幻 glow; the pixel bands are one click away
 const NEW_TRAIL_STYLE = { ...STYLE_DEFAULTS, colorMode: "glow", pixel: false, fade: 0.7, ...glowStyle(GLOW_PRESETS[0]) };
 
@@ -451,6 +473,47 @@ export class TrailMode {
             g.fillText(txt, p[0] + dx, p[1] + 4);
           }
         }
+        // 横扫: the swing's plane as a disc round the grip, with its handles
+        const D = swingDisc(t, s, 14 / z);
+        if (D) {
+          g.save();
+          const path = (far) => {
+            g.beginPath();
+            let on = false;
+            for (const q of D.ring) {
+              if (q.far !== far) { on = false; continue; }
+              const [x, y] = P(q.p);
+              if (on) g.lineTo(x, y); else { g.moveTo(x, y); on = true; }
+            }
+          };
+          // the near half solid, the far half (behind the character) dashed
+          for (const far of [true, false]) {
+            path(far);
+            g.setLineDash(far ? [5, 4] : []);
+            g.strokeStyle = "rgba(0,0,0,0.45)"; g.lineWidth = 3; g.stroke();
+            g.strokeStyle = far ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.9)"; g.lineWidth = 1.2; g.stroke();
+          }
+          g.setLineDash([2, 3]); g.strokeStyle = "rgba(255,255,255,0.35)"; g.lineWidth = 1;
+          const c0 = P(D.centre);
+          line(c0, P(D.end)); line(c0, P(D.top));
+          g.setLineDash([]);
+          const hot = this.drag && (this.drag.type === "squash" || this.drag.type === "tilt") ? this.drag.type : null;
+          // 俯视程度: a square; 平面倾斜: a circle
+          const [sx, sy] = P(D.top), [ex, ey] = P(D.end);
+          g.fillStyle = "#11131a"; g.fillRect(sx - 6, sy - 6, 12, 12);
+          g.fillStyle = hot === "squash" ? "#ffd166" : "#fff"; g.fillRect(sx - 4.5, sy - 4.5, 9, 9);
+          g.fillStyle = "#11131a"; g.beginPath(); g.arc(ex, ey, 7, 0, Math.PI * 2); g.fill();
+          g.fillStyle = hot === "tilt" ? "#ffd166" : "#fff"; g.beginPath(); g.arc(ex, ey, 5.5, 0, Math.PI * 2); g.fill();
+          const tag = (txt, x, y) => {
+            g.font = "11px sans-serif";
+            const w = g.measureText(txt).width + 8;
+            g.fillStyle = "rgba(17,19,26,0.85)"; g.fillRect(x, y - 9, w, 17);
+            g.fillStyle = "#fff"; g.fillText(txt, x + 4, y + 4);
+          };
+          tag("俯视程度 " + Math.round(D.k * 100) + "%", sx + 10, sy - 2);
+          tag("平面倾斜 " + Math.round(D.tilt) + "°", ex + 11, ey);
+          g.restore();
+        }
       }
     }
     g.restore();
@@ -465,6 +528,19 @@ export class TrailMode {
     let k = this.key(t);
     const g = k ? null : this.ghost(t);
     const s = k || g;
+    // 横扫's disc handles (俯视程度 / 平面倾斜) come before the stick's ends
+    const D = this.showSticks ? swingDisc(t, s, 14 / this.ed.zoom) : null;
+    if (D) {
+      const near = (q) => Math.hypot(q[0] - p.x, q[1] - p.y) <= hit;
+      const type = near(D.top) ? "squash" : near(D.end) ? "tilt" : null;
+      if (type) {
+        this.ed.commitFloat();
+        this.doc.checkpoint();
+        this.drag = { type, disc: D, tilt0: +t.tilt || 0 };
+        this.ed.requestRender();
+        return;
+      }
+    }
     if (s) {
       const which = Math.hypot(s.b[0] - p.x, s.b[1] - p.y) <= hit ? "b" : Math.hypot(s.a[0] - p.x, s.a[1] - p.y) <= hit ? "a"
         : segDist(p, s.a, s.b) <= hit * 0.8 ? "body" : null;
@@ -487,6 +563,22 @@ export class TrailMode {
 
   onMove(e, p) {
     const d = this.drag, t = this.trail(), k = this.key(t);
+    if (d && t && (d.type === "squash" || d.type === "tilt")) {
+      const D = d.disc, dx = p.x - D.centre[0], dy = p.y - D.centre[1];
+      if (d.type === "squash") {
+        // how far up the short axis the pointer is, of the disc's size (the circle drawn when the disc began)
+        const up = dx * D.minorUp[0] + dy * D.minorUp[1] - D.off;
+        t.squash = Math.round(Math.max(SQUASH_RANGE[0], Math.min(SQUASH_RANGE[1], up / D.R)) * 100) / 100;
+      } else {
+        // the long axis turned to point at the pointer (its right end: -90° … 90°)
+        let a = Math.atan2(dy, dx) * 180 / Math.PI;
+        if (a > 90) a -= 180; else if (a < -90) a += 180;
+        t.tilt = Math.round(Math.max(TILT_RANGE[0], Math.min(TILT_RANGE[1], a)));
+      }
+      this.ed.markDirty();
+      this.ed.requestRender();
+      return;
+    }
     if (!d || !k) return;
     const round = (v) => Math.round(v * 4) / 4;
     if (d.type === "new" || d.type === "b") k.b = [round(p.x), round(p.y)];
@@ -503,6 +595,7 @@ export class TrailMode {
     const d = this.drag, t = this.trail();
     this.drag = null;
     if (!d || !t) return;
+    if (d.type === "squash" || d.type === "tilt") { this.ed.afterChange(false); this.refresh(); return; }
     const k = this.key(t);
     if (d.type === "new" && k && Math.hypot(k.b[0] - k.a[0], k.b[1] - k.a[1]) < 1) {
       // a click, not a drag: nothing drawn
@@ -656,11 +749,11 @@ export class TrailMode {
     plane.onchange = () => this.edit(() => { t.plane = plane.value; if (plane.value === "flat") t.rotate = true; });
     P.append(el("div", { class: "tm-row" }, el("span", { class: "tm-label" }, "挥动平面"), plane));
     if (flat) {
-      trailSlider("压扁", "squash", 10, 100, 100, "%", 0.35, "椭圆的高度和宽度之比：越小越扁（视线越平），100% 是正圆（从头顶往下看）");
-      trailSlider("倾斜", "tilt", -60, 60, 1, "°", 0, "整个挥动平面的倾斜角：斜着横扫（比如从左下扫到右上）时调它");
+      trailSlider("俯视程度", "squash", 10, 100, 100, "%", 0.35, "椭圆的高度和宽度之比：越小越扁（视线越平），100% 是正圆（从头顶往下看）。也可以在画布上拖圆盘上方的小方块");
+      trailSlider("平面倾斜", "tilt", -60, 60, 1, "°", 0, "整个挥动平面的倾斜角：斜着横扫（比如从左下扫到右上）时调它。也可以在画布上拖圆盘右端的小圆点绕中心转");
       const ad = el("input", { type: "checkbox", checked: t.autoDepth !== false, onchange: () => this.edit(() => { t.autoDepth = ad.checked; }) });
       P.append(el("label", { class: "ed-check" }, ad, "远侧自动绕到角色后方（刀尖朝里的那半圈）"));
-      P.append(el("p", { class: "ed-hint" }, "棍子按画面上看到的样子画：刀朝左右时棍子长，刀朝向镜头或背向镜头时棍子变短（透视），插值会把它们连成椭圆。开着「远侧自动」时，每帧的「前方 / 后方」按钮不起作用。"));
+      P.append(el("p", { class: "ed-hint" }, "棍子按画面上看到的样子画：刀朝左右时棍子长，刀朝向镜头或背向镜头时棍子变短（透视），插值会把它们连成椭圆。画布上本帧的握柄周围会画出这个挥动平面（圆盘）：实线是近侧那半圈，虚线是远侧（角色后方）；拖上方的小方块调俯视程度，拖右端的小圆点绕中心转调平面倾斜，刀尖落在圆盘边上时插值最顺。开着「远侧自动」时，每帧的「前方 / 后方」按钮不起作用。"));
     }
     // which way round the blade travels between sticks: with few frames a big
     // swing is ambiguous, and "the smaller turn" can take it under instead of over
