@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { REMOTE_DEFAULTS, remoteSettings, hasFlight, pathAt, flightState, flightTrail } from "../web/js/vfx/remote.js";
 import { migrate } from "../web/js/core/store.js";
-import { crescentRuns, crescentEnds, CRESCENT_U0 } from "../web/js/trails/model.js";
+import { crescentRuns, crescentEnds, CRESCENT_U0, sweptSections, newTrail } from "../web/js/trails/model.js";
 import { ribbonSections, materialAt, flameFlow } from "../web/js/vfx/remotetrail.js";
 import { flightTrailWindow } from "../web/js/vfx/remote.js";
 import { alongPath, iceSwirl, iceLance, iceColors } from "../web/js/vfx/kinds/ice.js";
@@ -455,6 +455,42 @@ console.log("剑气两头尖 / 半头、鼓面朝前、0°~360° 连续旋转的
   }
 }
 console.log("攻击拖尾两头尖整段画出、两头对称淡出检查通过");
+
+// 螺旋: a sweep round the body whose height changes as it turns — sinking,
+// rising, or up and down in the one trail — follows the spin it was keyed
+// from (a blade of one length round an ellipse, lifted by h), passes through
+// every stick, and puts the far half behind; level, it is the 横扫 ellipse
+{
+  const k = 0.35, R = 260;
+  const spins = {
+    sinking: { n: 5, step: Math.PI / 2, g: (s) => [330 + s * 20, 200 + s * 25], h: (s) => -150 + s * 45 },
+    "sinking, 8 keys": { n: 9, step: Math.PI / 4, g: (s) => [330 + s * 10, 200 + s * 12], h: (s) => -150 + s * 22 },
+    "up and down": { n: 7, step: Math.PI / 3, g: () => [340, 220], h: (s) => -110 * Math.sin(s * Math.PI / 2.5) },
+    "the other way, rising": { n: 5, step: -Math.PI / 2, g: () => [340, 220], h: (s) => -20 * s },
+    level: { n: 5, step: Math.PI / 2, g: () => [340, 220], h: () => 0 },
+  };
+  for (const [name, c] of Object.entries(spins)) {
+    const tip = (s) => { const a = Math.PI + s * c.step, g = c.g(s); return [g[0] + Math.cos(a) * R, g[1] + Math.sin(a) * R * k + c.h(s)]; };
+    const sticks = Array.from({ length: c.n }, (_, i) => ({ a: c.g(i), b: tip(i), z: "front" }));
+    const err = (plane) => {
+      const secs = sweptSections({ ...newTrail("t", "t"), plane, squash: k }, sticks), per = (secs.length - 1) / (c.n - 1);
+      let worst = 0, depth = 0, key = 0;
+      secs.forEach((q, i) => {
+        const s = i / per, p = tip(s);
+        worst = Math.max(worst, Math.hypot(p[0] - q.b[0], p[1] - q.b[1]));
+        if (Number.isInteger(s)) key = Math.max(key, Math.hypot(p[0] - q.b[0], p[1] - q.b[1]));
+        depth += (q.z === "back") === (Math.sin(Math.PI + s * c.step) < -1e-6) ? 1 : 0;
+      });
+      return { worst, key, depth: depth / secs.length };
+    };
+    const sp = err("spiral"), fl = err("flat");
+    assert.ok(sp.key < 1e-6, name + ": through every stick");
+    assert.ok(sp.worst < 15, name + ": follows the spin (" + sp.worst.toFixed(1) + " px off)");
+    assert.ok(sp.worst <= fl.worst + 1e-6, name + ": no further off than 横扫");
+    assert.ok(sp.depth > 0.97, name + ": the far half behind");
+  }
+}
+console.log("拖尾螺旋：绕身转一周、一边转一边升降（可先升后降）、穿过每根棍子、远侧在后检查通过");
 
 // 特效大小 (remoteSize): at 100% the body's box just touches the canvas's
 // width or height, whichever it reaches first, keeping its proportions —

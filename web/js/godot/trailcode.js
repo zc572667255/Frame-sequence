@@ -3894,7 +3894,7 @@ func _load_sticks(t: Dictionary) -> void:
 	for k in keys:
 		if k != null and k["back"]:
 			any_back = true
-	t["has_back"] = any_back or (t["plane"] == "flat" and t["autoDepth"])
+	t["has_back"] = any_back or (t["plane"] != "screen" and t["autoDepth"])
 	# 拖尾可能画到的范围：每根棍子绕握柄扫过的圆，外面留出光效、火花、爆点的余量（编辑器也只在这样的范围里画）
 	var full := Rect2(0, 0, _w, _h)
 	var box := Rect2()
@@ -3906,7 +3906,7 @@ func _load_sticks(t: Dictionary) -> void:
 		var c := Rect2((k["a"] as Vector2) - Vector2(r, r), Vector2(r, r) * 2.0)
 		box = c if first else box.merge(c)
 		first = false
-	if first or float(t["bow"]) != 0.0 or t["plane"] == "flat":
+	if first or float(t["bow"]) != 0.0 or t["plane"] != "screen":
 		box = full  # 弯曲、横扫会超出棍子扫过的圆：整张画布
 	else:
 		box = box.grow(wmax * 2.8 + 8.0).intersection(full)
