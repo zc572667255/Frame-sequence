@@ -38,9 +38,12 @@ import { THUNDER_HIT_GD } from "./thunderhit.js";
 import { SLASH_GD } from "./slash.js";
 import { STARMOON, MOONCIRCLE } from "../vfx/kinds/starmoon.js";
 
-// 星月法阵's and 月之法阵's line art as GDScript data: [spin, core colour?, width, [polylines on a radius-1 circle]]
+// 星月法阵's and 月之法阵's line art as GDScript data: NAME := [spin, core colour?,
+// width, on top?, [polylines on a radius-1 circle]] per group, NAME_MASKS :=
+// the emblems' footprints (the groups under them are cut away inside them)
 const r4s = (v) => String(+v.toFixed(4));
-const artGd = (name, art) => "const " + name + " := [" + art.map((g) => "[" + r4s(g.spin) + ", " + (g.col === "core") + ", " + r4s(g.w) + ", [" + g.lines.map((pl) => "PackedVector2Array([" + pl.map(([x, y]) => "Vector2(" + r4s(x) + ", " + r4s(y) + ")").join(", ") + "])").join(", ") + "]]").join(", ") + "]";
+const pv = (pl) => "PackedVector2Array([" + pl.map(([x, y]) => "Vector2(" + r4s(x) + ", " + r4s(y) + ")").join(", ") + "])";
+const artGd = (name, art) => "const " + name + " := [" + art.groups.map((g) => "[" + r4s(g.spin) + ", " + (g.col === "core") + ", " + r4s(g.w) + ", " + !!g.top + ", [" + g.lines.map(pv).join(", ") + "]]").join(", ") + "]\nconst " + name + "_MASKS := [" + art.masks.map(pv).join(", ") + "]";
 const STARMOON_GD = artGd("STARMOON", STARMOON) + "\n" + artGd("MOONCIRCLE", MOONCIRCLE);
 
 export const CODE_KINDS = ["hit", "shock", "charge", "heal", "ribbon", "wings", "circle", "aura", "burn", "explosion", "dust", "cloud", "arrow", "fireball", "thunder", "ice", "wind", "sand", "slash"];
@@ -2251,15 +2254,35 @@ func _k_ground() -> void:
 			pool.call(R * 0.9, 0.1 * a)
 			_ring(o, R * 0.96, R * 0.07, k, rim_color, 0.3 * a, kx)
 			var turn := 1.0 if loop else 0.6
-			for grp in (MOONCIRCLE if pattern == 10 else STARMOON):
-				var rot: float = grp[0] * t * turn
-				var pls := []
-				for pl in grp[3]:
-					var pp := PackedVector2Array()
-					for v in pl:
-						pp.append(to.call(v.x * R, v.y * R, rot))
-					pls.append(pp)
-				lines.append([pls, core_color if grp[1] else rim_color, lw * grp[2], a])
+			# 转的部分在下面（在星星、月亮、太阳里面的那段切掉），星星月亮这些盖在上面
+			var art: Array = MOONCIRCLE if pattern == 10 else STARMOON
+			var masks: Array = MOONCIRCLE_MASKS if pattern == 10 else STARMOON_MASKS
+			for top in [false, true]:
+				for grp in art:
+					if grp[3] != top:
+						continue
+					var rot: float = grp[0] * t * turn
+					var pls := []
+					for pl in grp[4]:
+						var pieces := [pl]
+						if not top:
+							var turned := PackedVector2Array()
+							for v in pl:
+								turned.append(v.rotated(rot))
+							pieces = [turned]
+							for m in masks:
+								var left := []
+								for piece in pieces:
+									left.append_array(Geometry2D.clip_polyline_with_polygon(piece, m))
+								pieces = left
+						for piece in pieces:
+							if piece.size() < 2:
+								continue
+							var pp := PackedVector2Array()
+							for v in piece:
+								pp.append(to.call(v.x * R, v.y * R, 0.0))
+							pls.append(pp)
+					lines.append([pls, core_color if grp[1] else rim_color, lw * grp[2], a])
 			# 外圈和内圈刻度上绕圈的高光
 			for spec in [[0.96, 1.0], [0.56 if pattern == 10 else 0.58, -1.0]]:
 				for j in 2:

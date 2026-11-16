@@ -593,8 +593,8 @@ console.log("魔法阵环绕角色：前后分界在身体处是弧、远侧半�
   const { GROUND_AURAS } = await import("../web/js/vfx/kinds/auras.js");
   const { codeGodot: gdCode, codeParamsFrom: gp2 } = await import("../web/js/godot/code.js");
   assert.deepEqual(GROUND_AURAS.find(([id]) => id === "arrows"), ["arrows", "星月法阵"]);
-  assert.ok(STARMOON.length >= 6 && STARMOON.every((g) => g.lines.length && g.lines.every((pl) => pl.length >= 2 && pl.every(([x, y]) => Number.isFinite(x) && Math.hypot(x, y) <= 1.0001))), "inside the circle");
-  for (const g of STARMOON) assert.ok(g.spin === 0 || [12, 48, 5].some((n) => Math.abs(Math.abs(g.spin) * n / (Math.PI * 2) - 1) < 1e-9), "turns by a symmetry step per loop");
+  assert.ok(STARMOON.groups.length >= 6 && STARMOON.groups.every((g) => g.lines.length && g.lines.every((pl) => pl.length >= 2 && pl.every(([x, y]) => Number.isFinite(x) && Math.hypot(x, y) <= 1.0001))), "inside the circle");
+  for (const g of STARMOON.groups) assert.ok(g.spin === 0 || [12, 48, 5].some((n) => Math.abs(Math.abs(g.spin) * n / (Math.PI * 2) - 1) < 1e-9), "turns by a symmetry step per loop");
   const gd = gdCode(gp2({ ...VFX_KINDS.find((k) => k.id === "circle").defaults, kind: "circle", pattern: "arrows" }, 300, 220, 12));
   assert.ok(gd.includes("const STARMOON := [") && gd.includes('"星月法阵", "月之法阵") var pattern := 9'), "Godot draws the same lines");
 }
@@ -603,11 +603,29 @@ console.log("魔法阵环绕角色：前后分界在身体处是弧、远侧半�
   const { GROUND_AURAS } = await import("../web/js/vfx/kinds/auras.js");
   const { codeGodot: gdCode, codeParamsFrom: gp2, codeSupported: cs } = await import("../web/js/godot/code.js");
   assert.deepEqual(GROUND_AURAS.at(-1), ["moon", "月之法阵"], "月之法阵 is offered");
-  assert.ok(MOONCIRCLE.every((g) => g.lines.every((pl) => pl.length >= 2 && pl.every(([x, y]) => Number.isFinite(x) && Number.isFinite(y) && Math.hypot(x, y) <= 1.0001))), "月之法阵 inside the circle");
-  for (const g of MOONCIRCLE) assert.ok(g.spin === 0 || [8, 36].some((n) => Math.abs(Math.abs(g.spin) * n / (Math.PI * 2) - 1) < 1e-9), "月之法阵 turns by a symmetry step per loop");
+  assert.ok(MOONCIRCLE.groups.every((g) => g.lines.every((pl) => pl.length >= 2 && pl.every(([x, y]) => Number.isFinite(x) && Number.isFinite(y) && Math.hypot(x, y) <= 1.0001))), "月之法阵 inside the circle");
+  for (const g of MOONCIRCLE.groups) assert.ok(g.spin === 0 || [8, 12].some((n) => Math.abs(Math.abs(g.spin) * n / (Math.PI * 2) - 1) < 1e-9), "月之法阵 turns by a symmetry step per loop");
   const s = { ...VFX_KINDS.find((k) => k.id === "circle").defaults, kind: "circle", pattern: "moon" };
   assert.ok(cs({ vfx: s }), "月之法阵 exports as code");
   const gd = gdCode(gp2(s, 300, 220, 12));
   assert.ok(gd.includes("const MOONCIRCLE := [") && gd.includes('"月之法阵") var pattern := 10'), "Godot draws the same lines");
 }
-console.log("星月法阵替换箭阵光环、新增月之法阵：线条都在圆内、每遍按对称步数转、Godot 用同一份数据检查通过");
+// the turning parts lie under the stars and moons: none of them turns, each
+// has a footprint, and the lines under them are cut away inside it (clipOut)
+{
+  const { STARMOON, MOONCIRCLE, clipOut } = await import("../web/js/vfx/kinds/starmoon.js");
+  const inPoly = (p, poly) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [xi, yi] = poly[i], [xj, yj] = poly[j]; if ((yi > p[1]) !== (yj > p[1]) && p[0] < ((xj - xi) * (p[1] - yi)) / (yj - yi) + xi) c = !c; } return c; };
+  for (const art of [STARMOON, MOONCIRCLE]) {
+    assert.ok(art.masks.length >= 2 && art.groups.some((g) => g.top) && art.groups.filter((g) => g.top).every((g) => g.spin === 0), "emblems on top, still");
+    for (const g of art.groups.filter((x) => !x.top)) for (const rot of [0, 0.37]) for (const pl of g.lines) {
+      const turned = pl.map(([x, y]) => [x * Math.cos(rot) - y * Math.sin(rot), x * Math.sin(rot) + y * Math.cos(rot)]);
+      for (const piece of clipOut(turned, art.masks)) for (let k = 1; k < piece.length; k++) {
+        const m = [(piece[k - 1][0] + piece[k][0]) / 2, (piece[k - 1][1] + piece[k][1]) / 2];
+        assert.ok(!art.masks.some((poly) => inPoly(m, poly)), "nothing turning shows inside a star or moon");
+      }
+    }
+  }
+  const seg = clipOut([[-1, 0], [1, 0]], [[[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]]]);
+  assert.equal(seg.length, 2); assert.ok(Math.abs(seg[0].at(-1)[0] + 0.5) < 0.01 && Math.abs(seg[1][0][0] - 0.5) < 0.01, "cut right at the footprint's edge");
+}
+console.log("星月法阵替换箭阵光环、新增月之法阵：线条都在圆内、每遍按对称步数转、转的部分在星星月亮下面、Godot 用同一份数据检查通过");

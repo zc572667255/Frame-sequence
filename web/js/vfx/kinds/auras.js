@@ -1,7 +1,7 @@
 import { rng, rgba, smooth, drawBlurred } from "../../trails/glow/util.js";
 import { createCanvas } from "../../core/util.js";
 import { TAU, easeOut, frac, mixRgb, blob, ring, spike, trail, comet, field, fieldScale, loopNoise } from "../common.js";
-import { STARMOON, MOONCIRCLE } from "./starmoon.js";
+import { STARMOON, MOONCIRCLE, clipOut } from "./starmoon.js";
 
 // 魔法阵's ground auras (法阵图案), in the palette's colours, laid on the
 // ground in perspective like the circle (or stood up, 侧面):
@@ -225,14 +225,17 @@ export function groundAura(g, c) {
 
   // ---- 星月法阵, 月之法阵 ----
   // a circle's line art (kinds/starmoon.js), each group turning by its own
-  // step per loop; glints racing round its outer ring and its inner one (at inner)
+  // step per loop, under the stars and moons (cut away inside them), which lie
+  // on top; glints racing round its outer ring and its inner one (at inner)
   function lineArt(art, inner) {
     pool(R * 0.9, 0.1 * a);
     glowRing(R * 0.96, R * 0.07, pal.rim, 0.3 * a);
     const turn = c.loop ? 1 : 0.6;
-    for (const grp of art) {
-      const rot = grp.spin * t * turn;
-      ink(() => { for (const pl of grp.lines) poly(pl.map(([x, y]) => [x * R, y * R]), rot); }, grp.col === "core" ? pal.core : pal.rim, lw * grp.w, a);
+    for (const grp of [...art.groups.filter((x) => !x.top), ...art.groups.filter((x) => x.top)]) {
+      const rot = grp.spin * t * turn, cs = Math.cos(rot), sn = Math.sin(rot);
+      const turned = (pl) => (rot ? pl.map(([x, y]) => [x * cs - y * sn, x * sn + y * cs]) : pl);
+      const pieces = grp.top ? grp.lines : grp.lines.flatMap((pl) => clipOut(turned(pl), art.masks));
+      ink(() => { for (const pl of pieces) poly(pl.map(([x, y]) => [x * R, y * R])); }, grp.col === "core" ? pal.core : pal.rim, lw * grp.w, a);
     }
     const lit = a * 0.9;
     for (const [rr, dir] of [[0.96, 1], [inner, -1]]) {
