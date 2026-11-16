@@ -301,6 +301,19 @@ export class VfxPanel {
     if (s.kind === "circle") {
       choose("法阵图案", "pattern", [["hex", "六芒星"], ["penta", "五芒星"], ["square", "双方形（八角）"], ["taiji", "太极八卦"], ...GROUND_AURAS]);
       choose("边缘特效", "edge", EDGES);
+      // where it sits, and 环绕角色: half of it behind the figure
+      if (s.view !== "side") slider("高度", "ringHeight", 0, 100, "%", "魔法阵在画幅框里的高度：0% 在底边（脚下），50% 在中间（腰部），100% 在顶上（头顶）。跟随角色图层时就是套在角色身上的高度");
+      const wrap = el("input", { type: "checkbox", checked: !!s.ringWrap, onchange: () => this.edit({ ringWrap: wrap.checked }) });
+      P.append(el("label", { class: "ed-check", title: "沿魔法阵的长轴切成两半：远侧那半圈画在角色后面，近侧那半圈画在角色前面，像套在角色身上" }, wrap, "环绕角色（一半在后）"));
+      if (s.ringWrap) {
+        const flip = el("input", { type: "checkbox", checked: !!s.ringFlip, onchange: () => this.edit({ ringFlip: flip.checked }) });
+        P.append(el("label", { class: "ed-check" }, flip, s.view === "side" ? "反过来（右半边在后）" : "反过来（下半圈在后）"));
+        slider("身体宽度", "ringBody", 0, 100, "%", "角色身体有多粗（占魔法阵半径的百分比）：前后的分界在身体这一段绕着身体的前面弯过去，是一段弧，不是直线；身体里面的那部分魔法阵在身体后面。0% 是一条直线");
+        const under = s.follow && this.doc.layers.find((o) => o.id === s.follow);
+        P.append(el("p", { class: "ed-hint" }, under
+          ? "远侧半圈画在「" + under.name + "」正下方，只被它挡住；更下面的背景、地面图层不受影响。往上飘的光点、火焰跟着它升起来的那半圈。"
+          : "还没跟随图层：远侧半圈画在所有图层下面（有背景图层时会被背景挡住）。在上面的「跟随图层」里选角色，远侧半圈就放在角色正下方，魔法阵也会跟着角色走。"));
+      }
     }
     if (s.kind === "arrow") {
       choose("外观", "shape", PROJECTILES);

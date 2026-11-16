@@ -104,6 +104,7 @@ function registerEffectNode(remote) {
     f.slider("旋转", "rotate", { min: -180, max: 180, unit: "°" });
     const ground = f.slider("地面倾斜", "tilt", { min: 0, max: 80, unit: "°" });
     const pattern = f.select("法阵图案", "pattern", [["hex", "六芒星"], ["penta", "五芒星"], ["square", "双方形（八角）"], ["taiji", "太极八卦"], ...GROUND_AURAS], { wide: true });
+    const ringHeight = f.slider("高度", "ringHeight", { min: 0, max: 100, unit: "%", fallback: 0 });
     const edge = f.select("边缘特效", "edge", EDGES, { wide: true });
     const bolts = f.check("带闪电（超级赛亚人 2 那样在斗气上窜动）", "bolts");
     const root = f.slider("根部宽度", "root", { min: 10, max: 100, unit: "%" });
@@ -132,6 +133,7 @@ function registerEffectNode(remote) {
       px.style.display = p().style === "pixel" ? "" : "none";
       ground.style.display = GROUND.has(k) ? "" : "none";
       pattern.style.display = k === "circle" ? "" : "none";
+      ringHeight.style.display = k === "circle" && p().view !== "side" ? "" : "none";
       edge.style.display = k === "circle" ? "" : "none";
       view.style.display = hasSide(k) ? "" : "none";
     });

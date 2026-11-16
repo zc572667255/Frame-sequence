@@ -81,6 +81,10 @@ export const VFX_DEFAULTS = {
   glow: 60,      // bloom, %
   tilt: 60,      // 冲击波 / 魔法阵 / 治疗 / 烟尘: how flat the ground is seen, degrees (0 = from above)
   pattern: "hex", // 魔法阵: "hex" 六芒星 | "penta" 五芒星 | "square" 双方形 | "taiji" 太极八卦 | 光环（kinds/auras.js GROUND_AURAS）
+  ringHeight: 0, // 魔法阵: how high it sits in its box, % (0 at the feet … 50 the waist … 100 the head)
+  ringWrap: false, ringFlip: false, // 魔法阵 环绕角色: its far half goes behind (vfx/layer.js), 反过来: the other half
+  ringBody: 35,  // 环绕角色 身体宽度: the body's radius, % of the circle's — the cut bends round it (0: a straight cut)
+  part: null,    // what of it is drawn: null all, "back" / "front" its far / near half (环绕角色; vfx/layer.js sets it)
   edge: "auto",  // 魔法阵: what plays round the rim — "auto" (the palette's element) | "none" | "fire" 火焰 | "earth" 岩石 | "wind" 风刃 | "water" 水波 | "bolt" 闪电
   bolts: false,  // 环绕光: lightning crawling over it
   root: 100,     // 燃烧: 根部宽度, % of the fire's width (small: a torch's flame)
@@ -140,13 +144,21 @@ export function renderVfx(p, i) {
   };
   // what stands on the ground sits low, its ring just inside the bottom edge
   if (s.kind === "circle" || s.kind === "heal") c.gy = Math.max(h / 2, h - R * squash - 4);
+  // 魔法阵 高度: from there up to its ring just inside the top
+  if (s.kind === "circle") c.gy += (Math.min(h / 2, R * squash + 4) - c.gy) * clamp01((+s.ringHeight || 0) / 100);
+  // 环绕角色: only its far or near half (ringHalf)
+  c.half = s.kind === "circle" && (s.part === "back" || s.part === "front") ? ringHalf(c, s.part, !!s.ringFlip, (s.ringBody ?? 35) / 100) : null;
   const draw = EFFECTS[s.kind] || EFFECTS.hit;
   let base = createCanvas(w, h);
   const bg = base.getContext("2d");
   if (hasFlight(s) || ["thunder", "ice", "wind", "sand", "slash"].includes(s.kind)) remote(bg, c, s);
   else draw(bg, c);
-  // the trails' accents over it (光效点缀)
-  if (!hasFlight(s)) drawAccents(bg, c, accentAmounts(s, pal.preset));
+  // the trails' accents over it (光效点缀) — on its half only when it is cut in two
+  if (!hasFlight(s)) {
+    if (c.half) { bg.save(); c.half.clip(bg); }
+    drawAccents(bg, c, accentAmounts(s, pal.preset));
+    if (c.half) bg.restore();
+  }
   bg.globalCompositeOperation = "source-over";
   bg.globalAlpha = 1;
   if (isRound(s.kind) && !hasFlight(s)) { roundOff(base); if (c.top) roundOff(c.top); }
@@ -184,6 +196,55 @@ export function renderVfx(p, i) {
   // turned, faded and cut into the same blocks
   if (c.top) px.getContext("2d").drawImage(blocks(fadeEdges(rot ? turn(c.top, rot) : c.top), c.px), 0, 0);
   return px;
+}
+
+// 魔法阵 环绕角色: half of it — "back" what goes behind the character,
+// "front" the rest. The character stands through the circle: a body
+// (ringBody: its radius, % of the circle's) whose cross-section is a small
+// ellipse round the centre, laid on the ground like the circle. So the cut
+// runs along the long axis outside the body and round the near side of the
+// body's ellipse across it — the curve where the body comes out in front of
+// the circle, not a straight line — and what lies inside the body goes
+// behind it. Laid on the ground the far side is the top of the ellipse;
+// stood up (侧面) its left; flip: the other way round. The circle's own lines,
+// the light on the ground and the glints round it are cut there (clip(g));
+// what rises off it — motes, flames, rocks, sparks — goes with the half it
+// rises from (keep(th, r): the point it starts at, angle th, radius r), so
+// nothing is cut off on its way up. 旋转 turns the whole picture afterwards,
+// the cut with it.
+export function ringHalf(c, part, flip, body = 0) {
+  const side = c.view === "side", kx = side ? c.squash : 1, k = side ? 1 : c.squash;
+  const o = side ? [c.cx, c.cy] : [c.cx, c.gy];
+  let nf = side ? [-1, 0] : [0, -1];
+  if (flip) nf = [-nf[0], -nf[1]];
+  const back = part === "back", L = (c.w + c.h) * 4, along = [-nf[1], nf[0]];
+  const rb = Math.max(0, Math.min(1, body)) * c.R;
+  const behind = (p) => {
+    const dx = p[0] - o[0], dy = p[1] - o[1];
+    if (dx * nf[0] + dy * nf[1] > 1e-9) return true;
+    return rb > 0 && (dx / (rb * kx)) ** 2 + (dy / (rb * k)) ** 2 < 1;
+  };
+  // the cut: the long axis, bulging round the near side of the body
+  const curve = [[o[0] + along[0] * L, o[1] + along[1] * L]];
+  if (rb > 0) {
+    const phi = Math.atan2(-nf[1], -nf[0]), arc = [];
+    for (let i = 0; i <= 32; i++) { const a = phi - Math.PI / 2 + Math.PI * i / 32; arc.push([o[0] + Math.cos(a) * rb * kx, o[1] + Math.sin(a) * rb * k]); }
+    const d = (p) => (p[0] - curve[0][0]) ** 2 + (p[1] - curve[0][1]) ** 2;
+    curve.push(...(d(arc[0]) < d(arc[arc.length - 1]) ? arc : arc.reverse()));
+  }
+  curve.push([o[0] - along[0] * L, o[1] - along[1] * L]);
+  const side2 = back ? 1 : -1, region = [...curve, [o[0] - along[0] * L + nf[0] * L * side2, o[1] - along[1] * L + nf[1] * L * side2], [o[0] + along[0] * L + nf[0] * L * side2, o[1] + along[1] * L + nf[1] * L * side2]];
+  return {
+    part, o, region,
+    at: (p) => (back ? behind(p) : !behind(p)),
+    keep(th, r = 1) { return this.at([o[0] + Math.cos(th) * r * kx, o[1] + Math.sin(th) * r * k]); },
+    clip(g) {
+      g.beginPath();
+      region.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+      g.closePath();
+      g.clip();
+    },
+  };
 }
 
 // a canvas turned about its centre

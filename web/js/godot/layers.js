@@ -16,7 +16,7 @@ import { openModal } from "../ui/modal.js";
 import { loadTextures, drawTrail } from "../trails/composite.js";
 import { renderGhost, ghostSettings } from "../trails/ghost.js";
 import { drawStrokeLayer, strokeWraps, prefetchStrokeLayer } from "../trails/stroke.js";
-import { drawVfxLayer, prefetchVfxLayer, layerBBox } from "../vfx/layer.js";
+import { drawVfxLayer, prefetchVfxLayer, layerBBox, vfxBacks, vfxFront } from "../vfx/layer.js";
 import { sheetGrid } from "../nodes/exporters.js";
 import { makeZip } from "../imaging/zip.js";
 import { trailData, trailGodot, attachStrips } from "./trail.js";
@@ -66,11 +66,17 @@ export async function renderLayers(app, cardId, opts = {}) {
   const runtime = opts.trails === "runtime" || opts.trails === "code", vfxRuntime = opts.vfx === "runtime" || opts.vfx === "code";
 
   const entries = [];
+  // 魔法阵 环绕角色: its far half, under the layer it follows or under everything
+  const backs = vfxBacks(shown);
+  const backEntry = (b) => (vfxRuntime ? { layer: b, name: b.name + "（后半圈）", kind: "vfx", runtime: true } : { layer: b, part: "back", name: b.name + "（后半圈）", kind: "vfx" });
   for (const l of shown) {
     if (l.trail && !runtime) entries.push({ layer: l, part: "back", name: l.name + "（后方）", kind: "trail" });
     else if (l.stroke && strokeWraps(l.stroke) && opts.trails !== "code") entries.push({ layer: l, part: "back", name: l.name + "（后半圈）", kind: "stroke" });
   }
-  for (const l of shown) {
+  for (const b of backs.bottom) entries.push(backEntry(b));
+  for (const l0 of shown) {
+    for (const b of backs.under.get(l0.id) || []) entries.push(backEntry(b));
+    const l = l0.vfx ? vfxFront(l0) : l0;
     if (l.trail && runtime) { entries.push({ layer: l, name: l.name, kind: "trail", runtime: true, trail: byId.get(l.trail) }); continue; }
     if (l.vfx && vfxRuntime) { entries.push({ layer: l, name: l.name, kind: "vfx", runtime: true }); continue; }
     if (l.stroke && opts.trails === "code") { entries.push({ layer: l, name: l.name, kind: "stroke", runtime: true }); continue; }

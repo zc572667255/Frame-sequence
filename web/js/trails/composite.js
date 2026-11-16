@@ -7,7 +7,7 @@
 import { createCanvas } from "../core/util.js";
 import { renderTrail, builtinTexture, builtinBrush, normalizeTrail, trailState } from "./model.js";
 import { renderGhost, drawGhostCanvas } from "./ghost.js";
-import { drawVfxLayer, layerBBox } from "../vfx/layer.js";
+import { drawVfxLayer, layerBBox, vfxBacks, vfxFront } from "../vfx/layer.js";
 import { drawStrokeLayer, strokeWraps } from "./stroke.js";
 
 const textures = new Map(); // asset id -> canvas (once loaded)
@@ -143,6 +143,11 @@ export function drawTrail(g, raw, frameIds, fi, z, w, h) {
 // opts: { celImage, onlyReady } for effect layers (vfx/layer.js drawVfxLayer)
 export function drawFrameStack(g, layers, trails, frameIds, fi, w, h, drawCel, celKey, opts = {}) {
   const byId = new Map((trails || []).map((t) => [t.id, t]));
+  const vctx = { w, h, onlyReady: !!opts.onlyReady, bbox: (id, j) => layerBBox(layers, id, j, w, h, drawCel, celKey, opts.celImage) };
+  // 魔法阵 环绕角色: far halves under the layer they follow, or under everything
+  const backs = vfxBacks(layers);
+  const drawBacks = (list) => { for (const b of list || []) { g.globalAlpha = (b.opacity ?? 100) / 100; drawVfxLayer(g, b, frameIds, fi, 0, 0, 1, vctx); } };
+  drawBacks(backs.bottom);
   for (const l of layers) {
     if (l.trail && l.visible !== false) {
       g.globalAlpha = (l.opacity ?? 100) / 100;
@@ -153,12 +158,13 @@ export function drawFrameStack(g, layers, trails, frameIds, fi, w, h, drawCel, c
     }
   }
   for (const l of layers) {
+    drawBacks(backs.under.get(l.id));
     if (l.visible === false) continue;
     g.globalAlpha = (l.opacity ?? 100) / 100;
     if (l.trail) drawTrail(g, byId.get(l.trail), frameIds, fi, "front", w, h);
     else if (l.ghost) drawGhostCanvas(g, l, renderGhost(l, layers, frameIds, fi, w, h, drawCel, celKey));
     else if (l.stroke) drawStrokeLayer(g, l, frameIds, fi, w, h, 0, 0, 1, opts.onlyReady ? "ready" : "sync", "front");
-    else if (l.vfx) drawVfxLayer(g, l, frameIds, fi, 0, 0, 1, { w, h, onlyReady: !!opts.onlyReady, bbox: (id, j) => layerBBox(layers, id, j, w, h, drawCel, celKey, opts.celImage) });
+    else if (l.vfx) drawVfxLayer(g, vfxFront(l), frameIds, fi, 0, 0, 1, vctx);
     else drawCel(l, fi, g);
   }
   g.globalAlpha = 1;

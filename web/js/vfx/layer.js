@@ -52,6 +52,30 @@ function fitShown(s, frameIds) {
   return shown > 0 && s.frames > shown ? fitRemoteFrames(s, shown) : s;
 }
 
+// 魔法阵 环绕角色: the effect is drawn as two halves (effects.js ringHalf) —
+// its far half ("back") just under the layer it follows (the character: the
+// layers below that, background and ground, still cover it), or under every
+// layer when it follows none; its near half ("front") at its own place.
+export const vfxWraps = (l) => !!(l && l.vfx && l.vfx.kind === "circle" && l.vfx.ringWrap);
+// the layer drawing only one half (part: "back" | "front")
+export const vfxPart = (l, part) => ({ ...l, vfx: { ...l.vfx, part } });
+// what is drawn at the layer's own place in the stack
+export const vfxFront = (l) => (vfxWraps(l) ? vfxPart(l, "front") : l);
+// the far halves to draw, by where they go: under: layer id → [half layers],
+// bottom: [half layers] under everything. Hidden effect layers have none.
+export function vfxBacks(layers) {
+  const under = new Map(), bottom = [];
+  for (const l of layers) {
+    if (l.visible === false || !vfxWraps(l)) continue;
+    const at = l.vfx.follow && layers.some((o) => o.id === l.vfx.follow && o !== l) ? l.vfx.follow : null;
+    const half = vfxPart(l, "back");
+    if (at) { if (!under.has(at)) under.set(at, []); under.get(at).push(half); } else bottom.push(half);
+  }
+  return { under, bottom };
+}
+// a layer as what is rendered for it: both halves when it is cut in two
+const renderedParts = (l) => (vfxWraps(l) && !l.vfx.part ? [vfxPart(l, "back"), vfxPart(l, "front")] : [l]);
+
 // the effect frame shown on animation frame fi, or -1
 export function vfxFrame(s, frameIds, fi) {
   const st = Math.max(0, frameIds.indexOf(s.start));
@@ -218,6 +242,7 @@ export function vfxPrefetch(s, i, w, h) {
 // the background — from frame `from` on, so what comes next is ready first
 export function prefetchVfxLayer(l, frameIds, ctx, from = 0) {
   if (!getWorker()) return Promise.resolve();
+  if (renderedParts(l).length > 1) return Promise.all(renderedParts(l).map((p) => prefetchVfxLayer(p, frameIds, ctx, from)));
   const s = vfxSettings(l, frameIds), n = frameIds.length, all = [];
   for (let k = 0; k < n; k++) {
     const fi = (from + k) % n, i = vfxFrame(s, frameIds, fi);
@@ -231,8 +256,7 @@ export function prefetchVfxLayer(l, frameIds, ctx, from = 0) {
 // is everything effect layers show on frame fi there to draw already?
 export function vfxFrameReady(layers, frameIds, fi, ctx) {
   if (!getWorker()) return true;
-  for (const l of layers) {
-    if (!l.vfx || l.visible === false) continue;
+  for (const l of layers.flatMap((x) => (x.vfx && x.visible !== false ? renderedParts(x) : []))) {
     const s = vfxSettings(l, frameIds), i = vfxFrame(s, frameIds, fi);
     if (i < 0) continue;
     const r = vfxRect(vfxRegion(s, frameIds, fi, ctx));

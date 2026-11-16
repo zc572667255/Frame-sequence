@@ -29,7 +29,7 @@ import { effectKinds } from "../vfx/effects.js";
 import { isRemoteKind } from "../vfx/catalog.js";
 import { fitRemoteFrames } from "../vfx/remote.js";
 import { pathHandle, pathPatch, drawRemotePath } from "./remotepath.js";
-import { VFX_LAYER_DEFAULTS, vfxSettings, vfxFrame, vfxRegion, vfxRect, drawVfxLayer, layerBBox, prefetchVfxLayer, onVfxReady, vfxFrameReady } from "../vfx/layer.js";
+import { VFX_LAYER_DEFAULTS, vfxSettings, vfxFrame, vfxRegion, vfxRect, drawVfxLayer, layerBBox, prefetchVfxLayer, onVfxReady, vfxFrameReady, vfxBacks, vfxFront } from "../vfx/layer.js";
 
 const TOOLS = [
   { id: "pencil", label: "铅笔", key: "B", icon: "✎" },
@@ -2222,12 +2222,23 @@ class Editor {
       this.drawStrokeIn(g, l, li, "back", frameIds, ox, oy, z, iw, ih);
     });
     g.globalAlpha = 1;
+    // 魔法阵 环绕角色: its far half just under the layer it follows (or under every layer)
+    const backs = vfxBacks(doc.layers);
+    const drawBacks = (list) => {
+      for (const b of list || []) {
+        g.globalAlpha = (b.opacity ?? 100) / 100;
+        drawVfxLayer(g, b, frameIds, this.fi, ox, oy, z, this.vfxCtx(this.vfxDrafting(doc.layers.find((o) => o.id === b.id), doc.layers.findIndex((o) => o.id === b.id))));
+      }
+      g.globalAlpha = 1;
+    };
+    drawBacks(backs.bottom);
     doc.layers.forEach((l, li) => {
+      drawBacks(backs.under.get(l.id));
       if (l.visible === false) return;
       g.globalAlpha = (l.opacity ?? 100) / 100;
       if (l.trail) { this.tm.drawLayer(g, l, ox, oy, iw, ih); g.globalAlpha = 1; return; }
       if (l.ghost) { drawGhostCanvas(g, l, this.ghostCanvas(l), ox, oy, iw, ih); g.globalAlpha = 1; return; }
-      if (l.vfx) { drawVfxLayer(g, l, frameIds, this.fi, ox, oy, z, this.vfxCtx(this.vfxDrafting(l, li))); g.globalAlpha = 1; return; }
+      if (l.vfx) { drawVfxLayer(g, vfxFront(l), frameIds, this.fi, ox, oy, z, this.vfxCtx(this.vfxDrafting(l, li))); g.globalAlpha = 1; return; }
       if (l.stroke) {
         this.drawStrokeIn(g, l, li, "front", frameIds, ox, oy, z, iw, ih);
         g.globalAlpha = 1;

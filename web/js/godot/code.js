@@ -92,6 +92,9 @@ export function codeParamsFrom(s, w, h, fps, name) {
     size: Math.max(0.05, Math.min(1, s.size / 100)),
     squash: Math.max(0.15, Math.cos(Math.max(0, Math.min(80, s.tilt)) * Math.PI / 180)),
     side: s.view === "side", pattern: PATTERNS[s.pattern] ?? 0, bolts: !!s.bolts,
+    // 魔法阵: 高度, and 环绕角色's half (0 all, 1 the far half, 2 the near one; vfx/layer.js vfxPart)
+    ringHeight: Math.max(0, Math.min(1, (+s.ringHeight || 0) / 100)), ringPart: s.kind === "circle" ? (s.part === "back" ? 1 : s.part === "front" ? 2 : 0) : 0, ringFlip: !!s.ringFlip,
+    ringBody: Math.max(0, Math.min(1, (s.ringBody ?? 35) / 100)),
     root: Math.max(0.1, Math.min(1, (s.root ?? 100) / 100)), drift: !!s.drift,
     edge: (s.edge === "auto" ? (isGroundAura(s.pattern) ? "none" : pal.element) : s.edge) === "fire" ? 1 : 0,
     loop: !!s.loop, frames: Math.max(1, s.frames | 0), fps: fps || s.fps || 12,
@@ -132,6 +135,7 @@ export function codeProps(p) {
     ...remoteProps(p.remote),
     `kind = ${p.kind}`, `box_size = Vector2(${num(p.w)}, ${num(p.h)})`, `size = ${num(p.size)}`,
     `squash = ${num(p.squash)}`, `side_view = ${p.side}`, `bolts = ${p.bolts}`, `root_width = ${num(p.root ?? 1)}`, `cloud_drift = ${!!p.drift}`, `pattern = ${p.pattern}`, `edge_effect = ${p.edge}`,
+    `ring_height = ${num(p.ringHeight ?? 0)}`, `ring_part = ${p.ringPart | 0}`, `ring_flip = ${!!p.ringFlip}`, `ring_body = ${num(p.ringBody ?? 0.35)}`,
     `loop = ${p.loop}`, `frames = ${p.frames}`, `fps = ${num(p.fps)}`, `glow = ${num(p.glow)}`, `amount = ${num(p.amount)}`,
     `random_seed = ${p.seed}`, `rotate_degrees = ${num(p.rotate)}`, `soft_light = ${p.soft}`, `bloom = ${num(p.bloom)}`, `additive = ${p.additive}`,
     `colors = ${tscnColors(p.cols)}`, `accents = PackedFloat32Array(${p.accents.map(num).join(", ")})`, `core_color = ${color(p.core)}`, `rim_color = ${color(p.rim)}`, `splat_color = ${color(p.splat)}`,
@@ -196,6 +200,14 @@ signal finished
 ## 魔法阵的图案；后六种是地面光环
 @export_enum("六芒星", "五芒星", "双方形", "太极八卦", "能量爆发", "圣光光环", "旋风光环", "星辉光环", "幽魂光环", "箭阵光环") var pattern := ${d.pattern}
 @export_enum("无", "火焰") var edge_effect := ${d.edge}
+## 魔法阵的高度：0 在画幅底边（脚下），0.5 在中间（腰部），1 在顶上（头顶）
+@export_range(0.0, 1.0) var ring_height := ${num(d.ringHeight ?? 0)}
+## 魔法阵环绕角色：只画远侧那半圈（放在角色下面的那个节点）或近侧那半圈（角色上面的那个）；0 = 整个
+@export_enum("整个", "远侧半圈（角色后面）", "近侧半圈（角色前面）") var ring_part := ${d.ringPart | 0}
+## 反过来：对调哪半圈在后面
+@export var ring_flip := ${!!d.ringFlip}
+## 身体宽度（占魔法阵半径）：前后分界在身体这一段绕着身体前面弯过去（一段弧），身体里面的部分在后面；0 = 直线
+@export_range(0.0, 1.0) var ring_body := ${num(d.ringBody ?? 0.35)}
 @export var loop := ${d.loop}
 ## 特效帧数，和 fps 一起决定一遍的时长
 @export var frames := ${d.frames}
@@ -796,6 +808,16 @@ var _R := 1.0
 var _cx := 0.0
 var _cy := 0.0
 var _gy := 0.0
+# 魔法阵环绕角色：只留半平面 dot(p - _hp_o, _hp_n) >= 0 里的（_tri 里切）；_hp_skip：往上飘的东西按它从哪半圈升起来算，不切
+var _hp_on := false
+var _hp_skip := false
+var _hp_back := true
+var _hp_o := Vector2.ZERO
+var _hp_n := Vector2.ZERO
+var _hp_nf := Vector2.ZERO  # 远侧的方向
+var _hp_rb := Vector2.ZERO  # 身体截面椭圆的两个半轴（屏幕上）
+var _hp_region := PackedVector2Array()  # 自己那半：沿长轴、在身体这一段绕着身体前面弯过去
+var _hp_ebox := Rect2()
 var _rx := 0.0
 var _ry := 0.0
 var _px := 1.0  # 一个屏幕像素在本地坐标里多长（画抗锯齿的线用）
@@ -1191,6 +1213,13 @@ func _has_field() -> bool:
 func _tri(idx: PackedInt32Array, pts: PackedVector2Array, cols: PackedColorArray) -> void:
 	if _sm_on:
 		cols = _slash_mask_cols(pts, cols)  # 剑气：两头变淡
+	if _hp_on and not _hp_skip:
+		var cut := _hp_clip(idx, pts, cols)  # 魔法阵环绕角色：只留自己那半
+		if cut.is_empty():
+			return
+		idx = cut[0]
+		pts = cut[1]
+		cols = cut[2]
 	if not _remote_clip.is_empty():
 		_remote_clip_tri(idx, pts, cols)
 		return
@@ -1242,6 +1271,82 @@ func _tri(idx: PackedInt32Array, pts: PackedVector2Array, cols: PackedColorArray
 			_bc.append(cols[0])
 
 
+# 一点在不在自己那半（正好在线上的归近侧那半，只画一次）
+func _hp_in(p: Vector2) -> bool:
+	var q := p - _hp_o
+	var behind := q.dot(_hp_nf) > 1e-9
+	if not behind and _hp_rb.x > 0.0:
+		behind = pow(q.x / _hp_rb.x, 2.0) + pow(q.y / _hp_rb.y, 2.0) < 1.0  # 在身体里面
+	return behind if _hp_back else not behind
+
+
+# 从圆上角度 th、半径 r 处升起来的东西归哪半
+func _hp_keep(th: float, r: float, kx: float, k: float) -> bool:
+	return _hp_in(_hp_o + Vector2(cos(th) * r * kx, sin(th) * r * k))
+
+
+# 三角形按半平面切开（颜色跟着插值）：[idx, pts, cols]，全切没了是空的
+func _hp_clip(idx: PackedInt32Array, pts: PackedVector2Array, cols: PackedColorArray) -> Array:
+	var oi := PackedInt32Array()
+	var op := PackedVector2Array()
+	var oc := PackedColorArray()
+	var same := cols.size() == pts.size()
+	for i in range(0, idx.size(), 3):
+		var ta := pts[idx[i]]
+		var tb := pts[idx[i + 1]]
+		var tc := pts[idx[i + 2]]
+		var bb := Rect2(ta, Vector2.ZERO).expand(tb).expand(tc)
+		if _hp_rb.x > 0.0 and bb.intersects(_hp_ebox):
+			# 碰到身体那一段（弧）：和自己那半的轮廓求交，颜色按原三角形插值
+			var ca: Color = cols[idx[i]] if same else cols[0]
+			var cb: Color = cols[idx[i + 1]] if same else cols[0]
+			var cc: Color = cols[idx[i + 2]] if same else cols[0]
+			var den := (tb - ta).cross(tc - ta)
+			for part in Geometry2D.intersect_polygons(PackedVector2Array([ta, tb, tc]), _hp_region):
+				var tri := Geometry2D.triangulate_polygon(part)
+				if tri.is_empty():
+					continue
+				var base0 := op.size()
+				for v in part:
+					op.append(v)
+					if absf(den) < 1e-9:
+						oc.append(ca)
+					else:
+						var wb := (v - ta).cross(tc - ta) / den
+						var wc := (tb - ta).cross(v - ta) / den
+						oc.append(ca * (1.0 - wb - wc) + cb * wb + cc * wc)
+				for j in tri:
+					oi.append(base0 + j)
+			continue
+		var poly := []
+		for kk in 3:
+			var n := idx[i + kk]
+			poly.append([pts[n], cols[n] if same else cols[0]])
+		var out := []
+		var prev: Array = poly[2]
+		var dp := ((prev[0] as Vector2) - _hp_o).dot(_hp_n)
+		for cur in poly:
+			var dc := ((cur[0] as Vector2) - _hp_o).dot(_hp_n)
+			if (dp >= 0.0) != (dc >= 0.0):
+				var tt := clampf(dp / (dp - dc), 0.0, 1.0)
+				out.append([(prev[0] as Vector2).lerp(cur[0], tt), (prev[1] as Color).lerp(cur[1], tt)])
+			if dc >= 0.0:
+				out.append(cur)
+			prev = cur
+			dp = dc
+		if out.size() < 3:
+			continue
+		var base := op.size()
+		for v in out:
+			op.append(v[0])
+			oc.append(v[1])
+		for kk in range(1, out.size() - 1):
+			oi.append_array(PackedInt32Array([base, base + kk, base + kk + 1]))
+	if oi.is_empty():
+		return []
+	return [oi, op, oc]
+
+
 func _tri_circle(c: Vector2, r: float, col: Color) -> void:
 	var n := clampi(int(r * 2.0) + 8, 8, 40)
 	var pts := PackedVector2Array([c])
@@ -1271,6 +1376,41 @@ func _draw_effect(w: float, h: float, t: float) -> void:
 	_gy = h / 2.0 + _R * squash * 0.5 if ground else h / 2.0
 	if kind == 6 or kind == 3:
 		_gy = maxf(h / 2.0, h - _R * squash - 4.0)  # 站在地面上的：圆环刚好在底边里面
+	if kind == 6:
+		_gy += (minf(h / 2.0, _R * squash + 4.0) - _gy) * clampf(ring_height, 0.0, 1.0)  # 魔法阵的高度：一直到圆环刚好在顶边里面
+	# 魔法阵环绕角色：沿长轴（过圆心）切成两半，平放时远侧是上半圈，竖起来（侧面）时是左半边；反过来就对调
+	_hp_on = kind == 6 and ring_part != 0
+	_hp_skip = false
+	if _hp_on:
+		_hp_o = Vector2(_cx, _cy if side_view else _gy)
+		var nf := Vector2(-1, 0) if side_view else Vector2(0, -1)
+		if ring_flip:
+			nf = -nf
+		_hp_back = ring_part == 1
+		_hp_n = nf if _hp_back else -nf
+		_hp_nf = nf
+		var kx := squash if side_view else 1.0
+		var k := 1.0 if side_view else squash
+		var rb := clampf(ring_body, 0.0, 1.0) * _R
+		_hp_rb = Vector2(rb * kx, rb * k)
+		_hp_ebox = Rect2(_hp_o - _hp_rb, _hp_rb * 2.0).grow(1.0)
+		var L := (w + h) * 4.0
+		var along := Vector2(-nf.y, nf.x)
+		var curve := PackedVector2Array([_hp_o + along * L])
+		if rb > 0.0:
+			var phi := atan2(-nf.y, -nf.x)
+			var arc := PackedVector2Array()
+			for i in 33:
+				var a := phi - PI / 2.0 + PI * i / 32.0
+				arc.append(_hp_o + Vector2(cos(a) * _hp_rb.x, sin(a) * _hp_rb.y))
+			if arc[0].distance_squared_to(curve[0]) > arc[32].distance_squared_to(curve[0]):
+				arc.reverse()
+			curve.append_array(arc)
+		curve.append(_hp_o - along * L)
+		var sd := 1.0 if _hp_back else -1.0
+		curve.append(_hp_o - along * L + nf * L * sd)
+		curve.append(_hp_o + along * L + nf * L * sd)
+		_hp_region = curve
 	if kind == 10:
 		_gy = h * 0.85  # 烟尘：在画幅底部扬起
 	var xf := _base
@@ -1879,11 +2019,15 @@ func _k_circle() -> void:
 		var rr := sqrt(P.next()) * R * 0.9
 		var ph := P.next()
 		var sp := 1.0 + floorf(P.next() * 2.0)
+		if _hp_on and not _hp_keep(th, rr, kx, k):
+			continue  # 跟着它升起来的那半圈
 		var p := fposmod(ph + t * sp, 1.0)
 		var a := sin(PI * p) * env * reveal
 		var path := func(q: float) -> Vector2:
 			return o + Vector2(cos(th) * rr * kx + R * 0.06 * sin(TAU * q * 1.5 + th), sin(th) * rr * k - R * 0.9 * q)
+		_hp_skip = true
 		_comet(path, p, 0.22, maxf(0.6, R * 0.014) * (1.0 if soft_light else 1.8), a, rim_color, core_color)
+		_hp_skip = false
 	if edge_effect == 1:
 		_fire_edge(o, R, kx, k, env * reveal)
 
@@ -1892,10 +2036,16 @@ func _k_circle() -> void:
 func _fire_edge(o: Vector2, R: float, kx: float, k: float, a: float) -> void:
 	if a <= 0.01:
 		return
-	var t := _t
-	var amt := maxf(0.2, amount)
 	var P := Rand.new(random_seed * 131 + 17)
 	var flame: Color = colors[1] if colors.size() > 1 else rim_color
+	_hp_skip = true  # 火舌、火星按立在哪半圈算，不切
+	_fire_edge_parts(o, R, kx, k, a, P, flame)
+	_hp_skip = false
+
+
+func _fire_edge_parts(o: Vector2, R: float, kx: float, k: float, a: float, P: Rand, flame: Color) -> void:
+	var t := _t
+	var amt := maxf(0.2, amount)
 	var n := int(round(24.0 * amt))
 	for i in n:
 		var th := (i + P.next() * 0.6) / n * TAU
@@ -1903,6 +2053,8 @@ func _fire_edge(o: Vector2, R: float, kx: float, k: float, a: float) -> void:
 		var ph := P.next()
 		var sp := 1.0 + floorf(P.next() * 3.0)
 		var ph2 := P.next()
+		if _hp_on and not _hp_keep(th, R * 0.97, kx, k):
+			continue  # 立在哪半圈就归哪半
 		var b := o + Vector2(cos(th) * R * 0.97 * kx, sin(th) * R * 0.97 * k)
 		var fl := 0.7 + 0.3 * sin(TAU * (t * sp + ph))
 		var sway := R * 0.05 * sin(TAU * (t * (1.0 + fmod(sp, 2.0)) + ph2))
@@ -1912,6 +2064,8 @@ func _fire_edge(o: Vector2, R: float, kx: float, k: float, a: float) -> void:
 		var ph := P.next()
 		var sp := 1.0 + floorf(P.next() * 2.0)
 		var sw := P.next() * TAU
+		if _hp_on and not _hp_keep(th, R * 0.97, kx, k):
+			continue
 		var b := o + Vector2(cos(th) * R * 0.97 * kx, sin(th) * R * 0.97 * k)
 		var p := fposmod(ph + t * sp, 1.0)
 		var path := func(q: float) -> Vector2:
@@ -2454,7 +2608,17 @@ func _field_quad(x0: float, y0: float, x1: float, y1: float) -> void:
 	if x1 <= x0 or y1 <= y0:
 		return
 	var pts := PackedVector2Array([Vector2(x0, y0), Vector2(x1, y0), Vector2(x1, y1), Vector2(x0, y1)])
-	RenderingServer.canvas_item_add_triangle_array(_cv.get_canvas_item(), PackedInt32Array([0, 1, 2, 0, 2, 3]), pts, _fill_cols(4, Color(1, 1, 1, _gmul)), pts)
+	var idx := PackedInt32Array([0, 1, 2, 0, 2, 3])
+	var cols := _fill_cols(4, Color(1, 1, 1, _gmul))
+	if _hp_on:
+		# 魔法阵环绕角色：噪声层也只留自己那半（UV 就是画幅像素坐标，跟着切）
+		var cut := _hp_clip(idx, pts, cols)
+		if cut.is_empty():
+			return
+		idx = cut[0]
+		pts = cut[1]
+		cols = cut[2]
+	RenderingServer.canvas_item_add_triangle_array(_cv.get_canvas_item(), idx, pts, cols, pts)
 
 
 ${FIREBALL_GD}

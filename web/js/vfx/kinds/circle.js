@@ -17,7 +17,10 @@ export function circle(g, c) {
   // the ground auras (光环) are drawn on their own (kinds/auras.js); an edge
   // only when one is asked for
   if (isGroundAura(c.pattern)) {
+    // 环绕角色: a ground aura is cut along the circle's long axis (its edge below by where things rise)
+    if (c.half) { g.save(); c.half.clip(g); }
     groundAura(g, c);
+    if (c.half) g.restore();
     if (c.edge !== "auto" && c.edge !== "none") {
       const side = c.view === "side", kx = side ? c.squash : 1, k = side ? 1 : c.squash, ox = c.cx, oy = side ? c.cy : c.gy;
       const fade = c.loop ? 1 : (1 - smooth(0.75, 1, c.t)) * easeOut(c.t / 0.3, 2);
@@ -86,7 +89,9 @@ export function circle(g, c) {
   }, pal.rim, lw, smooth(0.2, 0.9, reveal));
   ink(() => circ(R * 0.12), pal.core, lw);
   }
-  // lay it on the ground, glow it
+  // lay it on the ground, glow it (环绕角色: its own half only — the lines,
+  // the light and the glints racing round are cut along the long axis)
+  if (c.half) { g.save(); c.half.clip(g); }
   g.globalCompositeOperation = "lighter";
   // a faint light pooled on the ground under it, and in the band of runes
   // (高清 only: in pixels it would fill the circle with a solid plate)
@@ -110,11 +115,13 @@ export function circle(g, c) {
       trail(g, pal, pts, lw * 1.3, lit, true);
     }
   }
+  if (c.half) g.restore();
   // motes rising off it, swaying, trailing light (whole cycles per loop,
   // so the loop closes)
   const M = Math.round(14 * c.amount);
   for (let i = 0; i < M; i++) {
     const th = P() * TAU, rr = Math.sqrt(P()) * R * 0.9, ph = P(), sp = 1 + Math.floor(P() * 2);
+    if (c.half && !c.half.keep(th, rr)) continue; // with the half it rises from
     const p = frac(ph + t * sp), a = Math.sin(Math.PI * p) * env * reveal;
     const at = (q) => [ox + Math.cos(th) * rr * kx + R * 0.06 * Math.sin(TAU * q * 1.5 + th), oy + Math.sin(th) * rr * k - R * 0.9 * q];
     comet(g, pal, at, p, 0.22, Math.max(0.6, R * 0.014) * (c.pixel ? 1.8 : 1), a);
@@ -201,12 +208,17 @@ function circleEdge(g, c, el, place, a) {
   if (a <= 0.01) return;
   const { t, R, pal } = c, amt = Math.max(0.2, c.amount), P = rng(c.seed * 131 + 17);
   const px = c.pixel ? 1.7 : 1, cyc = (ph, sp) => frac(ph + t * sp);
+  // 环绕角色: what stands on or rises off the rim goes with the half it starts
+  // from (mine), what runs along the ground round it is cut (clipped)
+  const mine = c.half ? (th) => c.half.keep(th, R) : () => true;
+  const clipped = (fn) => { if (!c.half) return fn(); g.save(); c.half.clip(g); fn(); g.restore(); };
   g.globalCompositeOperation = "lighter";
   if (el === "fire") {
     // tongues of flame standing round the rim, each flickering and swaying
     const n = Math.round(24 * amt);
     for (let i = 0; i < n; i++) {
       const th = (i + P() * 0.6) / n * TAU, j = P(), ph = P(), sp = 1 + Math.floor(P() * 3), ph2 = P();
+      if (!mine(th)) continue;
       const [bx, by] = place(th, R * 0.97), fl = 0.7 + 0.3 * Math.sin(TAU * (t * sp + ph));
       const sway = R * 0.05 * Math.sin(TAU * (t * (1 + sp % 2) + ph2));
       tongue(g, pal, bx, by, R * (0.055 + 0.05 * j), R * (0.22 + 0.3 * j) * fl, sway, a * (0.6 + 0.4 * fl));
@@ -214,6 +226,7 @@ function circleEdge(g, c, el, place, a) {
     // embers drifting up off it
     for (let i = 0; i < Math.round(14 * amt); i++) {
       const th = P() * TAU, ph = P(), sp = 1 + Math.floor(P() * 2), sw = P() * TAU;
+      if (!mine(th)) continue;
       const [bx, by] = place(th, R * 0.97), p = cyc(ph, sp);
       const at = (q) => [bx + R * 0.08 * Math.sin(sw + q * TAU), by - R * (0.1 + 0.7 * q)];
       comet(g, pal, at, p, 0.15, Math.max(0.6, R * 0.012) * px, a * Math.sin(Math.PI * p));
@@ -228,7 +241,7 @@ function circleEdge(g, c, el, place, a) {
       const th = (i + P() * 0.5) / n * TAU, j = P(), ph = P(), spin = P() * TAU, dir = P() < 0.5 ? -1 : 1, sd = Math.floor(P() * 1e6);
       const [bx, by] = place(th, R * (0.98 + 0.08 * P()));
       const lift = R * (0.14 + 0.22 * j + 0.06 * Math.sin(TAU * (t + ph))) * a;
-      rocks.push([by, () => {
+      if (mine(th)) rocks.push([by, () => {
         blob(g, bx, by, R * 0.06 * (0.6 + j), [[0, [0, 0, 0], 0.35 * a], [1, [0, 0, 0], 0]]);
         rockShape(g, [bx, by - lift], Math.max(2, R * (0.05 + 0.065 * j)), spin + dir * TAU * t, rng(sd), cols, a);
       }]);
@@ -236,6 +249,7 @@ function circleEdge(g, c, el, place, a) {
     rocks.sort((p, q) => p[0] - q[0]).forEach(([, draw]) => draw());   // the far ones first
     for (let i = 0; i < Math.round(16 * amt); i++) {
       const th = P() * TAU, ph = P(), sp = 1 + Math.floor(P() * 2), hgt = R * (0.08 + 0.15 * P()), out = (P() - 0.3) * R * 0.15, sz = Math.max(1, R * 0.012 * (1 + P()));
+      if (!mine(th)) continue;
       const p = cyc(ph, sp), [bx, by] = place(th, R * 0.98);
       g.fillStyle = rgba(cols[1], a * Math.sin(Math.PI * p));
       g.fillRect(bx + out * p - sz / 2, by - hgt * Math.sin(Math.PI * p) - sz / 2, sz, sz);
@@ -244,17 +258,23 @@ function circleEdge(g, c, el, place, a) {
     // bands of wind spiralling up round the circle, drawing in as they rise
     for (let i = 0, n = Math.max(3, Math.round(5 * amt)); i < n; i++) {
       const q = cyc(i / n + P() * 0.1, 1), spin = TAU * (t * 2 + P()), span = 1.6 + P() * 1.2, w = Math.max(0.8, R * 0.02) * px;
-      const pts = [];
+      // (环绕角色: each band goes behind where it winds round the far side)
+      const runs = [[]];
       for (let s = 0; s <= 24; s++) {
-        const [x, y] = place(spin + span * s / 24, R * (1.05 - 0.3 * q));
-        pts.push([x, y - R * (0.05 + 0.7 * q)]);
+        const th = spin + span * s / 24, [x, y] = place(th, R * (1.05 - 0.3 * q));
+        if (mine(th)) runs[runs.length - 1].push([x, y - R * (0.05 + 0.7 * q)]);
+        else if (runs[runs.length - 1].length) runs.push([]);
       }
-      trail(g, pal, pts, w * 3, a * 0.25 * Math.sin(Math.PI * q), false);
-      trail(g, pal, pts, w, a * Math.sin(Math.PI * q), false);
+      for (const pts of runs) {
+        if (pts.length < 2) continue;
+        trail(g, pal, pts, w * 3, a * 0.25 * Math.sin(Math.PI * q), false);
+        trail(g, pal, pts, w, a * Math.sin(Math.PI * q), false);
+      }
     }
     // gusts: quick streaks skimming round the rim
     for (let i = 0; i < Math.round(10 * amt); i++) {
       const th0 = P() * TAU, ph = P(), sp = 2 + Math.floor(P() * 2), r = R * (1 + 0.15 * P()), up = R * 0.3 * P();
+      if (!mine(th0 + 0.7)) continue;
       const p = cyc(ph, sp), at = (q) => { const [x, y] = place(th0 + q * 1.4, r); return [x, y - up]; };
       comet(g, pal, at, p, 0.35, Math.max(0.5, R * 0.01) * px, a * 0.8 * Math.sin(Math.PI * p));
     }
@@ -270,22 +290,25 @@ function circleEdge(g, c, el, place, a) {
     const water = mixRgb(pal.rim, pal.cols[1] || pal.rim, 0.4);
     // the band between the ground and the crest: the crest round one way, the
     // ground back the other, so only what lies between them fills
-    g.fillStyle = rgba(water, 0.3 * a);
-    g.beginPath();
-    crest.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
-    for (let i = M; i >= 0; i--) g.lineTo(base[i][0], base[i][1]);
-    g.closePath(); g.fill();
-    g.strokeStyle = rgba(pal.core, 0.8 * a); g.lineWidth = Math.max(0.8, R * 0.012) * px; g.lineJoin = "round";
-    g.beginPath(); crest.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.stroke();
-    for (let i = 0; i < 2; i++) {
-      const q = cyc(i / 2, 1);
-      g.strokeStyle = rgba(pal.rim, 0.5 * a * (1 - q)); g.lineWidth = Math.max(0.7, R * 0.012) * px;
+    clipped(() => {
+      g.fillStyle = rgba(water, 0.3 * a);
       g.beginPath();
-      for (let s = 0; s <= M; s++) { const [x, y] = place(s / M * TAU, R * (1.02 + 0.32 * q)); if (s) g.lineTo(x, y); else g.moveTo(x, y); }
-      g.stroke();
-    }
+      crest.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+      for (let i = M; i >= 0; i--) g.lineTo(base[i][0], base[i][1]);
+      g.closePath(); g.fill();
+      g.strokeStyle = rgba(pal.core, 0.8 * a); g.lineWidth = Math.max(0.8, R * 0.012) * px; g.lineJoin = "round";
+      g.beginPath(); crest.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.stroke();
+      for (let i = 0; i < 2; i++) {
+        const q = cyc(i / 2, 1);
+        g.strokeStyle = rgba(pal.rim, 0.5 * a * (1 - q)); g.lineWidth = Math.max(0.7, R * 0.012) * px;
+        g.beginPath();
+        for (let s = 0; s <= M; s++) { const [x, y] = place(s / M * TAU, R * (1.02 + 0.32 * q)); if (s) g.lineTo(x, y); else g.moveTo(x, y); }
+        g.stroke();
+      }
+    });
     for (let i = 0; i < Math.round(14 * amt); i++) {
       const th = P() * TAU, ph = P(), sp = 1 + Math.floor(P() * 2), hgt = R * (0.12 + 0.2 * P()), out = 0.1 + 0.2 * P();
+      if (!mine(th)) continue;
       const p = cyc(ph, sp), at = (q) => { const [x, y] = place(th, R * (0.99 + out * q)); return [x, y - hgt * Math.sin(Math.PI * q)]; };
       comet(g, pal, at, p, 0.25, Math.max(0.6, R * 0.013) * px, a * Math.sin(Math.PI * p));
     }
@@ -299,12 +322,15 @@ function circleEdge(g, c, el, place, a) {
         const [x, y] = place(th + span * s / 6, R * (0.97 + 0.06 * (B() - 0.5)));
         pts.push([x, y - R * 0.12 * Math.sin(Math.PI * s / 6)]);
       }
-      bolt(g, pal, jag(pts, B, R * 0.035), Math.max(0.7, R * 0.012) * px, a);
+      // (jagged either way, so both halves see the same lightning)
+      const arc = jag(pts, B, R * 0.035);
+      if (mine(th + span / 2)) bolt(g, pal, arc, Math.max(0.7, R * 0.012) * px, a);
     }
     for (let k = 0; k < Math.round(2 * amt); k++) {
       if (B() < 0.4) continue;
-      const [x, y] = place(B() * TAU, R * 0.97), hgt = R * (0.3 + 0.4 * B());
-      bolt(g, pal, jag([[x, y], [x + (B() - 0.5) * R * 0.2, y - hgt]], B, R * 0.05), Math.max(0.6, R * 0.009) * px, a * 0.85);
+      const th = B() * TAU, [x, y] = place(th, R * 0.97), hgt = R * (0.3 + 0.4 * B());
+      const up = jag([[x, y], [x + (B() - 0.5) * R * 0.2, y - hgt]], B, R * 0.05);
+      if (mine(th)) bolt(g, pal, up, Math.max(0.6, R * 0.009) * px, a * 0.85);
     }
   }
 }

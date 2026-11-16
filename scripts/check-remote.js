@@ -541,3 +541,46 @@ console.log("横扫转一整圈：头部圆弧在挥动平面里做、不伸进�
   assert.ok(!FLIGHT_FIELDS.some(f => f.key === "bodySize"), "弹体大小 is folded into 特效大小");
   console.log("远程特效大小按画布宽高：100% 刚好碰到宽或高、保持比例不出框、旧图层大小不变、Godot 一致检查通过");
 }
+
+// 魔法阵 环绕角色: drawn as two halves — the far one just under the layer it
+// follows (or under everything when it follows none), the near one at its own
+// place; hidden or not wrapping, nothing changes. Godot gets each half as its
+// own node (ring_part), with 高度 and 反过来
+{
+  const { vfxBacks, vfxFront, vfxWraps } = await import("../web/js/vfx/layer.js");
+  const { codeParamsFrom: gp, codeProps: props } = await import("../web/js/godot/code.js");
+  const ring = (id, extra) => ({ id, name: id, vfx: { kind: "circle", ringWrap: true, ...extra } });
+  const layers = [{ id: "bg" }, { id: "hero" }, ring("followHero", { follow: "hero" }), ring("free"), ring("hidden", { follow: "hero" }), { id: "plain", vfx: { kind: "circle" } }, ring("lost", { follow: "gone" })];
+  layers[4].visible = false;
+  const b = vfxBacks(layers);
+  assert.deepEqual([...b.under.keys()], ["hero"], "the far half goes under the layer it follows");
+  assert.deepEqual(b.under.get("hero").map((l) => [l.id, l.vfx.part]), [["followHero", "back"]], "hidden effect layers have no far half");
+  assert.deepEqual(b.bottom.map((l) => l.id), ["free", "lost"], "following none (or a layer that is gone): under everything");
+  assert.equal(vfxFront(layers[2]).vfx.part, "front", "at its own place: the near half");
+  assert.equal(vfxFront(layers[5]), layers[5], "not wrapping: the whole effect, as before");
+  assert.ok(!vfxWraps(layers[5]) && !vfxWraps({ vfx: { kind: "hit", ringWrap: true } }), "only 魔法阵 wraps");
+  const base = { ...VFX_KINDS.find((k) => k.id === "circle").defaults, kind: "circle", ringWrap: true, ringHeight: 45, ringFlip: true };
+  for (const [part, n] of [[null, 0], ["back", 1], ["front", 2]]) {
+    const pr = props(gp({ ...base, part }, 240, 300, 12));
+    assert.ok(pr.includes("ring_part = " + n) && pr.includes("ring_height = 0.45") && pr.includes("ring_flip = true") && pr.includes("ring_body = 0.35"), "Godot: ring_part " + n);
+  }
+}
+// the cut is curved where the body is: just in front of the long axis inside
+// the body's ellipse goes behind (inside the body), beside the body it is in
+// front; every point is in exactly one half; 0% is the straight cut
+{
+  const { ringHalf } = await import("../web/js/vfx/effects.js");
+  const c = { w: 240, h: 300, cx: 120, cy: 150, gy: 200, R: 100, squash: 0.4, view: "front" };
+  const B = ringHalf(c, "back", false, 0.35), F = ringHalf(c, "front", false, 0.35), S = ringHalf(c, "back", false, 0);
+  const pts = [[120, 205], [120, 213], [150, 202], [60, 202], [120, 190], [190, 230], [120, 214.5]];
+  for (const p of pts) assert.ok(B.at(p) !== F.at(p), p + ": in exactly one half");
+  assert.ok(B.at([120, 205]) && B.at([120, 213]), "inside the body's ellipse (in front of the axis): behind the body");
+  assert.ok(F.at([120, 214.5]) && F.at([60, 202]) && F.at([190, 230]), "in front of the body's near side, and beside it: in front");
+  assert.ok(B.at([120, 190]), "beyond the axis: behind");
+  assert.ok(!S.at([120, 205]), "身体宽度 0: the straight cut along the axis");
+  // the cut's edge across the body is the near side of its ellipse: a curve
+  const ys = [-30, -15, 0, 15, 30].map((dx) => { let y = 200; while (B.at([120 + dx, y + 0.25])) y += 0.25; return y; });
+  assert.ok(ys[2] > ys[1] && ys[1] > ys[0] && ys[2] > ys[3] && ys[3] > ys[4] && ys[2] - ys[0] > 3, "across the body the cut bows towards the viewer: " + ys.join(", "));
+  assert.ok(B.keep(Math.PI / 2, 10) && !B.keep(Math.PI / 2, 90), "what rises from inside the body goes behind, from the near rim in front");
+}
+console.log("魔法阵环绕角色：前后分界在身体处是弧、远侧半圈放在跟随图层正下方（没跟随时在最下面）、近侧在原位、Godot 分成两个节点检查通过");
