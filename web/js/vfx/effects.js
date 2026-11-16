@@ -85,6 +85,7 @@ export const VFX_DEFAULTS = {
   ringWrap: false, ringFlip: false, // 魔法阵 环绕角色: its far half goes behind (vfx/layer.js), 反过来: the other half
   ringBody: 35,  // 环绕角色 身体宽度: the body's radius, % of the circle's — the cut bends round it (0: a straight cut)
   part: null,    // what of it is drawn: null all, "back" / "front" its far / near half (环绕角色; vfx/layer.js sets it)
+  ringPass: null, // (inside a half: "ground" what lies on the ground, whole | "rising" what rises off its half)
   edge: "auto",  // 魔法阵: what plays round the rim — "auto" (the palette's element) | "none" | "fire" 火焰 | "earth" 岩石 | "wind" 风刃 | "water" 水波 | "bolt" 闪电
   bolts: false,  // 环绕光: lightning crawling over it
   root: 100,     // 燃烧: 根部宽度, % of the fire's width (small: a torch's flame)
@@ -146,19 +147,22 @@ export function renderVfx(p, i) {
   if (s.kind === "circle" || s.kind === "heal") c.gy = Math.max(h / 2, h - R * squash - 4);
   // 魔法阵 高度: from there up to its ring just inside the top
   if (s.kind === "circle") c.gy += (Math.min(h / 2, R * squash + 4) - c.gy) * clamp01((+s.ringHeight || 0) / 100);
-  // 环绕角色: only its far or near half (ringHalf)
-  c.half = s.kind === "circle" && (s.part === "back" || s.part === "front") ? ringHalf(c, s.part, !!s.ringFlip, (s.ringBody ?? 35) / 100) : null;
+  // 环绕角色: only its far or near half (ringHalf). What lies on the ground is
+  // drawn whole once and split pixel by pixel with a hard mask — the two
+  // halves then fit back together exactly, with no seam where the soft edges
+  // of two cuts would overlap; what rises off it is drawn on its own, each
+  // with the half it rises from (c.only: "ground" | "rising" for those passes)
+  const part = s.kind === "circle" && (s.part === "back" || s.part === "front") ? s.part : null;
+  c.half = part ? ringHalf(c, part, !!s.ringFlip, (s.ringBody ?? 35) / 100) : null;
+  c.only = part ? s.ringPass || null : null;
+  if (part && !s.ringPass) return splitRing(p, s, c, i);
   const draw = EFFECTS[s.kind] || EFFECTS.hit;
   let base = createCanvas(w, h);
   const bg = base.getContext("2d");
   if (hasFlight(s) || ["thunder", "ice", "wind", "sand", "slash"].includes(s.kind)) remote(bg, c, s);
   else draw(bg, c);
-  // the trails' accents over it (光效点缀) — on its half only when it is cut in two
-  if (!hasFlight(s)) {
-    if (c.half) { bg.save(); c.half.clip(bg); }
-    drawAccents(bg, c, accentAmounts(s, pal.preset));
-    if (c.half) bg.restore();
-  }
+  // the trails' accents over it (光效点缀; 环绕角色: with what lies on the ground)
+  if (!hasFlight(s) && c.only !== "rising") drawAccents(bg, c, accentAmounts(s, pal.preset));
   bg.globalCompositeOperation = "source-over";
   bg.globalAlpha = 1;
   if (isRound(s.kind) && !hasFlight(s)) { roundOff(base); if (c.top) roundOff(c.top); }
@@ -245,6 +249,26 @@ export function ringHalf(c, part, flip, body = 0) {
       g.clip();
     },
   };
+}
+
+// 环绕角色's half of a frame: the ground pass cut by a hard mask (each pixel
+// by where its centre lies, turned back by 旋转 first), the rising pass over it
+function splitRing(p, s, c, i) {
+  const ground = renderVfx({ ...p, ringPass: "ground" }, i), rising = renderVfx({ ...p, ringPass: "rising" }, i);
+  const w = ground.width, h = ground.height, g = ground.getContext("2d"), img = g.getImageData(0, 0, w, h), d = img.data;
+  const rot = -((+s.rotate || 0) % 360) * Math.PI / 180, cs = Math.cos(rot), sn = Math.sin(rot), cx = w / 2, cy = h / 2;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const k = (y * w + x) * 4;
+    if (!d[k + 3]) continue;
+    const dx = x + 0.5 - cx, dy = y + 0.5 - cy;
+    if (!c.half.at([cx + dx * cs - dy * sn, cy + dx * sn + dy * cs])) d[k] = d[k + 1] = d[k + 2] = d[k + 3] = 0;
+  }
+  g.putImageData(img, 0, 0);
+  // added as light, as within the whole (a dark palette paints over instead)
+  g.globalCompositeOperation = c.pal.dark ? "source-over" : "lighter";
+  g.drawImage(rising, 0, 0);
+  g.globalCompositeOperation = "source-over";
+  return ground;
 }
 
 // a canvas turned about its centre

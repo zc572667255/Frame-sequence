@@ -16,11 +16,11 @@ import { groundAura, isGroundAura } from "./auras.js";
 export function circle(g, c) {
   // the ground auras (光环) are drawn on their own (kinds/auras.js); an edge
   // only when one is asked for
+  // 环绕角色 (effects.js splitRing): the ground pass draws what lies on the
+  // ground, whole; the rising pass only what rises off this half
+  const ground = c.only !== "rising", rises = c.only !== "ground";
   if (isGroundAura(c.pattern)) {
-    // 环绕角色: a ground aura is cut along the circle's long axis (its edge below by where things rise)
-    if (c.half) { g.save(); c.half.clip(g); }
-    groundAura(g, c);
-    if (c.half) g.restore();
+    if (ground) groundAura(g, c);
     if (c.edge !== "auto" && c.edge !== "none") {
       const side = c.view === "side", kx = side ? c.squash : 1, k = side ? 1 : c.squash, ox = c.cx, oy = side ? c.cy : c.gy;
       const fade = c.loop ? 1 : (1 - smooth(0.75, 1, c.t)) * easeOut(c.t / 0.3, 2);
@@ -29,6 +29,18 @@ export function circle(g, c) {
     return;
   }
   const { t, R, pal } = c;
+  if (!ground) {
+    // only what rises: the motes and the rim's element (the same seeds as the whole)
+    const side = c.view === "side", kx = side ? c.squash : 1, k = side ? 1 : c.squash, ox = c.cx, oy = side ? c.cy : c.gy;
+    const reveal = c.loop ? 1 : easeOut(t / 0.35, 2), env = c.loop ? 1 : 1 - smooth(0.78, 1, t);
+    const P = rng(c.seed * 37 + 9);
+    if (c.pattern !== "taiji") for (let n = 0; n < 12; n++) { const m = 2 + Math.floor(P() * 3); for (let j = 0; j < m * 4; j++) P(); }
+    g.globalCompositeOperation = "lighter";
+    motes(g, c, P, ox, oy, kx, k, env, reveal);
+    const el = c.edge === "auto" ? pal.element : c.edge;
+    if (el && el !== "none") circleEdge(g, c, el, (th, r) => [ox + Math.cos(th) * r * kx, oy + Math.sin(th) * r * k], env * reveal);
+    return;
+  }
   const reveal = c.loop ? 1 : easeOut(t / 0.35, 2);
   const env = c.loop ? 1 : 1 - smooth(0.78, 1, t);
   const lw = Math.max(0.8, R * 0.022);
@@ -89,9 +101,7 @@ export function circle(g, c) {
   }, pal.rim, lw, smooth(0.2, 0.9, reveal));
   ink(() => circ(R * 0.12), pal.core, lw);
   }
-  // lay it on the ground, glow it (环绕角色: its own half only — the lines,
-  // the light and the glints racing round are cut along the long axis)
-  if (c.half) { g.save(); c.half.clip(g); }
+  // lay it on the ground, glow it
   g.globalCompositeOperation = "lighter";
   // a faint light pooled on the ground under it, and in the band of runes
   // (高清 only: in pixels it would fill the circle with a solid plate)
@@ -115,20 +125,23 @@ export function circle(g, c) {
       trail(g, pal, pts, lw * 1.3, lit, true);
     }
   }
-  if (c.half) g.restore();
-  // motes rising off it, swaying, trailing light (whole cycles per loop,
-  // so the loop closes)
-  const M = Math.round(14 * c.amount);
-  for (let i = 0; i < M; i++) {
+  if (rises) motes(g, c, P, ox, oy, kx, k, env, reveal);
+  // the element of the palette (or the one asked for) round the rim
+  const el = c.edge === "auto" ? pal.element : c.edge;
+  if (el && el !== "none") circleEdge(g, c, el, (th, r) => to(Math.cos(th) * r, Math.sin(th) * r), env * reveal);
+}
+
+// motes rising off it, swaying, trailing light (whole cycles per loop, so the
+// loop closes); 环绕角色: only those rising off this half (c.half)
+function motes(g, c, P, ox, oy, kx, k, env, reveal) {
+  const { t, R, pal } = c;
+  for (let i = 0, M = Math.round(14 * c.amount); i < M; i++) {
     const th = P() * TAU, rr = Math.sqrt(P()) * R * 0.9, ph = P(), sp = 1 + Math.floor(P() * 2);
-    if (c.half && !c.half.keep(th, rr)) continue; // with the half it rises from
+    if (c.half && !c.half.keep(th, rr)) continue;
     const p = frac(ph + t * sp), a = Math.sin(Math.PI * p) * env * reveal;
     const at = (q) => [ox + Math.cos(th) * rr * kx + R * 0.06 * Math.sin(TAU * q * 1.5 + th), oy + Math.sin(th) * rr * k - R * 0.9 * q];
     comet(g, pal, at, p, 0.22, Math.max(0.6, R * 0.014) * (c.pixel ? 1.8 : 1), a);
   }
-  // the element of the palette (or the one asked for) round the rim
-  const el = c.edge === "auto" ? pal.element : c.edge;
-  if (el && el !== "none") circleEdge(g, c, el, (th, r) => to(Math.cos(th) * r, Math.sin(th) * r), env * reveal);
 }
 
 // The 太极八卦 inside the outer rings (drawn into the circle's own lines with
@@ -210,8 +223,9 @@ function circleEdge(g, c, el, place, a) {
   const px = c.pixel ? 1.7 : 1, cyc = (ph, sp) => frac(ph + t * sp);
   // 环绕角色: what stands on or rises off the rim goes with the half it starts
   // from (mine), what runs along the ground round it is cut (clipped)
-  const mine = c.half ? (th) => c.half.keep(th, R) : () => true;
-  const clipped = (fn) => { if (!c.half) return fn(); g.save(); c.half.clip(g); fn(); g.restore(); };
+  // (环绕角色 passes: the ground one has no rising things, the rising one no ground)
+  const mine = c.only === "ground" ? () => false : c.half ? (th) => c.half.keep(th, R) : () => true;
+  const clipped = (fn) => { if (c.only !== "rising") fn(); };
   g.globalCompositeOperation = "lighter";
   if (el === "fire") {
     // tongues of flame standing round the rim, each flickering and swaying
