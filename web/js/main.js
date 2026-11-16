@@ -18,6 +18,7 @@ import { parseFrameJson, framesFromSpec, readZipFile, findFrameJson, importChara
 import { isImageFile, naturalSort, decodeFiles, decodeAnimated, importDialog, normalizeFrames, sheetDialog } from "./ui/importer.js";
 import { asFrames } from "./nodes/data.js";
 import { exportPng } from "./nodes/exporters.js";
+import { installNumberEntry } from "./ui/numentry.js";
 
 const THEME = "gt.theme";
 
@@ -972,6 +973,8 @@ class App {
   }
 }
 
+// every slider readout in the panels can be clicked and typed into
+installNumberEntry();
 const app = new App();
 window.__app = app; // handy from the devtools console
 app.start();

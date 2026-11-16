@@ -381,3 +381,8 @@
 .sc-row.drop-above { box-shadow: inset 0 2px 0 var(--accent); }
 .sc-row.drop-below { box-shadow: inset 0 -2px 0 var(--accent); }
 .sc-ruler-row .sc-row-name { cursor: default; }
+
+/* a slider's readout that can be clicked to type the value (ui/numentry.js) */
+.num-readout { cursor: text; border-bottom: 1px dotted var(--line-strong); }
+.num-readout:hover { color: var(--text); border-bottom-color: var(--accent); }
+.num-entry { width: 58px; font-size: 11px; padding: 1px 4px; background: var(--panel-2); color: var(--text); border: 1px solid var(--accent); border-radius: 4px; }
