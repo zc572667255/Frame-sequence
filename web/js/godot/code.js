@@ -36,6 +36,11 @@ import { ICE_GD } from "./ice.js";
 import { ICE_HIT_GD } from "./icehit.js";
 import { THUNDER_HIT_GD } from "./thunderhit.js";
 import { SLASH_GD } from "./slash.js";
+import { STARMOON } from "../vfx/kinds/starmoon.js";
+
+// 星月法阵's line art as GDScript data: [spin, core colour?, width, [polylines on a radius-1 circle]]
+const r4s = (v) => String(+v.toFixed(4));
+const STARMOON_GD = "const STARMOON := [" + STARMOON.map((g) => "[" + r4s(g.spin) + ", " + (g.col === "core") + ", " + r4s(g.w) + ", [" + g.lines.map((pl) => "PackedVector2Array([" + pl.map(([x, y]) => "Vector2(" + r4s(x) + ", " + r4s(y) + ")").join(", ") + "])").join(", ") + "]]").join(", ") + "]";
 
 export const CODE_KINDS = ["hit", "shock", "charge", "heal", "ribbon", "wings", "circle", "aura", "burn", "explosion", "dust", "cloud", "arrow", "fireball", "thunder", "ice", "wind", "sand", "slash"];
 const PATTERNS = { hex: 0, penta: 1, square: 2, taiji: 3, burst: 4, holy: 5, whirl: 6, stars: 7, wisp: 8, arrows: 9 };
@@ -198,7 +203,7 @@ signal finished
 ## 云朵：横向飘动（循环时每朵云正好飘过一圈）
 @export var cloud_drift := ${!!d.drift}
 ## 魔法阵的图案；后六种是地面光环
-@export_enum("六芒星", "五芒星", "双方形", "太极八卦", "能量爆发", "圣光光环", "旋风光环", "星辉光环", "幽魂光环", "箭阵光环") var pattern := ${d.pattern}
+@export_enum("六芒星", "五芒星", "双方形", "太极八卦", "能量爆发", "圣光光环", "旋风光环", "星辉光环", "幽魂光环", "星月法阵") var pattern := ${d.pattern}
 @export_enum("无", "火焰") var edge_effect := ${d.edge}
 ## 魔法阵的高度：0 在画幅底边（脚下），0.5 在中间（腰部），1 在顶上（头顶）
 @export_range(0.0, 1.0) var ring_height := ${num(d.ringHeight ?? 0)}
@@ -261,6 +266,7 @@ ${remoteExports(d.remote)}
 @export_multiline var data_json := """${follow}"""
 
 const TRIGRAMS := [[1, 1, 1], [0, 1, 1], [0, 1, 0], [0, 0, 1], [0, 0, 0], [1, 0, 0], [1, 0, 1], [1, 1, 0]]
+${STARMOON_GD}
 # 整个特效画在一张离屏图里（颜色是已经乘过透明度的光的总和），再加上模糊过的一份（辉光），
 # 像编辑器一样盖到画面上：光的地方按它的浓度挡住后面一点（预乘透明度）；深色配色（黑炎等）普通盖上去
 const BLOOM_SHADER := """
@@ -2114,7 +2120,7 @@ func _gframe() -> Dictionary:
 	}
 
 
-# 魔法阵的地面光环（与编辑器 vfx/kinds/auras.js 相同）：能量爆发、圣光、旋风、星辉、幽魂、箭阵
+# 魔法阵的地面光环（与编辑器 vfx/kinds/auras.js 相同）：能量爆发、圣光、旋风、星辉、幽魂、星月法阵
 # 能量爆发的能量云、幽魂光环的烟在噪声层里画（_ground_field）；这里是线条、光圈、光点
 func _k_ground() -> void:
 	var t := _t
@@ -2240,18 +2246,29 @@ func _k_ground() -> void:
 				var path := func(q: float) -> Vector2:
 					return b + Vector2(R * 0.12 * sin(sw + q * TAU * 1.5) * q, -hh * q)
 				_comet(path, p, 0.45, maxf(0.8, R * 0.025) * px, a * sin(PI * p) * 0.7, rim_color, core_color)
-		_:  # 箭阵光环：八列箭头一步步往外走
-			pool.call(R * 0.8, 0.1 * a)
-			lines.append([[circ.call(R * 0.98), circ.call(R * 0.42)], rim_color, lw * 0.8, a])
-			var s := R * 0.08
-			for i in 8:
-				var rot := i * TAU / 8.0
-				for j in 3:
-					var q := fposmod(j / 3.0 + t, 1.0)
-					var r := R * (0.45 + 0.48 * q)
-					lines.append([[PackedVector2Array([to.call(-s, -r + s * 0.7, rot), to.call(0.0, -r - s * 0.3, rot), to.call(s, -r + s * 0.7, rot)])], core_color, lw * 1.1, a * sin(PI * q)])
-			_ring(o, R * 0.98, R * 0.08, k, rim_color, 0.3 * a, kx)
-			motes.call(int(round(8.0 * amount)), R * 0.9, R * 0.7, 1.0)
+		_:  # 星月法阵：外圈、刻度带、星座符号、四个圆章、左边的月亮、右边的太阳、十二角星、内圈刻度、五角星和星间的光线（vfx/kinds/starmoon.js 同样的线）
+			pool.call(R * 0.9, 0.1 * a)
+			_ring(o, R * 0.96, R * 0.07, k, rim_color, 0.3 * a, kx)
+			var turn := 1.0 if loop else 0.6
+			for grp in STARMOON:
+				var rot: float = grp[0] * t * turn
+				var pls := []
+				for pl in grp[3]:
+					var pp := PackedVector2Array()
+					for v in pl:
+						pp.append(to.call(v.x * R, v.y * R, rot))
+					pls.append(pp)
+				lines.append([pls, core_color if grp[1] else rim_color, lw * grp[2], a])
+			# 外圈和内圈刻度上绕圈的高光
+			for spec in [[0.96, 1.0], [0.58, -1.0]]:
+				for j in 2:
+					var head: float = -PI / 2.0 + spec[1] * (TAU * t + j * PI)
+					var pts := PackedVector2Array()
+					for i in 25:
+						var q: float = head - spec[1] * 1.2 * (1.0 - i / 24.0)
+						pts.append(o + Vector2(cos(q) * R * spec[0] * kx, sin(q) * R * spec[0] * k))
+					_trail(pts, lw * 1.2 * px, a * 0.9, true, rim_color, core_color)
+			motes.call(int(round(10.0 * amount)), R * 0.85, R * 0.8, 1.0)
 	# 线条：淡淡的光晕、一层宽的暗边、亮线（和魔法阵一样）
 	_add = false
 	if _ok() and not lines.is_empty():

@@ -584,3 +584,18 @@ console.log("横扫转一整圈：头部圆弧在挥动平面里做、不伸进�
   assert.ok(B.keep(Math.PI / 2, 10) && !B.keep(Math.PI / 2, 90), "what rises from inside the body goes behind, from the near rim in front");
 }
 console.log("魔法阵环绕角色：前后分界在身体处是弧、远侧半圈放在跟随图层正下方（没跟随时在最下面）、近侧在原位、Godot 分成两个节点检查通过");
+
+// 星月法阵 took 箭阵光环's place (the same pattern id, so saved circles keep
+// working): line art on a radius-1 circle, each turning group by one of its
+// symmetry steps per loop, the same data in the Godot script
+{
+  const { STARMOON } = await import("../web/js/vfx/kinds/starmoon.js");
+  const { GROUND_AURAS } = await import("../web/js/vfx/kinds/auras.js");
+  const { codeGodot: gdCode, codeParamsFrom: gp2 } = await import("../web/js/godot/code.js");
+  assert.deepEqual(GROUND_AURAS.find(([id]) => id === "arrows"), ["arrows", "星月法阵"]);
+  assert.ok(STARMOON.length >= 6 && STARMOON.every((g) => g.lines.length && g.lines.every((pl) => pl.length >= 2 && pl.every(([x, y]) => Number.isFinite(x) && Math.hypot(x, y) <= 1.0001))), "inside the circle");
+  for (const g of STARMOON) assert.ok(g.spin === 0 || [12, 48, 5].some((n) => Math.abs(Math.abs(g.spin) * n / (Math.PI * 2) - 1) < 1e-9), "turns by a symmetry step per loop");
+  const gd = gdCode(gp2({ ...VFX_KINDS.find((k) => k.id === "circle").defaults, kind: "circle", pattern: "arrows" }, 300, 220, 12));
+  assert.ok(gd.includes("const STARMOON := [") && gd.includes('"星月法阵") var pattern := 9'), "Godot draws the same lines");
+}
+console.log("星月法阵替换箭阵光环：线条都在圆内、每遍按对称步数转、Godot 用同一份数据检查通过");
