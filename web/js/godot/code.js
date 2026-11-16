@@ -450,6 +450,11 @@ uniform vec4 c_deep : source_color;
 uniform vec4 c_light : source_color;
 uniform vec4 c_body : source_color;
 uniform vec4 c_shade : source_color;
+// 魔法阵环绕角色：火焰边缘按火立在哪半圈归属（0 = 不分，1 = 远侧那半，2 = 近侧那半；和 _hp_in 一样）
+uniform int hp_mode = 0;
+uniform vec2 hp_o = vec2(0.0);
+uniform vec2 hp_nf = vec2(0.0, -1.0);
+uniform vec2 hp_rb = vec2(0.0);
 
 float lh(int x, int y, int s) {
 	uint v = (uint(x) * 374761393u) ^ (uint(y) * 668265263u) ^ uint(s);
@@ -745,6 +750,68 @@ ${REMOTE_FIELD}
 			col = fc.rgb;
 			a *= fc.a;
 		}
+	}
+	} else if (mode == 10) {
+		// 魔法阵的火焰边缘：沿圆边立着一圈火，和燃烧一样的火（噪声往上流的火舌、拖成火缕的细丝、根部白热）；
+		// 每个像素同时在圆边近侧和远侧上方（椭圆这么宽的地方），两边的火叠在一起。噪声沿着圆边（弧长，首尾交叉淡化，没有接缝）
+		// 和往上。cx, cy 圆心，gr 半径，gkx / gk 透视，ry 火的高度，env 强度
+		float px_ = x + 0.5;
+		float py_ = y + 0.5;
+		float dx = (px_ - cx) / (gr * gkx);
+		if (abs(dx) >= 1.0) { discard; }
+		float cl = dx;
+		float sn = sqrt(1.0 - cl * cl);
+		float edge = 1.0 - sm(0.62, 0.98, abs(dx));
+		float span = 6.2831853 * gr;
+		float kk = 1.0 / (gr * 0.11);
+		vec3 acc = vec3(0.0);
+		float ws = 0.0;
+		float A = 0.0;
+		for (int i = 0; i < 2; i++) {
+			float sd = i == 0 ? 1.0 : -1.0;
+			float th = atan(sd * sn, cl);
+			if (hp_mode != 0) {
+				vec2 q = vec2(cos(th) * gr * gkx, sin(th) * gr * gk) + vec2(cx, cy) - hp_o;
+				bool behind = dot(q, hp_nf) > 1e-9;
+				if (!behind && hp_rb.x > 0.0) { vec2 e = q / hp_rb; behind = dot(e, e) < 1.0; }
+				if ((hp_mode == 1) != behind) { continue; }
+			}
+			float base = cy + sd * sn * gr * gk;
+			float hgt = (base - py_) / ry;
+			if (hgt < -0.05 || hgt > 1.25) { continue; }
+			float u = (th + 3.14159265) / 6.2831853;
+			float s = u * span;
+			float yy = py_ - base;
+			float w1 = 1.0 / length(vec2(1.0 - u, u));
+			float n = clamp(0.5 + ((loopn(vec2(s, yy), 131, kk, 0.42, 4.0) - 0.5) * (1.0 - u) + (loopn(vec2(s - span, yy), 131, kk, 0.42, 4.0) - 0.5) * u) * w1, 0.0, 1.0);
+			float f = (1.0 - hgt) * 1.05 + (n - 0.5) * (0.8 + 1.1 * hgt) - 0.32;
+			if (f <= -0.14) { continue; }
+			float s2 = s + (n - 0.5) * gr * 0.04;
+			float st = strand(clamp(0.5 + ((loopn(vec2(s2, yy), 137, kk * 2.2, 0.13, 6.0) - 0.5) * (1.0 - u) + (loopn(vec2(s2 - span, yy), 137, kk * 2.2, 0.13, 6.0) - 0.5) * u) * w1, 0.0, 1.0), 4.0);
+			float topf = 1.0 - sm(0.95, 1.2, hgt);
+			float foot = sm(-0.05, 0.06, hgt);
+			float body = sm(-0.03, 0.22, f) * topf * foot;
+			float wisp = st * sm(-0.14, 0.02, f) * (1.0 - body) * (0.4 + hgt) * topf * foot;
+			float heat = clamp(f * 0.9 + (1.0 - hgt) * 0.08 + st * 0.3 * body, 0.0, 1.0);
+			vec3 cc;
+			float al;
+			if (dark) {
+				vec4 fc = fire(heat, 0.5 + 0.5 * (1.0 - hgt));
+				cc = fc.rgb;
+				al = (body + wisp) * fc.a;
+			} else {
+				cc = texture(ramp_flame, vec2(heat, 0.5)).rgb;
+				al = body * (0.3 + 0.7 * sm(0.0, 0.5, heat)) * (0.75 + 0.25 * st) + wisp * 0.8;
+			}
+			al = min(1.0, al * edge * env);
+			if (al <= 0.003) { continue; }
+			acc += cc * al;
+			ws += al;
+			A = 1.0 - (1.0 - A) * (1.0 - al);
+		}
+		if (A <= 0.004) { discard; }
+		col = acc / ws;
+		a = A;
 	}
 	COLOR = vec4(col, clamp(a, 0.0, 1.0) * gmul);
 }
@@ -1216,7 +1283,7 @@ func _draw_layer(cv: CanvasItem, role: int) -> void:
 
 # 噪声层有没有东西：噪声画的特效、云朵，和魔法阵的能量爆发、幽魂光环
 func _has_field() -> bool:
-	return _remote_active() or (kind >= 7 and kind <= 11) or kind == 13 or (kind == 6 and (pattern == 4 or pattern == 8))
+	return _remote_active() or (kind >= 7 and kind <= 11) or kind == 13 or (kind == 6 and (pattern == 4 or pattern == 8 or (edge_effect == 1 and amount > 0.0)))
 
 
 # 攒起来的三角形（点按当前的变换算好）
@@ -2053,22 +2120,12 @@ func _fire_edge(o: Vector2, R: float, kx: float, k: float, a: float) -> void:
 	_hp_skip = false
 
 
+# 火焰边缘：火本身在噪声层里画（_rim_fire_field，和燃烧一样的火）；这里是往上飘的火星。粒子为 0 时什么都没有
 func _fire_edge_parts(o: Vector2, R: float, kx: float, k: float, a: float, P: Rand, flame: Color) -> void:
 	var t := _t
-	var amt := maxf(0.2, amount)
-	var n := int(round(24.0 * amt))
-	for i in n:
-		var th := (i + P.next() * 0.6) / n * TAU
-		var j := P.next()
-		var ph := P.next()
-		var sp := 1.0 + floorf(P.next() * 3.0)
-		var ph2 := P.next()
-		if _hp_on and not _hp_keep(th, R * 0.97, kx, k):
-			continue  # 立在哪半圈就归哪半
-		var b := o + Vector2(cos(th) * R * 0.97 * kx, sin(th) * R * 0.97 * k)
-		var fl := 0.7 + 0.3 * sin(TAU * (t * sp + ph))
-		var sway := R * 0.05 * sin(TAU * (t * (1.0 + fmod(sp, 2.0)) + ph2))
-		_tongue(b, R * (0.055 + 0.05 * j), R * (0.22 + 0.3 * j) * fl, sway, a * (0.6 + 0.4 * fl), flame)
+	var amt := maxf(0.0, amount)
+	if amt <= 0.0:
+		return
 	for i in int(round(14.0 * amt)):
 		var th := P.next() * TAU
 		var ph := P.next()
@@ -2081,6 +2138,34 @@ func _fire_edge_parts(o: Vector2, R: float, kx: float, k: float, a: float, P: Ra
 		var path := func(q: float) -> Vector2:
 			return b + Vector2(R * 0.08 * sin(sw + q * TAU), -R * (0.1 + 0.7 * q))
 		_comet(path, p, 0.15, maxf(0.6, R * 0.012) * (1.0 if soft_light else 1.7), a * sin(PI * p), rim_color, core_color)
+
+
+# 火焰边缘的火（噪声层 mode 10，与编辑器 vfx/kinds/circle.js rimFire 相同）：圆边上一圈火，粒子越多火越高
+func _rim_fire_field(m: ShaderMaterial) -> void:
+	var amt := clampf(amount, 0.0, 1.5)
+	if amt <= 0.0:
+		return
+	var G := _gframe()
+	var o: Vector2 = G.o
+	var kx: float = G.kx
+	var k: float = G.k
+	var R := _R
+	var H := R * (0.2 + 0.22 * amt)
+	m.set_shader_parameter("mode", 10)
+	m.set_shader_parameter("cx", o.x)
+	m.set_shader_parameter("cy", o.y)
+	m.set_shader_parameter("gr", R)
+	m.set_shader_parameter("gkx", kx)
+	m.set_shader_parameter("gk", k)
+	m.set_shader_parameter("ry", H)
+	m.set_shader_parameter("env", G.env * G.reveal)
+	m.set_shader_parameter("hp_mode", ring_part if _hp_on else 0)
+	m.set_shader_parameter("hp_o", _hp_o)
+	m.set_shader_parameter("hp_nf", _hp_nf)
+	m.set_shader_parameter("hp_rb", _hp_rb)
+	_hp_skip = true  # 火按立在哪半圈归属（shader 里分），不按位置切
+	_field_quad(o.x - R * kx, o.y - R * k - H * 1.25, o.x + R * kx, o.y + R * k + H * 0.06)
+	_hp_skip = false
 
 
 func _tongue(base: Vector2, wb: float, h: float, sway: float, a: float, flame: Color) -> void:
@@ -2340,9 +2425,12 @@ func _field_pass() -> void:
 		if mix_pass: _remote_field(m)
 		return
 	match kind:
-		6:  # 魔法阵的地面光环：能量爆发的能量云、幽魂光环的烟（叠加）
-			if not mix_pass:
+		6:  # 魔法阵的地面光环：能量爆发的能量云、幽魂光环的烟（叠加）；火焰边缘（亮的配色叠加，深色普通盖上去；叠加层被光环占了时也盖上去）
+			var aura_field := pattern == 4 or pattern == 8
+			if not mix_pass and aura_field:
 				_ground_field(m)
+			elif edge_effect == 1 and mix_pass == (not additive or aura_field):
+				_rim_fire_field(m)
 		13:
 			if mix_pass:
 				_fireball_field(m)
@@ -2651,7 +2739,7 @@ func _field_quad(x0: float, y0: float, x1: float, y1: float) -> void:
 	var pts := PackedVector2Array([Vector2(x0, y0), Vector2(x1, y0), Vector2(x1, y1), Vector2(x0, y1)])
 	var idx := PackedInt32Array([0, 1, 2, 0, 2, 3])
 	var cols := _fill_cols(4, Color(1, 1, 1, _gmul))
-	if _hp_on:
+	if _hp_on and not _hp_skip:
 		# 魔法阵环绕角色：噪声层也只留自己那半（UV 就是画幅像素坐标，跟着切）
 		var cut := _hp_clip(idx, pts, cols)
 		if cut.is_empty():

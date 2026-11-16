@@ -1,7 +1,7 @@
 import { createCanvas } from "../../core/util.js";
 import { rng, rgba, smooth, drawBlurred } from "../../trails/glow/util.js";
 import { star, rockShape } from "../../trails/glow/shapes.js";
-import { TAU, easeOut, frac, mixRgb, at, blob, ring, jag, bolt, trail, comet } from "../common.js";
+import { TAU, easeOut, frac, mixRgb, at, blob, ring, jag, bolt, trail, comet, field, fieldScale, loopNoise, strand } from "../common.js";
 import { groundAura, isGroundAura } from "./auras.js";
 
 // 魔法阵: rings, a band of runes, ticks and a star, drawn straight onto the
@@ -194,22 +194,57 @@ function bagua(L, ink, poly, c, R, lw, rotOut, reveal, t) {
   }, pal.core, lw, a);
 }
 
-// a tongue of flame standing at (x, y): a curved point up to height h leaning
-// by sway, hot at the root and fading toward the tip, a brighter core inside
-function tongue(g, pal, x, y, wb, h, sway, a) {
-  if (a <= 0.01 || h <= 1) return;
-  for (const [k, kh, col0, col1, ka] of [[1, 1, pal.rim, pal.cols[1] || pal.rim, 0.75], [0.45, 0.6, pal.core, pal.rim, 1]]) {
-    const w = wb * k, H = h * kh, tx = x + sway * kh, ty = y - H;
-    const gr = g.createLinearGradient(x, y, tx, ty);
-    gr.addColorStop(0, rgba(col0, a * ka));
-    gr.addColorStop(0.55, rgba(col1, a * ka * 0.6));
-    gr.addColorStop(1, rgba(col1, 0));
-    g.fillStyle = gr;
-    g.beginPath(); g.moveTo(x - w, y);
-    g.quadraticCurveTo(x - w * 0.5 + sway * 0.25, y - H * 0.6, tx, ty);
-    g.quadraticCurveTo(x + w * 0.6 + sway * 0.5, y - H * 0.45, x + w, y);
-    g.closePath(); g.fill();
-  }
+// 魔法阵's fire rim: flames standing all round the rim, the same fire as 燃烧
+// (kinds/burn.js) — tongues split by noise flowing upwards, fine strands
+// trailing off them as wisps, white-hot at the root — over each point of the
+// rim, seen in perspective: every pixel is above the rim's near side and its
+// far side at once (where the ellipse is that wide), each giving its fire,
+// the two added. The noise runs along the rim (its arc length, blended across
+// the seam so it is seamless) and up from it. 粒子 sets how tall the flames
+// are (and none at 0). mine(th): which of the rim's points have their fire here
+// (环绕角色: the half it stands on).
+function rimFire(g, c, a, mine) {
+  const { R, pal } = c, amt = Math.min(1.5, Math.max(0, c.amount));
+  if (amt <= 0 || a <= 0.01) return;
+  const side = c.view === "side", kx = side ? c.squash : 1, k = side ? 1 : c.squash, ox = c.cx, oy = side ? c.cy : c.gy;
+  const H = R * (0.2 + 0.22 * amt), kk = 1 / (R * 0.11), span = TAU * R;
+  const flow = loopNoise(c, 131, kk, 0.42, 4), fine = loopNoise(c, 137, kk * 2.2, 0.13, 6);
+  const x0 = Math.max(0, Math.floor(ox - R * kx)), x1 = Math.min(c.w, Math.ceil(ox + R * kx));
+  const y0 = Math.max(0, Math.floor(oy - R * k - H * 1.25)), y1 = Math.min(c.h, Math.ceil(oy + R * k + H * 0.06));
+  // round the rim without a seam: two samples a turn apart, blended
+  const round = (N, u, s, yy) => { const na = N(s, yy), nb = N(s - span, yy); return Math.max(0, Math.min(1, 0.5 + ((na - 0.5) * (1 - u) + (nb - 0.5) * u) / Math.hypot(1 - u, u))); };
+  g.globalCompositeOperation = pal.dark ? "source-over" : "lighter";
+  field(g, x0, y0, x1, y1, fieldScale(c, H), (x, y, px) => {
+    const dx = (x + 0.5 - ox) / (R * kx);
+    // (thinning out towards the ellipse's very ends, where the rim turns away)
+    if (Math.abs(dx) >= 1) return false;
+    const cl = dx, sn = Math.sqrt(1 - cl * cl), edge = 1 - smooth(0.62, 0.98, Math.abs(dx));
+    // the near and far fire together: colour weighted by each one's alpha
+    let A = 0, r = 0, gg = 0, b = 0, ws = 0;
+    for (const sd of [1, -1]) {
+      const th = Math.atan2(sd * sn, cl);
+      if (!mine(th)) continue;
+      const base = oy + sd * sn * R * k, hgt = (base - (y + 0.5)) / H;
+      if (hgt < -0.05 || hgt > 1.25) continue;
+      const u = (th + Math.PI) / TAU, s = u * span, yy = y - base;
+      const n = round(flow, u, s, yy);
+      const f = (1 - hgt) * 1.05 + (n - 0.5) * (0.8 + 1.1 * hgt) - 0.32;
+      if (f <= -0.14) continue;
+      const st = strand(round(fine, u, s + (n - 0.5) * R * 0.04, yy), 4);
+      const top = 1 - smooth(0.95, 1.2, hgt), foot = smooth(-0.05, 0.06, hgt);
+      const body = smooth(-0.03, 0.22, f) * top * foot, wisp = st * smooth(-0.14, 0.02, f) * (1 - body) * (0.4 + hgt) * top * foot;
+      const heat = Math.max(0, Math.min(1, f * 0.9 + (1 - hgt) * 0.08 + st * 0.3 * body));
+      let col, al;
+      if (pal.dark) { const [fc, as] = pal.fire(heat, 0.5 + 0.5 * (1 - hgt)); col = fc; al = (body + wisp) * as; }
+      else { col = at(pal.flame, heat); al = body * (0.3 + 0.7 * smooth(0, 0.5, heat)) * (0.75 + 0.25 * st) + wisp * 0.8; }
+      al = Math.min(1, al * edge * a);
+      if (al <= 0.003) continue;
+      r += col[0] * al; gg += col[1] * al; b += col[2] * al; ws += al; A = 1 - (1 - A) * (1 - al);
+    }
+    if (A <= 0.004) return false;
+    px[0] = r / ws; px[1] = gg / ws; px[2] = b / ws; px[3] = A;
+  });
+  g.globalCompositeOperation = "lighter";
 }
 
 // 魔法阵 edges: the circle's element playing round its rim. place(th, r) is a
@@ -219,7 +254,9 @@ function tongue(g, pal, x, y, wb, h, sway, a) {
 // lightning is new every frame. a: strength (the circle's own fade).
 function circleEdge(g, c, el, place, a) {
   if (a <= 0.01) return;
-  const { t, R, pal } = c, amt = Math.max(0.2, c.amount), P = rng(c.seed * 131 + 17);
+  // 粒子 sets how much of it there is: at 0 nothing plays round the rim
+  const { t, R, pal } = c, amt = Math.max(0, c.amount), P = rng(c.seed * 131 + 17);
+  if (amt <= 0) return;
   const px = c.pixel ? 1.7 : 1, cyc = (ph, sp) => frac(ph + t * sp);
   // 环绕角色: what stands on or rises off the rim goes with the half it starts
   // from (mine), what runs along the ground round it is cut (clipped)
@@ -228,15 +265,8 @@ function circleEdge(g, c, el, place, a) {
   const clipped = (fn) => { if (c.only !== "rising") fn(); };
   g.globalCompositeOperation = "lighter";
   if (el === "fire") {
-    // tongues of flame standing round the rim, each flickering and swaying
-    const n = Math.round(24 * amt);
-    for (let i = 0; i < n; i++) {
-      const th = (i + P() * 0.6) / n * TAU, j = P(), ph = P(), sp = 1 + Math.floor(P() * 3), ph2 = P();
-      if (!mine(th)) continue;
-      const [bx, by] = place(th, R * 0.97), fl = 0.7 + 0.3 * Math.sin(TAU * (t * sp + ph));
-      const sway = R * 0.05 * Math.sin(TAU * (t * (1 + sp % 2) + ph2));
-      tongue(g, pal, bx, by, R * (0.055 + 0.05 * j), R * (0.22 + 0.3 * j) * fl, sway, a * (0.6 + 0.4 * fl));
-    }
+    // a ring of fire standing on the rim (rimFire), and embers off it
+    rimFire(g, c, a, mine);
     // embers drifting up off it
     for (let i = 0; i < Math.round(14 * amt); i++) {
       const th = P() * TAU, ph = P(), sp = 1 + Math.floor(P() * 2), sw = P() * TAU;
@@ -270,7 +300,7 @@ function circleEdge(g, c, el, place, a) {
     }
   } else if (el === "wind") {
     // bands of wind spiralling up round the circle, drawing in as they rise
-    for (let i = 0, n = Math.max(3, Math.round(5 * amt)); i < n; i++) {
+    for (let i = 0, n = Math.round(5 * amt); i < n; i++) {
       const q = cyc(i / n + P() * 0.1, 1), spin = TAU * (t * 2 + P()), span = 1.6 + P() * 1.2, w = Math.max(0.8, R * 0.02) * px;
       // (环绕角色: each band goes behind where it winds round the far side)
       const runs = [[]];

@@ -629,3 +629,15 @@ console.log("魔法阵环绕角色：前后分界在身体处是弧、远侧半�
   assert.equal(seg.length, 2); assert.ok(Math.abs(seg[0].at(-1)[0] + 0.5) < 0.01 && Math.abs(seg[1][0][0] - 0.5) < 0.01, "cut right at the footprint's edge");
 }
 console.log("星月法阵替换箭阵光环、新增月之法阵：线条都在圆内、每遍按对称步数转、转的部分在星星月亮下面、Godot 用同一份数据检查通过");
+
+// 魔法阵's fire rim is fire drawn like 燃烧 (in Godot the noise layer, mode
+// 10), the old cone-shaped tongues gone; 粒子 at 0 leaves nothing round the rim
+{
+  const { codeGodot: gc, codeParamsFrom: cp } = await import("../web/js/godot/code.js");
+  const src = (await import("node:fs")).readFileSync(new URL("../web/js/vfx/kinds/circle.js", import.meta.url), "utf8");
+  assert.ok(/function rimFire\(/.test(src) && !/function tongue\(/.test(src), "the rim's fire is the noise fire");
+  assert.ok(/amt = Math\.max\(0, c\.amount\)/.test(src) && /if \(amt <= 0\) return;/.test(src), "粒子 0: no rim effect at all");
+  const gd = gc(cp({ ...VFX_KINDS.find((k) => k.id === "circle").defaults, kind: "circle", edge: "fire", palette: "blaze" }, 400, 300, 12));
+  assert.ok(gd.includes("} else if (mode == 10) {") && gd.includes("func _rim_fire_field(") && gd.includes("pattern == 4 or pattern == 8 or (edge_effect == 1 and amount > 0.0)"), "Godot draws the same fire in its noise layer");
+}
+console.log("魔法阵火焰边缘：和燃烧一样的噪声火、粒子 0 没有、Godot 噪声层同一画法检查通过");
