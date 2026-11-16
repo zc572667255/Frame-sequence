@@ -36,14 +36,15 @@ import { ICE_GD } from "./ice.js";
 import { ICE_HIT_GD } from "./icehit.js";
 import { THUNDER_HIT_GD } from "./thunderhit.js";
 import { SLASH_GD } from "./slash.js";
-import { STARMOON } from "../vfx/kinds/starmoon.js";
+import { STARMOON, MOONCIRCLE } from "../vfx/kinds/starmoon.js";
 
-// 星月法阵's line art as GDScript data: [spin, core colour?, width, [polylines on a radius-1 circle]]
+// 星月法阵's and 月之法阵's line art as GDScript data: [spin, core colour?, width, [polylines on a radius-1 circle]]
 const r4s = (v) => String(+v.toFixed(4));
-const STARMOON_GD = "const STARMOON := [" + STARMOON.map((g) => "[" + r4s(g.spin) + ", " + (g.col === "core") + ", " + r4s(g.w) + ", [" + g.lines.map((pl) => "PackedVector2Array([" + pl.map(([x, y]) => "Vector2(" + r4s(x) + ", " + r4s(y) + ")").join(", ") + "])").join(", ") + "]]").join(", ") + "]";
+const artGd = (name, art) => "const " + name + " := [" + art.map((g) => "[" + r4s(g.spin) + ", " + (g.col === "core") + ", " + r4s(g.w) + ", [" + g.lines.map((pl) => "PackedVector2Array([" + pl.map(([x, y]) => "Vector2(" + r4s(x) + ", " + r4s(y) + ")").join(", ") + "])").join(", ") + "]]").join(", ") + "]";
+const STARMOON_GD = artGd("STARMOON", STARMOON) + "\n" + artGd("MOONCIRCLE", MOONCIRCLE);
 
 export const CODE_KINDS = ["hit", "shock", "charge", "heal", "ribbon", "wings", "circle", "aura", "burn", "explosion", "dust", "cloud", "arrow", "fireball", "thunder", "ice", "wind", "sand", "slash"];
-const PATTERNS = { hex: 0, penta: 1, square: 2, taiji: 3, burst: 4, holy: 5, whirl: 6, stars: 7, wisp: 8, arrows: 9 };
+const PATTERNS = { hex: 0, penta: 1, square: 2, taiji: 3, burst: 4, holy: 5, whirl: 6, stars: 7, wisp: 8, arrows: 9, moon: 10 };
 // how much bloom each kind gets (vfx/effects.js BLOOM); 箭矢 more, standing in
 // for the bloom its trail glow adds to itself in the editor
 const BLOOM = { hit: 1, shock: 0.8, charge: 1, heal: 0.7, circle: 0, ribbon: 1, wings: 1, aura: 0.9, burn: 0.9, explosion: 0.7, dust: 0, cloud: 0, arrow: 1, fireball: 0.45, ice: 0.35, slash: 0.6 };
@@ -202,8 +203,8 @@ signal finished
 @export_range(0.1, 1.0) var root_width := ${num(d.root ?? 1)}
 ## 云朵：横向飘动（循环时每朵云正好飘过一圈）
 @export var cloud_drift := ${!!d.drift}
-## 魔法阵的图案；后六种是地面光环
-@export_enum("六芒星", "五芒星", "双方形", "太极八卦", "能量爆发", "圣光光环", "旋风光环", "星辉光环", "幽魂光环", "星月法阵") var pattern := ${d.pattern}
+## 魔法阵的图案；后七种是地面光环
+@export_enum("六芒星", "五芒星", "双方形", "太极八卦", "能量爆发", "圣光光环", "旋风光环", "星辉光环", "幽魂光环", "星月法阵", "月之法阵") var pattern := ${d.pattern}
 @export_enum("无", "火焰") var edge_effect := ${d.edge}
 ## 魔法阵的高度：0 在画幅底边（脚下），0.5 在中间（腰部），1 在顶上（头顶）
 @export_range(0.0, 1.0) var ring_height := ${num(d.ringHeight ?? 0)}
@@ -2246,11 +2247,11 @@ func _k_ground() -> void:
 				var path := func(q: float) -> Vector2:
 					return b + Vector2(R * 0.12 * sin(sw + q * TAU * 1.5) * q, -hh * q)
 				_comet(path, p, 0.45, maxf(0.8, R * 0.025) * px, a * sin(PI * p) * 0.7, rim_color, core_color)
-		_:  # 星月法阵：外圈、刻度带、星座符号、四个圆章、左边的月亮、右边的太阳、十二角星、内圈刻度、五角星和星间的光线（vfx/kinds/starmoon.js 同样的线）
+		_:  # 星月法阵 / 月之法阵（pattern 10）：外圈、刻度带、星座符号、四个圆章、左边的月亮、右边的太阳、十二角星、内圈刻度、五角星和星间的光线（vfx/kinds/starmoon.js 同样的线）
 			pool.call(R * 0.9, 0.1 * a)
 			_ring(o, R * 0.96, R * 0.07, k, rim_color, 0.3 * a, kx)
 			var turn := 1.0 if loop else 0.6
-			for grp in STARMOON:
+			for grp in (MOONCIRCLE if pattern == 10 else STARMOON):
 				var rot: float = grp[0] * t * turn
 				var pls := []
 				for pl in grp[3]:
@@ -2260,7 +2261,7 @@ func _k_ground() -> void:
 					pls.append(pp)
 				lines.append([pls, core_color if grp[1] else rim_color, lw * grp[2], a])
 			# 外圈和内圈刻度上绕圈的高光
-			for spec in [[0.96, 1.0], [0.58, -1.0]]:
+			for spec in [[0.96, 1.0], [0.56 if pattern == 10 else 0.58, -1.0]]:
 				for j in 2:
 					var head: float = -PI / 2.0 + spec[1] * (TAU * t + j * PI)
 					var pts := PackedVector2Array()

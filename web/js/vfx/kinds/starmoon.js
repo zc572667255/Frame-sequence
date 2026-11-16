@@ -1,3 +1,4 @@
+// Line-art circles for 魔法阵's ground auras.
 // 星月法阵 (魔法阵's ground aura "arrows", which it replaced): the star-and-moon
 // circle — an outer double ring with a ladder band, eight zodiac signs and four
 // medallions, the crescent moon on the left and the sun on the right, a
@@ -103,3 +104,65 @@ function build() {
 }
 
 export const STARMOON = build();
+
+// an arc of the circle round c (radius r) from angle a0 to a1, the way that
+// passes angle mid (angles from +x, y down)
+function arcThrough(c, r, a0, a1, mid, n = 48) {
+  const norm = (a) => ((a % TAU) + TAU) % TAU;
+  let span = norm(a1 - a0);
+  if (norm(mid - a0) > span) span -= TAU; // the other way round
+  return Array.from({ length: n + 1 }, (_, i) => { const a = a0 + span * i / n; return [c[0] + Math.cos(a) * r, c[1] + Math.sin(a) * r]; });
+}
+// a crescent: the disc round c1 (r1) with the disc round c2 (r2) taken out
+// of it — its outline, the outer arc and the inner one, both facing away from c2
+function crescent(c1, r1, c2, r2) {
+  const dx = c2[0] - c1[0], dy = c2[1] - c1[1], d = Math.hypot(dx, dy), ux = dx / d, uy = dy / d;
+  const a = (r1 * r1 - r2 * r2 + d * d) / (2 * d), h = Math.sqrt(Math.max(0, r1 * r1 - a * a));
+  const bx = c1[0] + ux * a, by = c1[1] + uy * a, P = [bx - uy * h, by + ux * h], Q = [bx + uy * h, by - ux * h];
+  const away = Math.atan2(-uy, -ux), ang = (c, p) => Math.atan2(p[1] - c[1], p[0] - c[0]);
+  return [arcThrough(c1, r1, ang(c1, P), ang(c1, Q), away), arcThrough(c2, r2, ang(c2, P), ang(c2, Q), away)];
+}
+
+// 月之法阵 (ground aura "moon"): a triple outer ring with a band of blocks and
+// four medallions, an eight-pointed star of double lines ({8/3}) with a sign
+// in each point, an inner ring of blocks with eight arrowheads, rays round a
+// disc in the middle, the big crescent over it, and on the right a double
+// circle holding a small crescent. Line art only: no colours filled in.
+function buildMoon() {
+  const frame = [circle(0.99), circle(0.955), circle(0.935), circle(0.885)], fine = [...ticks(0.885, 0.935, 64)];
+  [0, 1, 2, 3].forEach((q) => {
+    const a = q * TAU / 4, [x, y] = polar(0.91, a);
+    frame.push(circle(0.05, x, y, 32));
+    fine.push(...glyph(MARKS[q], 0.91, a, 0.028));
+  });
+  // the eight-pointed star, each line doubled into a band
+  const star = [];
+  for (const r of [0.865, 0.74]) star.push(Array.from({ length: 9 }, (_, i) => polar(r, (i * 3 % 8) * TAU / 8)));
+  // a sign in each of its points
+  SIGNS.forEach((s, i) => fine.push(...glyph(s, 0.69, i * TAU / 8, 0.036)));
+  // the inner ring of blocks, and eight arrowheads pointing out from it
+  const ring2 = [circle(0.58), circle(0.535), ...ticks(0.535, 0.58, 40)];
+  for (let i = 0; i < 8; i++) {
+    const a = (i + 0.5) * TAU / 8;
+    ring2.push([polar(0.585, a - 0.07), polar(0.66, a), polar(0.585, a + 0.07), polar(0.585, a - 0.07)]);
+  }
+  // rays round the disc in the middle
+  const rays = ticks(0.3, 0.53, 36);
+  const disc = [circle(0.3), circle(0.27)];
+  // the big crescent, thick to the upper right, open to the lower left
+  const moon = crescent([0.03, -0.04], 0.4, [-0.08, 0.06], 0.34);
+  // the double circle on the right with the small crescent in it
+  const side = [circle(0.27, 0.52, -0.03, 64), circle(0.25, 0.52, -0.03, 64), ...crescent([0.56, 0.0], 0.17, [0.47, -0.08], 0.15)];
+  return [
+    { spin: 0, col: "core", w: 1.1, lines: frame },
+    { spin: 0, col: "rim", w: 0.6, lines: fine },
+    { spin: TAU / 8, col: "rim", w: 0.75, lines: star },
+    { spin: -TAU / 8, col: "rim", w: 0.6, lines: ring2 },
+    { spin: TAU / 36, col: "rim", w: 0.5, lines: rays },
+    { spin: 0, col: "rim", w: 0.75, lines: disc },
+    { spin: 0, col: "core", w: 1.15, lines: moon },
+    { spin: 0, col: "core", w: 0.9, lines: side },
+  ];
+}
+
+export const MOONCIRCLE = buildMoon();

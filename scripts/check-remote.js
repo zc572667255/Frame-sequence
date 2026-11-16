@@ -596,6 +596,18 @@ console.log("魔法阵环绕角色：前后分界在身体处是弧、远侧半�
   assert.ok(STARMOON.length >= 6 && STARMOON.every((g) => g.lines.length && g.lines.every((pl) => pl.length >= 2 && pl.every(([x, y]) => Number.isFinite(x) && Math.hypot(x, y) <= 1.0001))), "inside the circle");
   for (const g of STARMOON) assert.ok(g.spin === 0 || [12, 48, 5].some((n) => Math.abs(Math.abs(g.spin) * n / (Math.PI * 2) - 1) < 1e-9), "turns by a symmetry step per loop");
   const gd = gdCode(gp2({ ...VFX_KINDS.find((k) => k.id === "circle").defaults, kind: "circle", pattern: "arrows" }, 300, 220, 12));
-  assert.ok(gd.includes("const STARMOON := [") && gd.includes('"星月法阵") var pattern := 9'), "Godot draws the same lines");
+  assert.ok(gd.includes("const STARMOON := [") && gd.includes('"星月法阵", "月之法阵") var pattern := 9'), "Godot draws the same lines");
 }
-console.log("星月法阵替换箭阵光环：线条都在圆内、每遍按对称步数转、Godot 用同一份数据检查通过");
+{
+  const { MOONCIRCLE } = await import("../web/js/vfx/kinds/starmoon.js");
+  const { GROUND_AURAS } = await import("../web/js/vfx/kinds/auras.js");
+  const { codeGodot: gdCode, codeParamsFrom: gp2, codeSupported: cs } = await import("../web/js/godot/code.js");
+  assert.deepEqual(GROUND_AURAS.at(-1), ["moon", "月之法阵"], "月之法阵 is offered");
+  assert.ok(MOONCIRCLE.every((g) => g.lines.every((pl) => pl.length >= 2 && pl.every(([x, y]) => Number.isFinite(x) && Number.isFinite(y) && Math.hypot(x, y) <= 1.0001))), "月之法阵 inside the circle");
+  for (const g of MOONCIRCLE) assert.ok(g.spin === 0 || [8, 36].some((n) => Math.abs(Math.abs(g.spin) * n / (Math.PI * 2) - 1) < 1e-9), "月之法阵 turns by a symmetry step per loop");
+  const s = { ...VFX_KINDS.find((k) => k.id === "circle").defaults, kind: "circle", pattern: "moon" };
+  assert.ok(cs({ vfx: s }), "月之法阵 exports as code");
+  const gd = gdCode(gp2(s, 300, 220, 12));
+  assert.ok(gd.includes("const MOONCIRCLE := [") && gd.includes('"月之法阵") var pattern := 10'), "Godot draws the same lines");
+}
+console.log("星月法阵替换箭阵光环、新增月之法阵：线条都在圆内、每遍按对称步数转、Godot 用同一份数据检查通过");

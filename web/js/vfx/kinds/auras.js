@@ -1,7 +1,7 @@
 import { rng, rgba, smooth, drawBlurred } from "../../trails/glow/util.js";
 import { createCanvas } from "../../core/util.js";
 import { TAU, easeOut, frac, mixRgb, blob, ring, spike, trail, comet, field, fieldScale, loopNoise } from "../common.js";
-import { STARMOON } from "./starmoon.js";
+import { STARMOON, MOONCIRCLE } from "./starmoon.js";
 
 // 魔法阵's ground auras (法阵图案), in the palette's colours, laid on the
 // ground in perspective like the circle (or stood up, 侧面):
@@ -14,9 +14,11 @@ import { STARMOON } from "./starmoon.js";
 //   arrows   星月法阵 — the star-and-moon circle (kinds/starmoon.js): rings,
 //            zodiac signs, sun and moon, a twelve-pointed star and a pentagram
 //            turning against each other (it took the place of 箭阵光环)
+//   moon     月之法阵 — an eight-pointed star, rings of blocks, rays, a big
+//            crescent and a small one in a double circle (kinds/starmoon.js)
 // Everything turns or cycles a whole step per loop, so a loop closes; a
 // one-shot spreads out from the middle and fades away at the end.
-export const GROUND_AURAS = [["burst", "能量爆发"], ["holy", "圣光光环"], ["whirl", "旋风光环"], ["stars", "星辉光环"], ["wisp", "幽魂光环"], ["arrows", "星月法阵"]];
+export const GROUND_AURAS = [["burst", "能量爆发"], ["holy", "圣光光环"], ["whirl", "旋风光环"], ["stars", "星辉光环"], ["wisp", "幽魂光环"], ["arrows", "星月法阵"], ["moon", "月之法阵"]];
 const IDS = new Set(GROUND_AURAS.map(([id]) => id));
 export const isGroundAura = (pattern) => IDS.has(pattern);
 
@@ -71,7 +73,8 @@ export function groundAura(g, c) {
   else if (kind === "whirl") whirl();
   else if (kind === "stars") stars();
   else if (kind === "wisp") wisp();
-  else arrows();
+  else if (kind === "moon") lineArt(MOONCIRCLE, 0.56);
+  else lineArt(STARMOON, 0.58);
   // the lines with their bloom
   g.globalCompositeOperation = "lighter";
   g.globalAlpha = Math.min(1, env * (c.pixel ? 0.35 : 0.9) * c.glow);
@@ -220,19 +223,19 @@ export function groundAura(g, c) {
     }
   }
 
-  // ---- 星月法阵 ----
-  // the star-and-moon circle's line art (kinds/starmoon.js), each group turning
-  // by its own step per loop; glints racing round its outer ring and its ladder
-  function arrows() {
+  // ---- 星月法阵, 月之法阵 ----
+  // a circle's line art (kinds/starmoon.js), each group turning by its own
+  // step per loop; glints racing round its outer ring and its inner one (at inner)
+  function lineArt(art, inner) {
     pool(R * 0.9, 0.1 * a);
     glowRing(R * 0.96, R * 0.07, pal.rim, 0.3 * a);
     const turn = c.loop ? 1 : 0.6;
-    for (const grp of STARMOON) {
+    for (const grp of art) {
       const rot = grp.spin * t * turn;
       ink(() => { for (const pl of grp.lines) poly(pl.map(([x, y]) => [x * R, y * R]), rot); }, grp.col === "core" ? pal.core : pal.rim, lw * grp.w, a);
     }
     const lit = a * 0.9;
-    for (const [rr, dir] of [[0.96, 1], [0.58, -1]]) {
+    for (const [rr, dir] of [[0.96, 1], [inner, -1]]) {
       for (let j = 0; j < 2; j++) {
         const head = -Math.PI / 2 + dir * (TAU * t + j * Math.PI), pts = [];
         for (let i = 0; i <= 24; i++) { const q = head - dir * 1.2 * (1 - i / 24); pts.push(to(Math.cos(q) * R * rr, Math.sin(q) * R * rr)); }
