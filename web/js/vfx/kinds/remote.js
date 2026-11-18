@@ -3,11 +3,11 @@ import { rng, rgba } from "../../trails/glow/util.js";
 import { TAU, at, blob, ring, bolt, swirl, trail, mixRgb } from "../common.js";
 import { drawRemoteTrail, drawPuff } from "../remotetrail.js";
 import { REMOTE_DEFAULTS, remoteSettings, hasFlight, flightState, pathAt } from "../remote.js";
-import { fireball } from "./fireball.js";
 import { arrow } from "./arrow.js";
 import { drawIceBolt } from "./ice.js";
 import { drawIceImpact } from "./icehit.js";
 import { drawWaterBody, drawWaterImpact } from "./water.js";
+import { drawFireball, drawFireImpact } from "./fire.js";
 import { drawThunderImpact } from "./thunderhit.js";
 import { drawSandBody } from "./sand.js";
 import { explosion } from "./explosion.js";
@@ -20,11 +20,14 @@ import { remoteRadius } from "../remotesize.js";
 // Each material has its own geometry, independent of palette and flight path.
 export function remoteBody(g, c, r) {
   const { pal, t } = c;
-  if (c.kind === "fireball" || c.kind === "arrow") {
+  if (c.kind === "fireball") {
+    // after pixelfx: the head, its tongues and corona, and the tail it leaves behind (kinds/fire.js)
+    drawFireball(g, c, r, c.fireTail ?? 1, c.fireSpread ?? 1);
+  } else if (c.kind === "arrow") {
     const box = Math.max(16, Math.ceil(r * 8)), cv = createCanvas(box, box), ctx = cv.getContext("2d");
-    const local = { ...c, w: box, h: box, cx: box / 2, cy: box / 2, R: c.kind === "fireball" ? r / 0.29 : r * 2.1,
+    const local = { ...c, w: box, h: box, cx: box / 2, cy: box / 2, R: r * 2.1,
       bodyOnly: true, bodyRadius: r, loop: true, pixel: false, amount: 0 };
-    (c.kind === "fireball" ? fireball : arrow)(ctx, local);
+    arrow(ctx, local);
     g.globalCompositeOperation = "source-over";
     g.drawImage(cv, -box / 2, -box / 2);
   } else if (c.kind === "ice") {
@@ -72,7 +75,8 @@ function impact(g, c, s, atPoint, t, angle) {
   if (c.kind === "ice" && (kind === "auto" || kind === "explosion")) return drawIceImpact(g, local, radius, angle);
   if (c.kind === "water" && (kind === "auto" || kind === "explosion")) return drawWaterImpact(g, local, radius, angle);
   if (c.kind === "thunder" && (kind === "auto" || kind === "explosion")) return drawThunderImpact(g, local, radius);
-  if (kind === "explosion" || (kind === "auto" && c.kind === "fireball")) return explosion(g, local);
+  if (c.kind === "fireball" && (kind === "auto" || kind === "explosion")) return drawFireImpact(g, local, radius, angle);
+  if (kind === "explosion") return explosion(g, local);
   if (kind === "shock") return shock(g, local);
   if (kind === "hit" || (kind === "auto" && c.kind === "arrow")) return hit(g, local);
   const { pal } = c, a = 1 - t, reach = radius * (1 - (1 - t) ** 2);
@@ -96,13 +100,15 @@ export function remote(g, c, settings) {
   const radius = remoteRadius(s, c.w, c.h);
   const frame = c.t * s.frames;
   if (!hasFlight(s) && c.kind === "slash") return void drawSlashAt(g, c, s, [c.cx, c.cy], 0, radius, 1, 1, 0);
+  // 火球's tail: as long as 拖尾保留 (8 frames as pixelfx), as wide as 拖尾宽度
+  const fx = { fireTail: Math.max(0, Math.min(2.5, s.trailFrames / 8)), fireSpread: Math.max(0.2, s.trailWidth / 70) };
   if (!hasFlight(s)) {
-    g.save(); g.translate(c.cx, c.cy); remoteBody(g, { ...c, still: true }, radius); g.restore(); return;
+    g.save(); g.translate(c.cx, c.cy); remoteBody(g, { ...c, ...fx, still: true }, radius); g.restore(); return;
   }
   for (let index = 0; index < s.flightCount; index++) {
     const state = flightState(s, c.w, c.h, frame, index);
     if (!state.born || state.finished) continue;
-    const ctx = { ...c, seed: c.seed + index * 31 };
+    const ctx = { ...c, ...fx, seed: c.seed + index * 31 };
     const wrap = drawRemoteTrail(g, ctx, s, state, frame, index, radius);
     if (state.body) {
       const scale = state.launched ? 1 : 0.15 + state.charge * 0.85;

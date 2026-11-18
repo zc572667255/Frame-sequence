@@ -19,7 +19,7 @@ import { smooth } from "../trails/glow/util.js";
 export const REMOTE_SIZE_RANGE = [5, 100];
 
 const BOX = {
-  fireball: [1.8, 1.05], thunder: [1.35, 1.35], ice: [4.7, 0.6], water: [1.45, 1.35], wind: [1.35, 1.2], sand: [1.5, 0.6],
+  fireball: [3.8, 1.6], thunder: [1.35, 1.35], ice: [4.7, 0.6], water: [1.45, 1.35], wind: [1.35, 1.2], sand: [1.5, 0.6],
 };
 const ARROW_BOX = { arrow: 3, dagger: 2.8, spear: 3.05, club: 2.95, axe: 2.9, shuriken: 2.65, ball: 2.5, core: 2.3 };
 // 剑气's glow round the crescent, in units of r; and how faded a tip may be

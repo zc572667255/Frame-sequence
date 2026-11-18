@@ -141,7 +141,8 @@ export function drawPuff(g, x, y, r, angle, color, alpha, seed, stretch = 1) {
 // Stable emission times: seeking a frame produces exactly the same wake. Each
 // mote leaves the path at birth, then drifts independently instead of riding it.
 function shed(g, c, s, state, index, r) {
-  if (c.amount <= 0 || s.trailFrames <= 0 || s.trailWidth <= 0) return;
+  // 火球 carries its own tail of puffs, smoke and embers (kinds/fire.js)
+  if (c.kind === "fireball" || c.amount <= 0 || s.trailFrames <= 0 || s.trailWidth <= 0) return;
   const life = Math.min(12, Math.max(4, s.trailFrames)), rate = Math.max(0.25, Math.min(3, c.amount * (c.kind === "sand" || c.kind === "ice" ? 2 : 1.5)));
   const postFade = 1 - smooth(0, Math.max(1, Math.min(life, s.impactFrames)), Math.max(0, state.time - s.chargeFrames - s.travelFrames));
   const oldest = Math.max(s.chargeFrames, state.time - life), newest = Math.min(state.time, s.chargeFrames + s.travelFrames);
@@ -179,6 +180,8 @@ export function drawRemoteTrail(g, c, s, state, frame, index, r) {
   shed(g, c, s, state, index, r);
   // 剑气: the crescent itself and its after-images, drawn as attack trails
   if (c.kind === "slash") return void drawSlashFlight(g, c, s, state, index, r);
+  // 火球: its tail is part of its body (kinds/fire.js), no ribbon
+  if (c.kind === "fireball") return;
   // 水球: beads, mist and spray coming off it where it has flown (kinds/water.js), no ribbon
   if (c.kind === "water") return void drawWaterTrail(g, c, s, state, index, r);
   const pts = flightTrail(s, c.w, c.h, frame, index);
