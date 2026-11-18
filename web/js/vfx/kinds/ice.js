@@ -1,24 +1,28 @@
-import { rgba, rng, smooth } from "../../trails/glow/util.js";
-import { TAU, mixRgb, blob, streak } from "../common.js";
+import { rgba, rng } from "../../trails/glow/util.js";
+import { TAU, mixRgb, lum } from "../common.js";
 
-// 冰矛, an ice lance: a long, needle-sharp spear of ice with shards set
-// along its shaft, fading into its own speed; two ribbons of magic in two of
-// the palette's colours spiral round it and trail back along the flight, in a
-// haze strewn with star glints. godot/ice.js draws exactly the same.
+// 冰矛, an ice lance in flat cel shading: a long faceted crystal, its top
+// face lit and its underside in shadow, a white sliver of highlight along the
+// top, a thin dark outline. Behind it only a few white speed lines that
+// follow the path (arcs on a turn); chips flake off it on the way and fall
+// (remotetrail.js). No
+// glow: the ice is solid colour, three tones and a highlight, so it reads on
+// light backgrounds too and stays crisp as pixels. godot/ice.js draws
+// exactly the same.
 
-// The colours all come from the palette (配色): the lance in its light
-// colours; the two ribbons in its rim colour and in whichever of its other
-// colours (not the near-whites) differs most from the rim, lifted so it
-// glows; the haze between its darkest colour and the second ribbon.
-const lum = (c) => 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
-export function iceColors(pal) {
-  const blue = pal.cols[1] || pal.rim, far = (c) => Math.hypot(c[0] - pal.rim[0], c[1] - pal.rim[1], c[2] - pal.rim[2]);
-  let second = pal.cols[0], best = -1;
-  for (const c of [...pal.cols, pal.splat]) if (lum(c) <= 215 && far(c) > best) { best = far(c); second = c; }
-  const top = Math.max(1, ...second), lift = top < 200 ? 200 / top : 1, ribbon = second.map((v) => Math.min(255, Math.round(v * lift)));
+// The tones all come from the palette (配色): highlight near the core colour,
+// the lit face, the mid tone and the shadow between the palette's second
+// colour and its core or darkest, a little greyed (cel shadows are not
+// saturated), and the outline darker still.
+const grey = (c, k) => { const l = lum(c); return c.map((v) => Math.round(v + (l - v) * k)); };
+export function iceTones(pal) {
+  const blue = pal.cols[1] || pal.rim, dark = pal.cols[0];
   return {
-    core: pal.core, rim: pal.rim, blue, pale: mixRgb(blue, pal.core, 0.55),
-    ribbonA: pal.rim, ribbonB: ribbon, haze: mixRgb(pal.cols[0], ribbon, 0.5),
+    hi: mixRgb(pal.core, mixRgb(blue, pal.core, 0.85), 0.5),
+    light: grey(mixRgb(blue, pal.core, 0.72), 0.25),
+    mid: grey(mixRgb(blue, dark, 0.15), 0.3),
+    shade: grey(mixRgb(blue, dark, 0.6), 0.35),
+    deep: mixRgb(grey(dark, 0.3), [16, 20, 34], 0.5),
   };
 }
 
@@ -44,116 +48,149 @@ export function alongPath(pts) {
   return { len, at };
 }
 
-// the lance, in its own frame (x forward, tip at 2.6 r): its outline (a little
-// uneven, like ice), its shaft line, and shards along it
-export function iceLance(r, seed) {
-  const P = rng(seed * 97 + 5), up = [], dn = [];
-  const xs = [1.4, 0.6, -0.4, -1.8, -3.5, -5.0], hw = [0.2, 0.28, 0.32, 0.28, 0.18, 0.06];
-  for (let i = 0; i < xs.length; i++) {
-    up.push([xs[i] * r, -hw[i] * r * (0.85 + 0.3 * P())]);
-    dn.push([xs[i] * r, hw[i] * r * (0.85 + 0.3 * P())]);
-  }
-  const outline = [[2.6 * r, 0], ...up, [-5.4 * r, 0], ...dn.reverse()];
-  const shards = [];
-  for (let i = 0; i < 7; i++) {
-    const x = r * (1.0 - 5.0 * i / 6 + (P() - 0.5) * 0.4), side = i % 2 ? 1 : -1, len = r * (0.7 + 0.5 * P()) * (1 - 0.08 * i);
-    shards.push({ at: [x, side * r * (0.08 + 0.12 * P())], angle: Math.PI + side * (0.25 + 0.25 * P()), len, width: len * 0.2, alpha: 0.95 - 0.1 * i });
-  }
-  return { outline, tip: [2.6 * r, 0], back: [-5.4 * r, 0], shards };
-}
-
-function poly(g, pts) { g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); }
-
-// a small diamond of ice from `at`, pointing along angle
+// a diamond of ice from `at` (its back point), pointing along angle:
+// [back, side, front, other side]
 export function chipPoints(at, angle, len, width) {
   const c = Math.cos(angle), s = Math.sin(angle), pt = (x, y) => [at[0] + x * c - y * s, at[1] + x * s + y * c];
   return [pt(0, 0), pt(len * 0.35, -width), pt(len, 0), pt(len * 0.35, width)];
 }
 
-// a star glint: six thin rays and a soft centre
-export function star(g, x, y, size, pal, a) {
-  if (a <= 0.01) return;
-  blob(g, x, y, size * 0.8, [[0, pal.core, 0.8 * a], [1, pal.rim, 0]]);
-  for (let k = 0; k < 6; k++) {
-    const th = k * Math.PI / 3, l = size * (k % 3 === 0 ? 2 : 1.3);
-    streak(g, [x + Math.cos(th) * l, y + Math.sin(th) * l], [x, y], pal.rim, pal.core, 0.8 * a, Math.max(0.4, size * 0.2));
+const lerp2 = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
+
+// a diamond (chipPoints, in screen space) as a crystal: split along its
+// length, the half facing up lit, the other in shadow, a highlight sliver
+// on the lit half towards the point. → { faces: [[pts, tone]], outline, alpha }
+export function crystal(d, alpha) {
+  const [back, s1, front, s2] = d, ax = [front[0] - back[0], front[1] - back[1]];
+  let n = [ax[1], -ax[0]];
+  if (n[1] > 0) n = [-n[0], -n[1]];
+  const up1 = (s1[0] - back[0]) * n[0] + (s1[1] - back[1]) * n[1] >= 0, lit = up1 ? s1 : s2, dim = up1 ? s2 : s1;
+  return {
+    faces: [
+      [[back, lit, front], "light"],
+      [[back, front, dim], "shade"],
+      [[lerp2(lit, front, 0.2), front, lerp2(lerp2(back, front, 0.6), lit, 0.45)], "hi"],
+    ],
+    outline: d, alpha,
+  };
+}
+
+// a four-pointed sparkle at (x, y): 8 points, long rays on the axes
+export function sparklePoints(x, y, size) {
+  const pts = [];
+  for (let k = 0; k < 8; k++) {
+    const th = k * Math.PI / 4, l = k % 2 ? size * 0.22 : size;
+    pts.push([x + Math.cos(th) * l, y + Math.sin(th) * l]);
+  }
+  return pts;
+}
+
+function poly(g, pts) { g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); }
+
+// pieces of ice ({ faces, outline, alpha }), solid colour on top of what is there
+export function drawPieces(g, pieces, T, lw) {
+  g.globalCompositeOperation = "source-over"; g.lineJoin = "round";
+  for (const p of pieces) {
+    if (p.alpha <= 0.005) continue;
+    for (const [pts, tone] of p.faces) { g.fillStyle = rgba(T[tone], p.alpha); poly(g, pts); g.fill(); }
+    if (p.outline) { g.strokeStyle = rgba(T.deep, 0.85 * p.alpha); g.lineWidth = lw; poly(g, p.outline); g.stroke(); }
   }
 }
 
-// the two ribbons and the glints round the flight, for a path of length len:
-// each ribbon a list of { d, off, w, a } running from just ahead of the tip
-// back along the path; glints { d, off, size, a }
-export function iceSwirl(len, r, t, n, seed, amount = 1, width = 1) {
-  const ph = t * TAU * iceCycles(n), P = rng(seed * 173 + 41), ribbons = [], glints = [];
-  const reach = Math.max(r * 8, Math.min(len + r * 4, r * 16)), M = Math.max(12, Math.min(140, Math.round(reach / (r * 0.15))));
-  for (let j = 0; j < 2; j++) {
-    const pts = [];
-    for (let k = 0; k <= M; k++) {
-      const d = -r * 2.2 + (reach + r * 2.2) * k / M, f = Math.max(0, Math.min(1, (d + r * 2.2) / (reach + r * 2.2)));
-      const a = d / (r * 2.4) - ph * 2 + j * Math.PI, grow = smooth(0, 0.15, f), amp = r * (0.3 + 0.55 * Math.min(1, f * 3)) * width;
-      const near = 0.5 + 0.5 * Math.cos(a);
-      pts.push({ d, off: Math.sin(a) * amp, w: Math.max(0.5, r * 0.36 * (0.35 + 0.65 * near) * Math.pow(1 - f, 0.7) * grow), a: (0.4 + 0.6 * near) * Math.pow(1 - f, 0.9) * grow });
+// the lance, in its own frame (x forward, tip at 2.6 r, back at -5.4 r), lit
+// from local -y: a base in the mid tone, the top face lit, a band of shadow
+// along the underside, two facets cut into the top face, a highlight sliver
+// along the top towards the tip; the edges a little uneven, like ice
+export function iceLance(r, seed) {
+  const P = rng(seed * 97 + 5), j = (x, y) => [x * r, y * r * (0.88 + 0.24 * P())];
+  const U = [[1.3, -0.34], [0.1, -0.5], [-1.3, -0.42], [-1.7, -0.27], [-2.0, -0.42], [-3.3, -0.29], [-4.6, -0.11]].map(([x, y]) => j(x, y));
+  const L = [[-4.4, 0.14], [-3.0, 0.34], [-1.6, 0.46], [-0.9, 0.32], [-0.4, 0.47], [1.1, 0.37]].map(([x, y]) => j(x, y));
+  const G = [[1.3, -0.07], [0.1, -0.1], [-1.3, -0.08], [-3.3, -0.06], [-4.6, -0.01]].map(([x, y]) => j(x, y));
+  const tip = [2.6 * r, 0], back = [-5.4 * r, 0.02 * r];
+  const outline = [tip, ...U, back, ...L];
+  const inner = [...L].reverse().map(([x, y]) => [x + 0.15 * r, y * 0.5]);
+  const faces = [
+    [outline, "mid"],
+    [[tip, ...U, back, ...[...G].reverse()], "light"],
+    [[lerp2(U[1], U[2], 0.5), G[2], G[1]], "mid"],
+    [[U[5], G[4], G[3]], "mid"],
+    [[back, ...L, tip, ...inner], "shade"],
+    [[tip, [U[0][0], U[0][1] * 0.72], [U[1][0], U[1][1] * 0.72], [U[2][0] + 0.3 * r, U[2][1] * 0.6], [U[1][0], U[1][1] * 0.45], [U[0][0], U[0][1] * 0.4]], "hi"],
+  ];
+  return { faces, outline, tip, back };
+}
+
+// the speed lines behind the lance for a path of length len, measured
+// back along it: { d, off, len, width, alpha }, each a thin white sliver
+// sliding back from the lance over the length of the trail and fading in and
+// out on the way; spread across 拖尾宽度 (width). Any frame can be sought
+// and they close the loop.
+export const ICE_LINES = 4;
+export function iceLines(len, r, t, n, seed, width = 1) {
+  const P = rng(seed * 173 + 41), cyc = iceCycles(n), lines = [], reach = Math.max(r * 2.5, Math.min(len, r * 12));
+  for (let k = 0; k < ICE_LINES; k++) {
+    const ph = (t * cyc + P()) % 1, off = ((k + 0.5) / ICE_LINES - 0.5) * r * 1.1 * width + (P() - 0.5) * r * 0.12;
+    lines.push({ d: r * 3 + ph * (reach + r * 3), off, len: r * (2 + 2 * P()), width: r * 0.06, alpha: 0.75 * Math.sin(Math.PI * ph) });
+  }
+  return lines;
+}
+
+// a speed line as a sliver along the path: thick at its front, tapering to
+// a point behind, sampled along it so that on a turn it bends into an arc
+export const ICE_LINE_STEPS = 10;
+export function linePoints(l, place) {
+  const a = [], b = [];
+  for (let k = 0; k <= ICE_LINE_STEPS; k++) {
+    const u = k / ICE_LINE_STEPS, d = l.d + l.len * u, w = l.width * (1 - u);
+    a.push(place(d, l.off - w)); b.push(place(d, l.off + w));
+  }
+  return [...a, ...b.reverse()];
+}
+
+// the path made smooth: each segment cut into `k` along a Catmull-Rom curve
+// through the points, so a speed line on a sharp turn is a round arc rather
+// than a few straight pieces with corners
+export function smoothLine(pts, k = 4) {
+  const n = pts.length, out = [];
+  for (let i = 0; i < n - 1; i++) {
+    const p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(n - 1, i + 2)];
+    for (let s = 0; s < k; s++) {
+      const u = s / k, u2 = u * u, u3 = u2 * u;
+      out.push([0, 1].map((j) => 0.5 * (2 * p1[j] + (p2[j] - p0[j]) * u + (2 * p0[j] - 5 * p1[j] + 4 * p2[j] - p3[j]) * u2 + (3 * p1[j] - p0[j] - 3 * p2[j] + p3[j]) * u3)));
     }
-    ribbons.push(pts);
   }
-  for (let k = 0, K = Math.round(14 * Math.max(0, amount)); k < K; k++) {
-    const d = -r * 1.5 + P() * (reach + r * 1.5), f = Math.max(0, (d + r * 1.5) / (reach + r * 1.5)), off = (P() - 0.5) * r * 1.6 * width, size = r * (0.12 + 0.16 * P()), tw = P() * TAU;
-    glints.push({ d, off, size, a: (0.4 + 0.6 * (0.5 + 0.5 * Math.sin(ph * 2 + tw))) * (1 - f) });
-  }
-  return { ribbons, glints, reach };
+  out.push(pts[n - 1]);
+  return out;
 }
 
-// everything that follows the flight: the haze, the ribbons, the glints
+// what follows the flight: only the speed lines (the chips it sheds are
+// drawn with the other shed motes, remotetrail.js)
 export function drawIceTail(g, c, pts, r, strength = 1, width = 1) {
-  const path = alongPath(pts), col = iceColors(c.pal);
-  const sw = iceSwirl(path.len, r, c.t, c.n, c.seed, c.amount, width), light = c.pal.dark ? "source-over" : "lighter";
+  const path = alongPath(smoothLine(pts)), T = iceTones(c.pal);
   const place = (d, off) => { const [x, y, nx, ny] = path.at(d); return [x + nx * off, y + ny * off]; };
-  g.globalCompositeOperation = light;
-  // the haze along the back half
-  for (let k = 0, N = Math.max(4, Math.round(sw.reach / (r * 0.4))); k <= N; k++) {
-    const d = sw.reach * k / N, f = d / sw.reach, [x, y] = place(d, 0), a = 0.14 * smooth(0, 0.2, f) * Math.pow(1 - f, 0.8) * strength;
-    blob(g, x, y, r * (1.2 - 0.6 * f) * width, [[0, col.haze, a], [0.5, col.haze, a * 0.5], [1, col.haze, 0]]);
-  }
-  // each ribbon a strip of quads (no overlaps to add up into beads): a
-  // coloured band with a hot thread inside
-  sw.ribbons.forEach((rb, j) => {
-    const tone = j ? col.ribbonB : col.ribbonA;
-    for (const [k0, tint, mul] of [[1, 0, 0.9], [0.35, 0.6, 0.6]]) for (let k = 1; k < rb.length; k++) {
-      const p = rb[k - 1], q = rb[k];
-      if (p.a * strength < 0.01) continue;
-      g.fillStyle = rgba(mixRgb(tone, col.core, tint), p.a * mul * strength);
-      poly(g, [place(p.d, p.off - p.w * k0 / 2), place(q.d, q.off - q.w * k0 / 2), place(q.d, q.off + q.w * k0 / 2), place(p.d, p.off + p.w * k0 / 2)]); g.fill();
-    }
-  });
-  for (const k of sw.glints) { const [x, y] = place(k.d, k.off); star(g, x, y, k.size, c.pal, k.a * strength); }
   g.globalCompositeOperation = "source-over";
+  for (const l of iceLines(path.len, r, c.t, c.n, c.seed, width)) {
+    if (l.alpha * strength <= 0.01) continue;
+    g.fillStyle = rgba(T.hi, l.alpha * strength); poly(g, linePoints(l, place)); g.fill();
+  }
 }
 
-// the lance at (0, 0), flying along +x
+// the lance at (0, 0), flying along +x; lit from above on screen, so when it
+// flies leftwards (turned upside down) it is mirrored
 export function drawIceHead(g, c, r) {
-  const { pal } = c, col = iceColors(pal), light = pal.dark ? "source-over" : "lighter", L = iceLance(r, c.seed);
-  g.globalCompositeOperation = light;
-  g.save(); g.translate(-1.2 * r, 0); g.scale(3.2, 0.7);
-  blob(g, 0, 0, 1.6 * r, [[0, col.blue, 0.32], [0.5, col.blue, 0.12], [1, col.blue, 0]]);
+  const T = iceTones(c.pal), L = iceLance(r, c.seed), flip = g.getTransform().d < 0;
+  g.save(); if (flip) g.scale(1, -1);
+  drawPieces(g, [{ faces: L.faces, outline: L.outline, alpha: 1 }], T, Math.max(0.6, r * 0.05));
   g.restore();
-  // the ice itself: solid at the tip, fading back into its own speed
-  g.globalCompositeOperation = "source-over";
-  const gr = g.createLinearGradient(L.back[0], 0, L.tip[0], 0);
-  gr.addColorStop(0, rgba(col.blue, 0)); gr.addColorStop(0.5, rgba(col.pale, 0.55)); gr.addColorStop(1, rgba(col.core, 0.95));
-  g.fillStyle = gr; poly(g, L.outline); g.fill();
-  g.globalCompositeOperation = light;
-  for (const s of L.shards) {
-    g.fillStyle = rgba(col.blue, 0.55 * s.alpha); poly(g, chipPoints(s.at, s.angle, s.len, s.width)); g.fill();
-    g.strokeStyle = rgba(col.core, 0.6 * s.alpha); g.lineWidth = Math.max(0.4, r * 0.03); poly(g, chipPoints(s.at, s.angle, s.len, s.width)); g.stroke();
-  }
-  streak(g, [L.back[0] * 0.8, 0], L.tip, col.rim, col.core, 0.9, Math.max(0.5, r * 0.12));
-  blob(g, L.tip[0], 0, 0.55 * r, [[0, col.core, 0.75], [1, col.rim, 0]]);
-  for (const [dx, dy] of [[0.9, 0], [-0.9, 0], [0, 0.45], [0, -0.45]]) streak(g, [L.tip[0] + dx * r, dy * r], L.tip, col.rim, col.core, 0.7, Math.max(0.4, r * 0.06));
-  g.globalCompositeOperation = "source-over";
+  // the sparkle at the tip stands upright on screen, whichever way the lance flies
+  const m = g.getTransform(), tw = 0.75 + 0.25 * Math.cos(c.t * TAU * iceCycles(c.n) * 2);
+  g.save(); g.translate(L.tip[0], 0); g.rotate(-Math.atan2(m.b, m.a));
+  g.fillStyle = rgba(T.hi, 0.95); poly(g, sparklePoints(0, 0, r * 0.55 * tw)); g.fill();
+  g.restore();
 }
 
 export function drawIceBolt(g, c, r, still) {
-  // standing still (原地循环): a straight flight behind it carries the ribbons
+  // standing still (原地循环): a straight flight behind it carries the speed lines
   if (still) drawIceTail(g, c, Array.from({ length: 9 }, (_, i) => [-r * 12 * (1 - i / 8), 0]), r);
   drawIceHead(g, c, r);
 }

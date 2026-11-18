@@ -10,7 +10,7 @@ import { flightTrail, flightTrailWindow, pathAt, pathProgress } from "./remote.j
 import { projectile, projectileBounds } from "./kinds/arrow.js";
 import { arrowSections } from "./arrowhead.js";
 import { flameUV } from "./ribbonmesh.js";
-import { drawIceTail, iceColors, chipPoints } from "./kinds/ice.js";
+import { drawIceTail, iceTones, chipPoints, crystal, drawPieces } from "./kinds/ice.js";
 import { drawSlashFlight } from "./kinds/slash.js";
 
 export function ribbonSections(points, radius, kind, strength = 1, headRadius = radius) {
@@ -163,14 +163,13 @@ function shed(g, c, s, state, index, r) {
       streak(g, [x + vx * 1.5, y + vy * 1.5], [x, y], color, color, alpha, size);
     }
     if (c.kind === "ice" && j % 2 === 0) {
-      // a chip of ice flaking off the lance: it drifts off to one side and
-      // back, spinning, and fades
-      const len = r * (0.3 + 0.3 * P()), rot = P() * TAU, spin = (P() - 0.5) * 0.9, out = r * (0.08 + 0.14 * P()), col = iceColors(c.pal);
+      // a chip of ice flaking off the lance (flat cel ice, kinds/ice.js): it
+      // drifts off to one side and back, spinning, falls, and fades
+      const len = r * (0.3 + 0.3 * P()), rot = P() * TAU, spin = (P() - 0.5) * 0.9, out = r * (0.08 + 0.14 * P());
       const cx = p[0] - Math.sin(a) * side * r * 0.3 - Math.cos(a) * r * 0.05 * age - Math.sin(a) * side * out * age;
-      const cy = p[1] + Math.cos(a) * side * r * 0.3 - Math.sin(a) * r * 0.05 * age + Math.cos(a) * side * out * age;
-      const fade = smooth(0, 0.1, f) * Math.pow(1 - f, 1.2) * postFade, chip = chipPoints([cx, cy], rot + spin * age, len * (1 - 0.4 * f), len * 0.22);
-      g.fillStyle = rgba(col.blue, 0.55 * fade); g.beginPath(); chip.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); g.fill();
-      g.strokeStyle = rgba(col.core, 0.6 * fade); g.lineWidth = Math.max(0.4, r * 0.03); g.stroke();
+      const cy = p[1] + Math.cos(a) * side * r * 0.3 - Math.sin(a) * r * 0.05 * age + Math.cos(a) * side * out * age + r * 0.012 * age * age;
+      const fade = smooth(0, 0.1, f) * Math.pow(1 - f, 1.2) * postFade;
+      drawPieces(g, [crystal(chipPoints([cx, cy], rot + spin * age, len * (1 - 0.4 * f), len * 0.25), fade)], iceTones(c.pal), Math.max(0.4, r * 0.03));
     }
   }
 }
@@ -183,7 +182,7 @@ export function drawRemoteTrail(g, c, s, state, frame, index, r) {
   const wrapping = c.kind === "arrow" && state.body;
   if (!wrapping && (pts.length < 2 || s.trailWidth <= 0)) return;
   const strength = 1 - smooth(0, Math.max(1, Math.min(s.trailFrames, s.impactFrames)), Math.max(0, state.time - s.chargeFrames - s.travelFrames));
-  // 冰矛: freezing vapour behind the ice meteor (kinds/ice.js) rather than a ribbon
+  // 冰矛: only speed lines (kinds/ice.js) rather than a ribbon; its chips are shed above
   if (c.kind === "ice") return void drawIceTail(g, c, pts, r, strength, s.trailWidth / 70);
   let run;
   if (wrapping) {

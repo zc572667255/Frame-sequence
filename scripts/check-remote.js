@@ -4,7 +4,7 @@ import { migrate } from "../web/js/core/store.js";
 import { crescentRuns, crescentEnds, CRESCENT_U0, applyBow, bowTurn, ribbonSections as trailRibbon, newTrail } from "../web/js/trails/model.js";
 import { ribbonSections, materialAt, flameFlow } from "../web/js/vfx/remotetrail.js";
 import { flightTrailWindow } from "../web/js/vfx/remote.js";
-import { alongPath, iceSwirl, iceLance, iceColors } from "../web/js/vfx/kinds/ice.js";
+import { alongPath, iceLines, iceLance, iceTones, crystal, chipPoints, linePoints, ICE_LINES } from "../web/js/vfx/kinds/ice.js";
 import { iceBurst } from "../web/js/vfx/kinds/icehit.js";
 import { slashRuns, slashFrame, slashFade, slashCopies, slashLines, slashEnds, slashDepth, slashSpan, slashTilt, SLASH_SPAN } from "../web/js/vfx/kinds/slash.js";
 import { paletteOf } from "../web/js/vfx/common.js";
@@ -165,27 +165,38 @@ assert.ok(Math.abs(flameFlow(14, 18) - flameFlow(14 - 0.1 / 0.42, 19)) < 1e-9, "
 const signedArea = pts => pts.reduce((area, p, i) => { const q = pts[(i + 1) % pts.length]; return area + p[0] * q[1] - q[0] * p[1]; }, 0) / 2;
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, msg + ": " + a + " != " + b);
 for (const seed of [1, 23, 97]) for (const n of [8, 36, 64]) {
-  const r = 12, a = iceSwirl(180, r, 0, n, seed), b = iceSwirl(180, r, 1, n, seed), mid = iceSwirl(180, r, 0.37, n, seed);
-  assert.deepEqual(mid, iceSwirl(180, r, 0.37, n, seed), "the ribbons can be sought in any order");
-  a.ribbons.forEach((rb, j) => rb.forEach((q, k) => { near(q.off, b.ribbons[j][k].off, "ribbons close the loop"); near(q.w, b.ribbons[j][k].w, "ribbons close the loop"); }));
-  a.glints.forEach((g, i) => near(g.a, b.glints[i].a, "glints close the loop"));
-  for (const rb of mid.ribbons) {
-    assert.ok(rb.every(q => [q.d, q.off, q.w, q.a].every(Number.isFinite) && q.a >= 0 && q.w > 0));
-    assert.ok(rb[0].a < 1e-9 && rb.at(-1).a < 1e-9, "ribbons fade in ahead of the tip and out at the tail");
-    assert.ok(rb[0].d < 0, "ribbons start just ahead of the tip");
-  }
+  const r = 12, a = iceLines(180, r, 0, n, seed), b = iceLines(180, r, 1, n, seed), mid = iceLines(180, r, 0.37, n, seed);
+  assert.deepEqual(mid, iceLines(180, r, 0.37, n, seed), "the speed lines can be sought in any order");
+  assert.equal(mid.length, ICE_LINES, "only a few speed lines");
+  a.forEach((l, i) => { near(l.d, b[i].d, "speed lines close the loop"); near(l.alpha, b[i].alpha, "speed lines close the loop"); });
+  for (const l of mid) assert.ok([l.d, l.off, l.len, l.width, l.alpha].every(Number.isFinite) && l.alpha >= 0 && l.alpha <= 1 && l.d >= r * 3 - 1e-9, "speed lines start behind the tip");
   const lance = iceLance(r, seed);
   assert.deepEqual(lance, iceLance(r, seed));
   assert.ok(Math.abs(signedArea(lance.outline)) > r * r, "the lance has a body");
-  assert.ok(lance.outline.every(([x, y]) => x <= 2.6 * r + 1e-9 && x >= -5.4 * r - 1e-9 && Math.abs(y) <= 0.4 * r), "the lance is long and thin");
+  for (const [pts] of lance.faces) assert.ok(pts.every(([x, y]) => x <= 2.6 * r + 1e-9 && x >= -5.4 * r - 1e-9 && Math.abs(y) <= 0.6 * r), "the lance is long and thin, within its box");
+  assert.ok(lance.faces.some(([, tone]) => tone === "light") && lance.faces.some(([, tone]) => tone === "shade") && lance.faces.some(([, tone]) => tone === "hi"), "the lance is lit, shadowed and highlighted");
+}
+// on a turn a speed line bends with the path: its points are not on one straight line
+{
+  const turn = alongPath(Array.from({ length: 13 }, (_, i) => [Math.cos(Math.PI * i / 12) * 100, Math.sin(Math.PI * i / 12) * 100]));
+  const place = (d, off) => { const [x, y, nx, ny] = turn.at(d); return [x + nx * off, y + ny * off]; };
+  const pts = linePoints({ d: 30, off: 0, len: 80, width: 1 }, place), [p, , q] = [pts[0], 0, pts[pts.length / 2 | 0]];
+  const far = Math.max(...pts.map(([x, y]) => Math.abs((q[0] - p[0]) * (y - p[1]) - (q[1] - p[1]) * (x - p[0])) / Math.hypot(q[0] - p[0], q[1] - p[1])));
+  assert.ok(far > 5, "a speed line on a turn is an arc");
 }
 for (const id of ["frost", "blaze", "venom", "umbra", "icefire"]) {
-  const pal = paletteOf(id), col = iceColors(pal);
-  assert.deepEqual(col.ribbonA, pal.rim, "the first ribbon takes the palette's rim colour");
-  assert.ok(Math.max(...col.ribbonB) >= 200 && col.ribbonB.every(v => v >= 0 && v <= 255), "the second ribbon glows");
-  assert.notDeepEqual(col.ribbonA, col.ribbonB, "the two ribbons differ");
+  const T = iceTones(paletteOf(id));
+  for (const c of Object.values(T)) assert.ok(c.length === 3 && c.every(v => Number.isFinite(v) && v >= 0 && v <= 255));
+  const L = (c) => 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
+  assert.ok(L(T.hi) > L(T.light) && L(T.light) > L(T.mid) && L(T.mid) > L(T.shade) && L(T.shade) > L(T.deep), id + ": the tones run highlight → light → mid → shadow → outline");
 }
-assert.notDeepEqual(iceColors(paletteOf("frost")).ribbonB, iceColors(paletteOf("blaze")).ribbonB, "the ribbons follow the palette");
+assert.notDeepEqual(iceTones(paletteOf("frost")).mid, iceTones(paletteOf("blaze")).mid, "the ice follows the palette");
+// a crystal is lit on the half facing up on screen, whichever way it points
+for (const angle of [0, 0.5, Math.PI, -2.5]) {
+  const c = crystal(chipPoints([0, 0], angle, 10, 3), 1), lit = c.faces.find(([, tone]) => tone === "light")[0], dim = c.faces.find(([, tone]) => tone === "shade")[0];
+  const cy = (pts) => pts.reduce((s, p) => s + p[1], 0) / pts.length;
+  assert.ok(cy(lit) <= cy(dim) + 1e-9, "the lit half is the upper one");
+}
 const ahead = alongPath([[0, 0], [10, 0]]);
 assert.deepEqual(ahead.at(-5).slice(0, 2), [15, 0], "ahead of the head runs straight on");
 assert.deepEqual(ahead.at(14).slice(0, 2), [-4, 0], "behind the oldest point runs straight on");
@@ -193,25 +204,26 @@ const bent = alongPath([[0, 0], [10, 0], [10, 10]]);
 assert.equal(bent.len, 20);
 assert.deepEqual(bent.at(0).slice(0, 2), [10, 10], "the tail is measured back from the head");
 assert.deepEqual(bent.at(20).slice(0, 2), [0, 0]);
-console.log("火尾后向流动、纹理不随长度拉伸、冰枪光带随配色、循环衔接与路径延伸检查通过");
+console.log("冰枪赛璐璐配色、明暗面、几条速度线（拐弯成弧线）、循环衔接与路径延伸检查通过");
 
 for (const seed of [1, 23, 97]) for (const amount of [0, 0.9, 2]) {
-  const early = iceBurst(32, amount, seed, 0.02), mid = iceBurst(32, amount, seed, 0.3);
-  for (const t of [0, 0.12, 0.35, 0.7, 1]) {
+  const centre = (p) => p.outline.reduce((s, q) => [s[0] + q[0] / 4, s[1] + q[1] / 4], [0, 0]);
+  for (const t of [0, 0.12, 0.35, 0.5, 0.7, 0.9, 1]) {
     const hit = iceBurst(32, amount, seed, t);
     assert.deepEqual(hit, iceBurst(32, amount, seed, t), "the strike can be sought in any playback order");
-    for (const p of [...hit.chips, ...hit.glints, ...hit.haze]) assert.ok(p.at.every(Number.isFinite) && p.alpha >= 0 && p.alpha <= 1);
-    for (const cu of hit.curls) assert.ok(cu.pts.flat().every(Number.isFinite) && cu.alpha >= 0 && cu.alpha <= 1);
+    for (const p of hit.pieces) assert.ok(p.outline.flat().every(Number.isFinite) && p.faces.every(([pts]) => pts.flat().every(Number.isFinite)) && p.alpha >= 0 && p.alpha <= 1);
     if (t === 1) {
-      assert.ok([...hit.chips, ...hit.glints, ...hit.haze, ...hit.curls].every(p => p.alpha === 0), "everything fades before the hit ends");
-      assert.equal(hit.flash, 0); assert.equal(hit.ring.alpha, 0);
+      assert.ok(hit.pieces.every(p => p.alpha === 0), "everything fades before the hit ends");
+      assert.equal(hit.flash.alpha, 0); assert.equal(hit.ring.alpha, 0);
     }
   }
-  assert.ok(mid.chips.every((p, j) => Math.hypot(...p.at) > Math.hypot(...early.chips[j].at)), "ice chips fly out from the hit");
-  const forward = mid.chips.filter(p => p.at[0] > 0).length;
-  assert.ok(forward > mid.chips.length / 2, "most chips carry on the way the lance flew");
+  // the spikes shoot out mostly the way the lance flew, then shatter and fly further
+  const spikes = iceBurst(32, amount, seed, 0.25).pieces.filter(p => Math.hypot(...centre(p)) > 4);
+  assert.ok(spikes.filter(p => centre(p)[0] > 0).length > spikes.length / 2, "most of the ice carries on the way the lance flew");
+  const reach = (t) => Math.max(...iceBurst(32, amount, seed, t).pieces.map(p => Math.hypot(...centre(p))));
+  assert.ok(reach(0.8) > reach(0.3), "the shattered ice flies out");
 }
-console.log("冰枪命中的确定性、碎冰飞散与消散时序检查通过");
+console.log("冰枪命中（冰刺扇形射出后碎开、翻滚下落）的确定性与消散时序检查通过");
 
 for (const flightPath of ["straight", "arc", "wave", "spiral", "custom"]) for (const flightEase of ["linear", "in", "out", "smooth"]) {
   const s = remoteSettings({ ...REMOTE_DEFAULTS, kind: "fireball", flightPath, flightEase, pathWave: 40, pathTurns: 4, pathBend: 60, trailFrames: 24 });
