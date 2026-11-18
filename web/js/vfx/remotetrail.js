@@ -12,6 +12,7 @@ import { arrowSections } from "./arrowhead.js";
 import { flameUV } from "./ribbonmesh.js";
 import { drawIceTail, iceTones, chipPoints, crystal, drawPieces } from "./kinds/ice.js";
 import { drawSlashFlight } from "./kinds/slash.js";
+import { drawWaterTrail } from "./kinds/water.js";
 
 export function ribbonSections(points, radius, kind, strength = 1, headRadius = radius) {
   const pts = [];
@@ -178,6 +179,8 @@ export function drawRemoteTrail(g, c, s, state, frame, index, r) {
   shed(g, c, s, state, index, r);
   // 剑气: the crescent itself and its after-images, drawn as attack trails
   if (c.kind === "slash") return void drawSlashFlight(g, c, s, state, index, r);
+  // 水球: beads, mist and spray coming off it where it has flown (kinds/water.js), no ribbon
+  if (c.kind === "water") return void drawWaterTrail(g, c, s, state, index, r);
   const pts = flightTrail(s, c.w, c.h, frame, index);
   const wrapping = c.kind === "arrow" && state.body;
   if (!wrapping && (pts.length < 2 || s.trailWidth <= 0)) return;

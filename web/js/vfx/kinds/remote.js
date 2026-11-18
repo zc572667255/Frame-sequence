@@ -7,6 +7,7 @@ import { fireball } from "./fireball.js";
 import { arrow } from "./arrow.js";
 import { drawIceBolt } from "./ice.js";
 import { drawIceImpact } from "./icehit.js";
+import { drawWaterBody, drawWaterImpact } from "./water.js";
 import { drawThunderImpact } from "./thunderhit.js";
 import { drawSandBody } from "./sand.js";
 import { explosion } from "./explosion.js";
@@ -28,6 +29,8 @@ export function remoteBody(g, c, r) {
     g.drawImage(cv, -box / 2, -box / 2);
   } else if (c.kind === "ice") {
     drawIceBolt(g, c, r, !!c.still);
+  } else if (c.kind === "water") {
+    drawWaterBody(g, c, r);
   } else if (c.kind === "thunder") {
     const Q = rng(c.seed * 139 + Math.floor(c.i / 2));
     g.globalCompositeOperation = "lighter";
@@ -67,6 +70,7 @@ function impact(g, c, s, atPoint, t, angle) {
   // 剑气 simply fades out far away unless a hit is chosen
   if (c.kind === "slash" && kind === "auto") return;
   if (c.kind === "ice" && (kind === "auto" || kind === "explosion")) return drawIceImpact(g, local, radius, angle);
+  if (c.kind === "water" && (kind === "auto" || kind === "explosion")) return drawWaterImpact(g, local, radius, angle);
   if (c.kind === "thunder" && (kind === "auto" || kind === "explosion")) return drawThunderImpact(g, local, radius);
   if (kind === "explosion" || (kind === "auto" && c.kind === "fireball")) return explosion(g, local);
   if (kind === "shock") return shock(g, local);
@@ -109,7 +113,8 @@ export function remote(g, c, settings) {
       if (wrap) {
         g.save(); g.globalCompositeOperation = c.pal.dark ? "source-over" : "lighter"; g.globalAlpha = 0.14; g.drawImage(wrap, 0, 0); g.restore();
       }
-      if (!state.launched) {
+      // 水球 just gathers, growing with its glow and motes (no closing ring)
+      if (!state.launched && c.kind !== "water") {
         g.globalCompositeOperation = "lighter";
         ring(g, ...state.at, Math.max(0.3, radius * (2.4 - state.charge * 1.3)), Math.max(0.5, radius * 0.08), 0.65, c.pal.rim, state.charge * 0.75);
       }
