@@ -277,32 +277,6 @@ console.log("冰枪命中（冰刺扇形射出后碎开、翻滚下落）的确�
   assert.ok(!gd.includes("data:image"), "Godot draws it from code");
   console.log("水球（照 PixelFX 的水球和水花）：任意帧可求、循环首尾相接、左上迎光白边、光聚在右下、命中只朝前溅不成圈、结束时全部消失、甩出的水珠留在原处、Godot 同样画法检查通过");
 }
-// 火球 after pixelfx's fireball and explosion: seeking is deterministic, the flight loops, the head is
-// white-hot at its heart and swept back, no tail when 拖尾保留 is 0, and the strike is gone by its end.
-{
-  const { fireball: fb, fireBurst, headShade, fireTime, FIRE_D, FIRE_R0 } = await import("../web/js/vfx/kinds/fire.js");
-  for (const S of [1, 5, 23]) {
-    assert.deepEqual(fb(0.37, S), fb(0.37, S), "the fireball can be sought in any order");
-    const a = fb(0, S), b = fb(FIRE_D, S);
-    assert.equal(a.puffs.length, b.puffs.length, "the tail loops");
-    a.puffs.forEach((p, i) => p.at.forEach((v, k) => assert.ok(Math.abs(v - b.puffs[i].at[k]) < 1e-6, "the tail loops")));
-    a.blades.forEach((p, i) => p.pts.forEach((q, j) => q.forEach((v, k) => assert.ok(Math.abs(v - b.blades[i].pts[j][k]) < 1e-6, "the tongues loop"))));
-    const none = fb(0.4, S, 0);
-    assert.ok(none.puffs.length === 0 && none.smokes.length === 0 && none.embers.length === 0 && none.sparks.length === 0, "no tail at 拖尾保留 0");
-    assert.equal(headShade(0, 0, FIRE_R0, 0.3, S), 0, "white-hot at its heart");
-    assert.equal(headShade(FIRE_R0 * 3, 0, FIRE_R0, 0.3, S), -1, "nothing in front of the head");
-    assert.ok(headShade(-FIRE_R0 * 1.3, 0, FIRE_R0, 0.3, S) >= 0, "swept back behind");
-    for (const amount of [0, 1, 2]) for (const t of [0, 0.02, 0.2, 0.5, 0.8, 1]) {
-      const o = fireBurst(t, S, amount, 0.5);
-      assert.deepEqual(o, fireBurst(t, S, amount, 0.5), "the strike can be sought in any order");
-      for (const q of [...o.puffs, ...o.smokes, ...o.sparks, ...o.embers]) assert.ok(q.at.every(Number.isFinite));
-      if (t === 1) assert.ok([...o.puffs, ...o.smokes, ...o.sparks, ...o.embers, ...o.glows].every(q => q.a < 1e-9) && !o.flash, "the strike is gone by its end");
-    }
-  }
-  for (const n of [8, 24, 36]) assert.ok(Math.abs(fireTime(0, n) - fireTime(1, n) % FIRE_D) < 1e-9, "a loop holds whole loops of the fireball");
-  console.log("火球（照 PixelFX 的火球和爆炸）：任意帧可求、循环首尾相接、火球头中心白热往后甩、拖尾保留 0 没有尾巴、命中结束时全部消失检查通过");
-}
-
 
 for (const flightPath of ["straight", "arc", "wave", "spiral", "custom"]) for (const flightEase of ["linear", "in", "out", "smooth"]) {
   const s = remoteSettings({ ...REMOTE_DEFAULTS, kind: "fireball", flightPath, flightEase, pathWave: 40, pathTurns: 4, pathBend: 60, trailFrames: 24 });

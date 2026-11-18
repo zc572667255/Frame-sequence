@@ -62,7 +62,7 @@ export const VFX_KINDS = [
 
 for (const kind of VFX_KINDS) if (isRemoteKind(kind.id)) {
   kind.defaults = remoteSettings({ ...REMOTE_DEFAULTS, ...kind.defaults, kind: kind.id });
-  if (kind.id === "fireball") kind.help = "照开源项目 PixelFX 的火球画的：白热的火球头里热量打旋，往后拖出红橙黄白四层的火舌和一圈小火苗，身后一串火团冷却成烟，火星、余烬和火花，周围一层暖光；命中时白光一闪，火团四散冷却成烟，火花下落、余烬上飘。「拖尾保留」调尾巴长短，「拖尾宽度」调宽度。原地模式可保留循环精灵，由游戏控制移动。";
+  if (kind.id === "fireball") kind.help = "翻滚的火焰主体、破碎火尾、烟和余烬；可沿路径移动，终点爆炸。原地模式可保留循环精灵，由游戏控制移动。";
   if (kind.id === "arrow") kind.help = "代码画出来的箭矢、匕首、长枪、棍棒、飞斧、手里剑和球，也可以是透明核心，支持自转；沿路径飞行，拖尾跟随轨迹，终点播放命中效果。原地模式保留原有循环精灵。";
 }
 
@@ -160,7 +160,7 @@ export function renderVfx(p, i) {
   const draw = EFFECTS[s.kind] || EFFECTS.hit;
   let base = createCanvas(w, h);
   const bg = base.getContext("2d");
-  if (hasFlight(s) || ["fireball", "water", "thunder", "ice", "wind", "sand", "slash"].includes(s.kind)) remote(bg, c, s);
+  if (hasFlight(s) || ["water", "thunder", "ice", "wind", "sand", "slash"].includes(s.kind)) remote(bg, c, s);
   else draw(bg, c);
   // the trails' accents over it (光效点缀; 环绕角色: with what lies on the ground)
   if (!hasFlight(s) && c.only !== "rising") drawAccents(bg, c, accentAmounts(s, pal.preset));
