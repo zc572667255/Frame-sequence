@@ -40,6 +40,7 @@ import { remote } from "./kinds/remote.js";
 export const VFX_KINDS = [
   { id: "thunder", name: "雷电", help: "蓝白电核与分叉电弧；命中时短促闪光、多次放电、飞散电火花和逐渐冷却的放射电纹", defaults: { remoteSize: 20, palette: "animebolt", loop: true, size: 90, glow: 40, acc: "none" }, round: true },
   { id: "ice", name: "冰矛", help: "单尖冰锥，带碎裂断口、纵向冰纹与透光切面，使用拖尾特效的「冰晶」拖尾；命中时冰块翻滚碎裂，留下冰裂纹", defaults: { remoteSize: 65, palette: "frost", loop: true, size: 90, glow: 30, acc: "none", flightPath: "straight" }, round: true },
+  { id: "water", name: "水球", help: "照开源项目 PixelFX 的水球画的：透明的水球，表皮会晃，迎光的左上方一圈白亮边，里面越深越暗、光在右下方聚成一个亮点，里面三圈水流绕着转、气泡往上飘，左上一道高光，外面几粒水雾绕着飞，周围一层水光；飞的时候从后面甩出带尾巴的水珠往下掉，还有水雾和细小的水花，都留在甩出来的地方；命中时白光一闪，水球破开成一圈水边往外扩、再一段段断开，水边上的水指甩出水珠，水花和大水珠四散落下，伴随闪光点和水雾。颜色随配色", defaults: { remoteSize: 30, palette: "torrent", loop: true, size: 90, glow: 0, acc: "none", flightPath: "straight" }, round: true },
   { id: "wind", name: "风刃", help: "白色翻滚气团、两端渐隐的细长流线与逐渐扩散的空气尾迹，命中时扩散", defaults: { remoteSize: 20, palette: "air", loop: true, size: 90, glow: 20, acc: "none" }, round: true },
   { id: "sand", name: "沙流", help: "流动的沙粒与金色细丝，沿路径飞行，命中时扬起散沙", defaults: { remoteSize: 20, palette: "sand", loop: true, size: 90, glow: 20, acc: "none", flightPath: "wave" }, round: true },
   { id: "slash", name: "剑气", help: "一道月牙形的剑气，光效和配色与同名攻击拖尾一样（烈焰斩是火焰、冰晶带冰晶、雷光带闪电……）；从左往右横着飞出去，鼓起的一面朝前，完整地飞到终点，再在「命中消散」的帧数里淡出消失。「剑气外形」两头尖是整个月牙，半头只留上半截、下面平切贴着飞行线；「地面夹角」0°~360°，整个剑气绕起点到终点这条飞行线连续旋转：90° 竖直，0° 和 180° 平行地面、从侧面看是扁扁的一道，约 163° 和 343° 侧对成一道细线，270° 倒过来，360° 回到 0°；「左右倾斜」-90°~90° 是剑气竖直时往前或往后斜（正数上端往飞行方向倾，负数往后倾），斜好之后再按地面夹角绕飞行线转；「剑气厚度」调粗细；「月牙弧度」60°~240° 调弯的程度，越小越平、越大越弯，过了 180° 两个尖往回卷；「剑气光丝」0%~100% 调刀身上细丝、卷流和弧形光丝的多少，100% 和攻击拖尾一样多", defaults: { remoteSize: 60, palette: "blaze", loop: true, size: 90, glow: 40, acc: "none", flightPath: "straight", startX: 12, startY: 55, endX: 88, endY: 55, chargeFrames: 2, travelFrames: 16, impactFrames: 4, slashAngle: 90, slashShape: "full", slashThick: 60, slashCurve: 170, slashLean: 0, slashStrands: 25 }, round: true },
@@ -109,7 +110,7 @@ export const VFX_EDGES = [["auto", "自动（按配色）"], ["none", "无"], ["
 
 export const effectKinds = (remote = false) => {
   const kinds = VFX_KINDS.filter((k) => isRemoteKind(k.id) === remote);
-  return remote ? kinds.sort((a, b) => ["fireball", "thunder", "ice", "wind", "sand", "slash", "arrow"].indexOf(a.id) - ["fireball", "thunder", "ice", "wind", "sand", "slash", "arrow"].indexOf(b.id)) : kinds;
+  return remote ? kinds.sort((a, b) => ["fireball", "water", "thunder", "ice", "wind", "sand", "slash", "arrow"].indexOf(a.id) - ["fireball", "water", "thunder", "ice", "wind", "sand", "slash", "arrow"].indexOf(b.id)) : kinds;
 };
 
 const EFFECTS = { hit, explosion, shock, dust, charge, circle, heal, aura, ribbon, wings, burn, cloud, arrow, fireball };
@@ -159,7 +160,7 @@ export function renderVfx(p, i) {
   const draw = EFFECTS[s.kind] || EFFECTS.hit;
   let base = createCanvas(w, h);
   const bg = base.getContext("2d");
-  if (hasFlight(s) || ["thunder", "ice", "wind", "sand", "slash"].includes(s.kind)) remote(bg, c, s);
+  if (hasFlight(s) || ["water", "thunder", "ice", "wind", "sand", "slash"].includes(s.kind)) remote(bg, c, s);
   else draw(bg, c);
   // the trails' accents over it (光效点缀; 环绕角色: with what lies on the ground)
   if (!hasFlight(s) && c.only !== "rising") drawAccents(bg, c, accentAmounts(s, pal.preset));

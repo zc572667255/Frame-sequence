@@ -137,7 +137,7 @@ for (const field of FLIGHT_FIELDS.filter(f => f.key === "headWidth" || f.key ===
 console.log("箭身完整包裹、旋转与长宽适配、头部弧度和宽度独立控制检查通过");
 
 const frameIds = Array.from({ length: 36 }, (_, i) => 'C' + i);
-for (const kind of ["fireball", "thunder", "ice", "wind", "sand", "arrow", "slash"]) {
+for (const kind of ["fireball", "water", "thunder", "ice", "wind", "sand", "arrow", "slash"]) {
   const layer = { name: kind, vfx: { ...REMOTE_DEFAULTS, kind, w: 900, h: 600, x: -200, y: -100, follow: "old", perFrame: true, keys: { C0: { w: 10, h: 10, x: 2, y: 2 } } } };
   const s = vfxSettings(layer);
   assert.equal(s.follow, null); assert.equal(s.perFrame, false); assert.equal(s.keys, null);
@@ -212,6 +212,59 @@ for (const seed of [1, 23, 97]) for (const amount of [0, 0.9, 2]) {
   assert.ok(forward > mid.chips.length / 2, "most chips carry on the way the lance flew");
 }
 console.log("冰枪命中的确定性、碎冰飞散与消散时序检查通过");
+
+// 水球 after pixelfx's water orb and splash: seeking is deterministic, the loop closes, the body is lit
+// from the upper left with a white rim there, the splash opens only forward and is gone by its end,
+// and what it sheds stays where it came off. Godot carries the same body (mode 11) and parts.
+{
+  const { waterOrb, orbShade, orbSkin, waterSplash, waterTrail, waterRamp, unstretch, SPLASH_ARC } = await import("../web/js/vfx/kinds/water.js");
+  for (const n of [8, 24, 36, 64]) for (const seed of [1, 23]) {
+    const a = waterOrb(20, 0, n, seed), b = waterOrb(20, 1, n, seed);
+    assert.deepEqual(waterOrb(20, 0.37, n, seed), waterOrb(20, 0.37, n, seed), "the orb can be sought in any order");
+    assert.equal(a.dashes.length, b.dashes.length, "the current closes the loop");
+    a.dashes.forEach((d, i) => d.pts.forEach((p, j) => p.forEach((v, k) => assert.ok(Math.abs(v - b.dashes[i].pts[j][k]) < 1e-6, "the current closes the loop"))));
+    a.motes.forEach((m, i) => m.at.forEach((v, k) => assert.ok(Math.abs(v - b.motes[i].at[k]) < 1e-6, "the motes close the loop")));
+    assert.ok(Math.abs(Math.sin(a.w1) - Math.sin(b.w1)) < 1e-9 && Math.abs(Math.sin(a.w2) - Math.sin(b.w2)) < 1e-9, "the skin closes the loop");
+    for (const bb of waterOrb(20, 0.6, n, seed).bubbles) assert.ok(Math.hypot(...bb.at) <= 20 * 0.8 + 1e-9, "bubbles stay inside it");
+  }
+  const R = 19, inRim = R * 0.96 / Math.SQRT2;
+  assert.equal(orbShade(-inRim, -inRim, R, 0, 0)[0], 7, "the rim is white towards the light (upper left)");
+  assert.ok(orbShade(inRim, inRim, R, 0, 0)[0] < 7, "and darker away from it");
+  assert.equal(orbShade(R * 1.2, 0, R, 0, 0), null, "nothing outside the skin");
+  assert.ok(orbShade(R * 0.3, R * 0.4, R, 0, 0)[0] > orbShade(-R * 0.3, -R * 0.4, R, 0, 0)[0], "the light gathers low on the far side inside");
+  const [ux, uy] = unstretch(R * 1.07, 0, 0);
+  assert.ok(Math.abs(ux - R) < 1e-9 && Math.abs(uy) < 1e-9, "flying, the orb is drawn out along its way");
+  assert.equal(waterRamp(paletteOf("torrent")).length, 8);
+  for (const seed of [1, 23, 97]) for (const amount of [0, 1, 2]) for (const angle of [0, 2.5]) {
+    for (const t of [0, 0.03, 0.1, 0.2, 0.4, 0.7, 1]) {
+      const o = waterSplash(40, amount, seed, t, angle);
+      assert.deepEqual(o, waterSplash(40, amount, seed, t, angle), "the splash can be sought in any order");
+      for (const l of o.lip) { const d = Math.atan2(Math.sin((l.a0 + l.a1) / 2 - angle), Math.cos((l.a0 + l.a1) / 2 - angle)); assert.ok(Math.abs(d) <= SPLASH_ARC + 1e-9, "the lip opens only forward, never a ring"); }
+      for (const q of [...o.beads, ...o.flecks, ...o.mists]) assert.ok(q.at.every(Number.isFinite) && q.a >= 0 && q.a <= 1);
+      if (t === 1) {
+        assert.ok([...o.beads, ...o.flecks, ...o.mists, ...o.stars, ...o.lip].every(q => q.a < 1e-9) && o.fingers.length === 0 && !o.flash, "the splash is gone by its end");
+        assert.ok(o.glows.every(gl => gl.a < 1e-9));
+      }
+    }
+  }
+  const ws = remoteSettings({ ...REMOTE_DEFAULTS, kind: "water", flightPath: "straight" });
+  for (const T of [8, 13, 19]) {
+    const now = waterTrail(ws, 320, 180, flightState(ws, 320, 180, T), 0, 20, 5, 1), later = waterTrail(ws, 320, 180, flightState(ws, 320, 180, T + 0.5), 0, 20, 5, 1);
+    assert.deepEqual(now, waterTrail(ws, 320, 180, flightState(ws, 320, 180, T), 0, 20, 5, 1), "the trail can be sought in any order");
+    assert.ok(now.beads.length > 0, "it sheds beads as it flies");
+    assert.ok(now.beads.every(b => b.a >= 0 && b.a <= 1 && b.at.every(Number.isFinite)));
+    // a bead keeps falling where it came off: half a frame on it has moved by about its own speed,
+    // far less than the orb has (those that ran out meanwhile aside)
+    const step = 320 * (ws.endX - ws.startX) / 100 / ws.travelFrames * 0.5;
+    const near = now.beads.filter(q => later.beads.some(b => Math.hypot(b.at[0] - q.at[0], b.at[1] - q.at[1]) < step * 0.5)).length;
+    assert.ok(near >= now.beads.length * 0.75, "what it sheds stays where it came off");
+  }
+  const { codeParamsFrom: cp, codeGodot: cg } = await import("../web/js/godot/code.js");
+  const gd = cg(cp(VFX_KINDS.find(k => k.id === "water").defaults, 320, 200, 12, "水球"));
+  for (const f of ["mode == 11", "func _remote_water(", "func _water_field(", "func _water_splash(", "func _water_trail(", "kind <= 19"]) assert.ok(gd.includes(f), "Godot: " + f);
+  assert.ok(!gd.includes("data:image"), "Godot draws it from code");
+  console.log("水球（照 PixelFX 的水球和水花）：任意帧可求、循环首尾相接、左上迎光白边、光聚在右下、命中只朝前溅不成圈、结束时全部消失、甩出的水珠留在原处、Godot 同样画法检查通过");
+}
 
 for (const flightPath of ["straight", "arc", "wave", "spiral", "custom"]) for (const flightEase of ["linear", "in", "out", "smooth"]) {
   const s = remoteSettings({ ...REMOTE_DEFAULTS, kind: "fireball", flightPath, flightEase, pathWave: 40, pathTurns: 4, pathBend: 60, trailFrames: 24 });
@@ -514,7 +567,7 @@ console.log("横扫转一整圈：头部圆弧在挥动平面里做、不伸进�
   const { remoteRadius, remoteSizeOf, remoteBox, remoteFullRadius } = await import("../web/js/vfx/remotesize.js");
   const { codeParamsFrom } = await import("../web/js/godot/code.js");
   const { remoteProps } = await import("../web/js/godot/remote.js");
-  const looks = [["fireball"], ["thunder"], ["ice"], ["wind"], ["sand"], ["slash"], ["slash", { slashShape: "half", slashAngle: 30, slashLean: 40, slashCurve: 230 }], ...["arrow", "spear", "ball", "core"].map(shape => ["arrow", { shape }])];
+  const looks = [["fireball"], ["water"], ["thunder"], ["ice"], ["wind"], ["sand"], ["slash"], ["slash", { slashShape: "half", slashAngle: 30, slashLean: 40, slashCurve: 230 }], ...["arrow", "spear", "ball", "core"].map(shape => ["arrow", { shape }])];
   for (const [kind, extra] of looks) {
     const s = { ...VFX_KINDS.find(k => k.id === kind).defaults, kind, ...extra };
     assert.ok(s.remoteSize > 0 && s.remoteSize <= 100, kind + ": new effects have a 特效大小");

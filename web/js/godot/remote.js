@@ -83,7 +83,7 @@ export const REMOTE_FIELD = `
 
 export const REMOTE_GD = `
 func _remote_active() -> bool:
-	return kind >= 12 and kind <= 18 and flight_path != "sprite"
+	return kind >= 12 and kind <= 19 and flight_path != "sprite"
 
 func _remote_interval() -> int:
 	return mini(flight_interval, maxi(0, int((flight_frame_budget - charge_frames - travel_frames - impact_frames) / maxi(1, flight_count - 1))))
@@ -217,6 +217,8 @@ func _remote_body(r: float) -> void:
 				_slash_at(Vector2.ZERO, 0.0, r, 1.0, 1.0, 0, random_seed)
 		15:
 			_remote_ice(r, random_seed + _remote_shot * 31, not _remote_active())
+		19:
+			_remote_water(r, random_seed + _remote_shot * 31)
 		16:
 			var spin := _t * TAU * 2.0
 			for j in 6:
@@ -243,6 +245,10 @@ func _remote_trail(state: Dictionary, frame: float, index: int, r: float) -> Arr
 	# 剑气：剑气本身和残影，照拖尾的画法
 	if kind == 18:
 		_remote_slash(state, index, r)
+		return []
+	# 水球：甩出来的水珠、水雾和水花，不是带子
+	if kind == 19:
+		_remote_water_trail(state, index, r)
 		return []
 	var pts := _remote_points(frame, index)
 	var wrapping: bool = kind == 12 and state.body
@@ -280,6 +286,9 @@ func _remote_impact(at0: Vector2, t: float, angle: float) -> void:
 	var radius := minf(_w, _h) * impact_size / 100.0
 	if kind == 15 and impact_kind in ["auto", "explosion"]:
 		_remote_ice_hit(at0, t, angle, random_seed + _remote_shot * 31, radius)
+		return
+	if kind == 19 and impact_kind in ["auto", "explosion"]:
+		_remote_water_hit(at0, t, angle, random_seed + _remote_shot * 31, radius)
 		return
 	if kind == 14 and impact_kind in ["auto", "explosion"]:
 		_remote_thunder_hit(at0, t, random_seed + _remote_shot * 31, radius)
@@ -341,7 +350,7 @@ func _k_remote() -> void:
 					var half := []
 					for q in wrap: half.append({"a": q.a if side == 0 else q.b, "b": (q.a + q.b) / 2.0, "u": q.u})
 					_tg_glow(half, random_seed + index * 31, int(floor(frame)), 1.0, 0.14, true, side)
-			if not state.launched:
+			if not state.launched and kind != 19:
 				_add = true
 				_ring(state.at, maxf(0.3, r * (2.4 - state.charge * 1.3)), maxf(0.5, r * 0.08), 0.65, rim_color, state.charge * 0.75)
 		_remote_impact(_remote_path(1.0, index), state.hit, state.angle)
@@ -359,7 +368,7 @@ func _remote_field(m: ShaderMaterial) -> void:
 			var scale0: float = 1.0 if state.launched else 0.15 + state.charge * 0.85
 			ea.append(Vector4(state.at.x, state.at.y, _remote_radius() * scale0, state.angle))
 			eb.append(Vector4(0, 0, 0, 0))
-		if state.hit >= 0.0 and state.hit < 1.0 and kind not in [14, 15] and (impact_kind == "explosion" or (impact_kind == "auto" and kind == 13)):
+		if state.hit >= 0.0 and state.hit < 1.0 and kind not in [14, 15, 19] and (impact_kind == "explosion" or (impact_kind == "auto" and kind == 13)):
 			var p := _remote_path(1.0, index)
 			ea.append(Vector4(p.x, p.y, minf(_w, _h) * impact_size / 100.0, 0))
 			eb.append(Vector4(1, 0, state.hit, 0))

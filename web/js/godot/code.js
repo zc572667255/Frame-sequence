@@ -34,6 +34,7 @@ import { remoteParams, remoteProps, remoteExports, REMOTE_FIELD, REMOTE_GD } fro
 import { REMOTE_TRAIL_SHADER, REMOTE_TRAIL_GD } from "./remotetrail.js";
 import { ICE_GD } from "./ice.js";
 import { ICE_HIT_GD } from "./icehit.js";
+import { WATER_FIELD, WATER_GD } from "./water.js";
 import { THUNDER_HIT_GD } from "./thunderhit.js";
 import { SLASH_GD } from "./slash.js";
 import { STARMOON, MOONCIRCLE } from "../vfx/kinds/starmoon.js";
@@ -46,11 +47,11 @@ const pv = (pl) => "PackedVector2Array([" + pl.map(([x, y]) => "Vector2(" + r4s(
 const artGd = (name, art) => "const " + name + " := [" + art.groups.map((g) => "[" + r4s(g.spin) + ", " + (g.col === "core") + ", " + r4s(g.w) + ", " + !!g.top + ", [" + g.lines.map(pv).join(", ") + "]]").join(", ") + "]\nconst " + name + "_MASKS := [" + art.masks.map(pv).join(", ") + "]";
 const STARMOON_GD = artGd("STARMOON", STARMOON) + "\n" + artGd("MOONCIRCLE", MOONCIRCLE);
 
-export const CODE_KINDS = ["hit", "shock", "charge", "heal", "ribbon", "wings", "circle", "aura", "burn", "explosion", "dust", "cloud", "arrow", "fireball", "thunder", "ice", "wind", "sand", "slash"];
+export const CODE_KINDS = ["hit", "shock", "charge", "heal", "ribbon", "wings", "circle", "aura", "burn", "explosion", "dust", "cloud", "arrow", "fireball", "thunder", "ice", "wind", "sand", "slash", "water"];
 const PATTERNS = { hex: 0, penta: 1, square: 2, taiji: 3, burst: 4, holy: 5, whirl: 6, stars: 7, wisp: 8, arrows: 9, moon: 10 };
 // how much bloom each kind gets (vfx/effects.js BLOOM); 箭矢 more, standing in
 // for the bloom its trail glow adds to itself in the editor
-const BLOOM = { hit: 1, shock: 0.8, charge: 1, heal: 0.7, circle: 0, ribbon: 1, wings: 1, aura: 0.9, burn: 0.9, explosion: 0.7, dust: 0, cloud: 0, arrow: 1, fireball: 0.45, ice: 0.35, slash: 0.6 };
+const BLOOM = { hit: 1, shock: 0.8, charge: 1, heal: 0.7, circle: 0, ribbon: 1, wings: 1, aura: 0.9, burn: 0.9, explosion: 0.7, dust: 0, cloud: 0, arrow: 1, fireball: 0.45, ice: 0.35, slash: 0.6, water: 0.5 };
 // 箭矢's glow: the trail look's amounts the script reads, in this order
 // (strands is a count, the rest 0..1) — GDScript TG_KEYS
 const TG_KEYS = ["strands", "core", "haze", "glow", "flow", "flames", "bolts", "crystal", "speedLines", "curls", "rays", "serrate", "rocks", "shadow", "snow", "dust", "sparkles", "sparkleSize"];
@@ -164,7 +165,7 @@ export function codeGodot(p) {
 # 特效（纯代码）—— 由「光台 · 序列帧工作室」导出：${d.name}
 # Godot 4.x。不用任何图片：特效的每一帧都由本脚本实时画出来，形状、随机细节、节奏和编辑器里一样，
 # 任意放大都清晰，类型、颜色、大小、速度都能随时改。编辑器里也会动（@tool），可以直接在 2D 视图里看效果。
-# 支持：命中火花、冲击波、蓄力、治疗光圈、流光、翅膀、魔法阵（含火焰边缘和六种地面光环）、环绕光、燃烧、爆炸、烟尘、云朵、箭矢（外面的光照拖尾的画法）、远程特效（火球、雷电、冰矛、风刃、沙流、剑气），以及光效点缀
+# 支持：命中火花、冲击波、蓄力、治疗光圈、流光、翅膀、魔法阵（含火焰边缘和六种地面光环）、环绕光、燃烧、爆炸、烟尘、云朵、箭矢（外面的光照拖尾的画法）、远程特效（火球、水球、雷电、冰矛、风刃、沙流、剑气），以及光效点缀
 #（星光、粉尘、余烬、雪花、碎片、闪电、光芒、气泡、水滴、落叶、碎石）。
 # 两种用法：
 #   单独播放（mode = 单独播放，默认）：新建一个 Node2D 挂上本脚本，节点位置是特效画幅的中心。
@@ -191,7 +192,7 @@ signal finished
 ## 空闲时把还没画过的帧提前一帧一帧画好（第一遍播放也不卡）
 @export var prewarm := true
 @export_group("特效")
-@export_enum("命中火花", "冲击波", "蓄力", "治疗光圈", "流光", "翅膀", "魔法阵", "环绕光", "燃烧", "爆炸", "烟尘", "云朵", "箭矢", "火球", "雷电", "冰矛", "风刃", "沙流", "剑气") var kind := ${d.kind}
+@export_enum("命中火花", "冲击波", "蓄力", "治疗光圈", "流光", "翅膀", "魔法阵", "环绕光", "燃烧", "爆炸", "烟尘", "云朵", "箭矢", "火球", "雷电", "冰矛", "风刃", "沙流", "剑气", "水球") var kind := ${d.kind}
 ## 画幅大小（编辑器里特效的画幅框）
 @export var box_size := Vector2(${num(d.w)}, ${num(d.h)})
 ## 特效大小：占画幅的比例
@@ -603,6 +604,7 @@ void fragment() {
 		col = texture(ramp_flame, vec2(heat, 0.5)).rgb;
 ${FIREBALL_FIELD}
 ${REMOTE_FIELD}
+${WATER_FIELD}
 	} else if (mode == 5) {
 		// 能量爆发：一团团能量云从中心沿地面滚出去，噪声翻卷，按热度着色（ea = 每团的位置和半径，eb = 浓度、热度）
 		float D = 0.0;
@@ -1283,7 +1285,7 @@ func _draw_layer(cv: CanvasItem, role: int) -> void:
 
 # 噪声层有没有东西：噪声画的特效、云朵，和魔法阵的能量爆发、幽魂光环
 func _has_field() -> bool:
-	return _remote_active() or (kind >= 7 and kind <= 11) or kind == 13 or (kind == 6 and (pattern == 4 or pattern == 8 or (edge_effect == 1 and amount > 0.0)))
+	return _remote_active() or (kind >= 7 and kind <= 11) or kind == 13 or kind == 19 or (kind == 6 and (pattern == 4 or pattern == 8 or (edge_effect == 1 and amount > 0.0)))
 
 
 # 攒起来的三角形（点按当前的变换算好）
@@ -2421,6 +2423,9 @@ func _field_pass() -> void:
 	m.set_shader_parameter("seed", random_seed)
 	m.set_shader_parameter("gmul", 1.0)
 	m.set_shader_parameter("dark", not additive)
+	if kind == 19:
+		if mix_pass: _water_field(m)  # 水球的本体（普通盖上去）
+		return
 	if _remote_active():
 		if mix_pass: _remote_field(m)
 		return
@@ -2755,6 +2760,7 @@ ${REMOTE_GD}
 ${REMOTE_TRAIL_GD}
 ${ICE_GD}
 ${ICE_HIT_GD}
+${WATER_GD}
 ${SLASH_GD}
 ${THUNDER_HIT_GD}
 
