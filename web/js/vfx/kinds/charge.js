@@ -4,9 +4,12 @@ import { TAU, easeOut, easeIn, frac, at, blob, ring, sparks, trail, comet } from
 
 // 蓄力: sparks spiralling in along curved comet tails to a pulsing orb
 // wrapped in glowing arcs that spin round it; as a one-shot the orb grows
-// and bursts at the end
+// and bursts at the end. Like 魔法阵 / 冲击波, 地面倾斜 flattens it onto the
+// ground (or turns it edge-on in 侧面 view) while keeping line widths and
+// twinkling stars crisp.
 export function charge(g, c) {
   const { t, R, cx, cy, pal } = c;
+  const side = c.view === "side", kx = side ? c.squash : 1, ky = side ? 1 : c.squash;
   const P = rng(c.seed * 31 + 8);
   const power = c.loop ? 1 : 0.25 + 0.75 * easeIn(t / 0.82, 1.4);
   const burst = c.loop ? 0 : smooth(0.8, 0.9, t);
@@ -21,7 +24,7 @@ export function charge(g, c) {
     // a point on its spiral at progress q: closing in faster and faster
     const on = (q) => {
       const d = R * 0.14 + (r0 - R * 0.14) * (1 - easeIn(q, 1.7)), th = th0 + q * 2.2;
-      return [cx + Math.cos(th) * d, cy + Math.sin(th) * d];
+      return [cx + Math.cos(th) * d * kx, cy + Math.sin(th) * d * ky];
     };
     const pts = [];
     for (let i = 0; i <= 10; i++) pts.push(on(Math.max(0, p - 0.22 * (1 - i / 10))));
@@ -29,8 +32,10 @@ export function charge(g, c) {
   }
   const pulse = 1 + 0.1 * Math.sin(TAU * t * 2);
   const rr = R * 0.24 * pulse * power * gone;
-  blob(g, cx, cy, rr * 2.4, [[0, pal.rim, 0.45 * gone], [1, pal.rim, 0]]);
-  blob(g, cx, cy, rr, [[0, pal.core, 1], [0.45, pal.core, 0.95], [0.75, pal.rim, 0.8], [1, pal.cols[2], 0]]);
+  g.save(); g.translate(cx, cy); g.scale(kx, ky);
+  blob(g, 0, 0, rr * 2.4, [[0, pal.rim, 0.45 * gone], [1, pal.rim, 0]]);
+  blob(g, 0, 0, rr, [[0, pal.core, 1], [0.45, pal.core, 0.95], [0.75, pal.rim, 0.8], [1, pal.cols[2], 0]]);
+  g.restore();
   // arcs spinning round the orb, like the edges of a shell of energy: each
   // fading in and out along its length
   for (let k = 0; k < 3; k++) {
@@ -38,17 +43,19 @@ export function charge(g, c) {
     const tilt = k * 1.05, ct = Math.cos(tilt), st = Math.sin(tilt), pts = [];
     for (let i = 0; i <= 24; i++) {
       const th = a0 + 1.9 * i / 24, x = Math.cos(th) * rx, y = Math.sin(th) * ry;
-      pts.push([cx + x * ct - y * st, cy + x * st + y * ct]);
+      pts.push([cx + (x * ct - y * st) * kx, cy + (x * st + y * ct) * ky]);
     }
     trail(g, pal, pts, Math.max(0.8, R * 0.022), 0.9 * gone, false);
   }
   for (let k = 0; k < Math.round(4 * c.amount); k++) {
     const th = P() * TAU, d = rr * (1.3 + 0.8 * P()), tw = 0.5 + 0.5 * Math.sin(TAU * (t * 2 + P()));
-    star(g, [cx + Math.cos(th) * d, cy + Math.sin(th) * d], Math.max(2, R * 0.06 * tw), pal.rim, 0.9 * tw * gone, 0);
+    star(g, [cx + Math.cos(th) * d * kx, cy + Math.sin(th) * d * ky], Math.max(2, R * 0.06 * tw), pal.rim, 0.9 * tw * gone, 0);
   }
   if (burst > 0) {
     const bt = clamp01((t - 0.8) / 0.2);
-    blob(g, cx, cy, R * (0.4 + 0.6 * easeOut(bt)), [[0, pal.core, 1 - bt], [0.4, pal.rim, 0.7 * (1 - bt)], [1, pal.rim, 0]]);
-    ring(g, cx, cy, R * (0.3 + 0.8 * easeOut(bt, 2)), R * 0.06 + 0.6, 1, pal.rim, 0.9 * (1 - bt));
+    g.save(); g.translate(cx, cy); g.scale(kx, ky);
+    blob(g, 0, 0, R * (0.4 + 0.6 * easeOut(bt)), [[0, pal.core, 1 - bt], [0.4, pal.rim, 0.7 * (1 - bt)], [1, pal.rim, 0]]);
+    g.restore();
+    ring(g, cx, cy, R * (0.3 + 0.8 * easeOut(bt, 2)), R * 0.06 + 0.6, ky, pal.rim, 0.9 * (1 - bt), kx);
   }
 }

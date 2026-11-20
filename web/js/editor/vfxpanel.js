@@ -17,7 +17,7 @@ import { codeSupported, codeParams, codeGodot } from "../godot/code.js";
 // a flight's stages: 蓄力 / 飞行 / 命中消散
 const STAGE_KEYS = ["chargeFrames", "travelFrames", "impactFrames"];
 
-const GROUND = new Set(["shock", "dust", "circle", "heal"]);
+const GROUND = new Set(["shock", "dust", "charge", "circle", "heal"]);
 
 // a kind's picture for the type grid: one telling frame, rendered in the
 // background (the card shows empty until it comes) and kept
@@ -295,7 +295,7 @@ export class VfxPanel {
     } else slider("特效大小", "size", 20, 100, "%", "特效在画幅框里占多大：画幅框不变，只缩放特效（超出画幅框的部分会被裁掉）");
     slider("粒子", "amount", 0, 200, "%");
     slider("辉光", "glow", 0, 150, "%");
-    if (hasSide(s.kind)) choose("视角", "view", [["front", "正面"], ["side", "侧面"]]);
+    if (hasSide(s.kind)) choose("视角", "view", [["front", "正面"], ["side", "侧面"]], (v) => (v === "side" && GROUND.has(s.kind) && s.tilt <= 2 ? { view: v, tilt: 60 } : { view: v }));
     slider("旋转", "rotate", -180, 180, "°", remote ? "整个特效绕画布中心转动，超出画布的部分会被裁掉" : "整个特效绕中心转动（转出画幅框的部分会被裁掉，可以把画幅框拉大）");
     if (GROUND.has(s.kind)) slider("地面倾斜", "tilt", 0, 80, "°", "0° 是从正上方看，越大越扁，像放在地上；侧面视角时 0° 是正对着，越大越侧过去");
     if (s.kind === "circle") {

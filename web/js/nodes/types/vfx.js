@@ -14,7 +14,7 @@ import { PROJECTILES, SPINS } from "../../vfx/kinds/arrow.js";
 import { remoteSettings, hasFlight, remoteFrameLimit, FLIGHT_FIELDS, flightFieldVisible } from "../../vfx/remote.js";
 import { remoteSizeOf, REMOTE_SIZE_RANGE } from "../../vfx/remotesize.js";
 
-const GROUND = new Set(["shock", "dust", "circle", "heal"]);
+const GROUND = new Set(["shock", "dust", "charge", "circle", "heal"]);
 
 function registerEffectNode(remote) {
   const kinds = effectKinds(remote);
@@ -100,7 +100,10 @@ function registerEffectNode(remote) {
     else f.slider("大小", "size", { min: 20, max: 100, unit: "%" });
     f.slider("粒子", "amount", { min: 0, max: 200, unit: "%" });
     f.slider("辉光", "glow", { min: 0, max: 150, unit: "%" });
-    const view = f.select("视角", "view", [["front", "正面"], ["side", "侧面"]], { wide: true });
+    const view = f.select("视角", "view", [["front", "正面"], ["side", "侧面"]], {
+      wide: true,
+      onChange: (v) => { if (v === "side" && GROUND.has(p().kind) && p().tilt <= 2) ctx.set({ tilt: 60 }); },
+    });
     f.slider("旋转", "rotate", { min: -180, max: 180, unit: "°" });
     const ground = f.slider("地面倾斜", "tilt", { min: 0, max: 80, unit: "°" });
     const pattern = f.select("法阵图案", "pattern", [["hex", "六芒星"], ["penta", "五芒星"], ["square", "双方形（八角）"], ["taiji", "太极八卦"], ...GROUND_AURAS], { wide: true });
@@ -138,7 +141,7 @@ function registerEffectNode(remote) {
       view.style.display = hasSide(k) ? "" : "none";
     });
     f.buttons(["换一个随机样子", () => ctx.set({ seed: (p().seed % 9973) + 1 + Math.floor(Math.random() * 500) })]);
-    f.hint("「地面倾斜」：0° 是从正上方看，越大越扁，像放在地上（冲击波为 0° 时是空中的圆环）；侧面视角时 0° 是正对着，越大越侧过去。「视角」（翅膀、冲击波、魔法阵）侧面：翅膀向后展开，冲击波和魔法阵竖起来侧对；「旋转」整体绕中心转动。想手修就右键卡片「烘焙为动画卡片」。");
+    f.hint("「地面倾斜」：0° 是从正上方看，越大越扁，像放在地上（冲击波、蓄力为 0° 时是正圆）；侧面视角时 0° 是正对着，越大越侧过去。「视角」（翅膀、冲击波、蓄力、魔法阵）侧面：翅膀向后展开，冲击波、蓄力和魔法阵竖起来侧对；「旋转」整体绕中心转动。想手修就右键卡片「烘焙为动画卡片」。");
   },
 });
 }

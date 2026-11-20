@@ -100,7 +100,7 @@ export function codeParamsFrom(s, w, h, fps, name) {
     name: name || (VFX_KINDS.find((k) => k.id === s.kind) || {}).name || s.kind,
     kind: CODE_KINDS.indexOf(s.kind), w, h,
     size: Math.max(0.05, Math.min(1, s.size / 100)),
-    squash: Math.max(0.15, Math.cos(Math.max(0, Math.min(80, s.tilt)) * Math.PI / 180)),
+    squash: (s.kind === "shock" || s.kind === "charge") && s.tilt <= 2 ? 1 : Math.max(0.15, Math.cos(Math.max(0, Math.min(80, s.tilt)) * Math.PI / 180)),
     side: s.view === "side", pattern: PATTERNS[s.pattern] ?? 0, bolts: !!s.bolts,
     // 魔法阵: 高度, and 环绕角色's half (0 all, 1 the far half, 2 the near one; vfx/layer.js vfxPart)
     ringHeight: Math.max(0, Math.min(1, (+s.ringHeight || 0) / 100)), ringPart: s.kind === "circle" ? (s.part === "back" ? 1 : s.part === "front" ? 2 : 0) : 0, ringFlip: !!s.ringFlip,
@@ -197,9 +197,9 @@ signal finished
 @export var box_size := Vector2(${num(d.w)}, ${num(d.h)})
 ## 特效大小：占画幅的比例
 @export_range(0.05, 1.0) var size := ${num(d.size)}
-## 地面透视（冲击波、治疗光圈、魔法阵）：1 = 从正上方看，越小越扁
+## 地面透视（冲击波、蓄力、治疗光圈、魔法阵）：1 = 从正上方看，越小越扁
 @export_range(0.15, 1.0) var squash := ${num(d.squash)}
-## 侧面（冲击波、翅膀、魔法阵）
+## 侧面（冲击波、蓄力、翅膀、魔法阵）
 @export var side_view := ${d.side}
 ## 环绕光：带闪电（超级赛亚人 2 那样）
 @export var bolts := ${d.bolts}
@@ -1608,10 +1608,13 @@ func _k_shock() -> void:
 			_comet(path, clampf(t * 1.3, 0.0, 1.0), 0.2, maxf(0.7, sz), 0.85 * a, splat_color, core_color)
 
 
-# 蓄力：沿螺旋汇聚的彗星，脉动的能量球，绕着转的光弧；不循环时最后爆开
+# 蓄力：沿螺旋汇聚的彗星，脉动的能量球，绕着转的光弧；不循环时最后爆开；可按地面透视压扁或侧面竖起
 func _k_charge() -> void:
 	var t := _t
 	var R := _R
+	var kx := squash if side_view else 1.0
+	var ky := 1.0 if side_view else squash
+	var sc := Vector2(kx, ky)
 	var c := Vector2(_cx, _cy)
 	var P := Rand.new(random_seed * 31 + 8)
 	var power := 1.0 if loop else 0.25 + 0.75 * _ease_in(t / 0.82, 1.4)
@@ -1633,12 +1636,12 @@ func _k_charge() -> void:
 			var q := maxf(0.0, p - 0.22 * (1.0 - i / 10.0))
 			var d := R * 0.14 + (r0 - R * 0.14) * (1.0 - _ease_in(q, 1.7))
 			var th := th0 + q * 2.2
-			pts.append(c + Vector2(cos(th), sin(th)) * d)
+			pts.append(c + Vector2(cos(th) * d * kx, sin(th) * d * ky))
 		_trail(pts, maxf(0.7, R * 0.022 * wid), a, true, rim_color, core_color)
 	var pulse := 1.0 + 0.1 * sin(TAU * t * 2.0)
 	var rr := R * 0.24 * pulse * power * gone
-	_blob(c, rr * 2.4, [[0.0, rim_color, 0.45 * gone], [1.0, rim_color, 0.0]])
-	_blob(c, rr, [[0.0, core_color, 1.0], [0.45, core_color, 0.95], [0.75, rim_color, 0.8], [1.0, colors[mini(2, colors.size() - 1)], 0.0]])
+	_blob(c, rr * 2.4, [[0.0, rim_color, 0.45 * gone], [1.0, rim_color, 0.0]], sc)
+	_blob(c, rr, [[0.0, core_color, 1.0], [0.45, core_color, 0.95], [0.75, rim_color, 0.8], [1.0, colors[mini(2, colors.size() - 1)], 0.0]], sc)
 	for k in 3:
 		var a0 := TAU * t * (-1.0 if k % 2 == 1 else 1.0) + k * TAU / 3.0
 		var arx := rr * (1.35 + 0.2 * k)
@@ -1647,17 +1650,18 @@ func _k_charge() -> void:
 		var pts := PackedVector2Array()
 		for i in 25:
 			var th := a0 + 1.9 * i / 24.0
-			pts.append(c + Vector2(cos(th) * arx, sin(th) * ary).rotated(tilt))
+			var v := Vector2(cos(th) * arx, sin(th) * ary).rotated(tilt)
+			pts.append(c + Vector2(v.x * kx, v.y * ky))
 		_trail(pts, maxf(0.8, R * 0.022), 0.9 * gone, false, rim_color, core_color)
 	for k in int(round(4.0 * amount)):
 		var th := P.next() * TAU
 		var d := rr * (1.3 + 0.8 * P.next())
 		var tw := 0.5 + 0.5 * sin(TAU * (t * 2.0 + P.next()))
-		_star(c + Vector2(cos(th), sin(th)) * d, maxf(2.0, R * 0.06 * tw), rim_color, 0.9 * tw * gone, 0.0)
+		_star(c + Vector2(cos(th) * d * kx, sin(th) * d * ky), maxf(2.0, R * 0.06 * tw), rim_color, 0.9 * tw * gone, 0.0)
 	if burst > 0.0:
 		var bt := clampf((t - 0.8) / 0.2, 0.0, 1.0)
-		_blob(c, R * (0.4 + 0.6 * _ease_out(bt, 2.0)), [[0.0, core_color, 1.0 - bt], [0.4, rim_color, 0.7 * (1.0 - bt)], [1.0, rim_color, 0.0]])
-		_ring(c, R * (0.3 + 0.8 * _ease_out(bt, 2.0)), R * 0.06 + 0.6, 1.0, rim_color, 0.9 * (1.0 - bt), 1.0)
+		_blob(c, R * (0.4 + 0.6 * _ease_out(bt, 2.0)), [[0.0, core_color, 1.0 - bt], [0.4, rim_color, 0.7 * (1.0 - bt)], [1.0, rim_color, 0.0]], sc)
+		_ring(c, R * (0.3 + 0.8 * _ease_out(bt, 2.0)), R * 0.06 + 0.6, ky, rim_color, 0.9 * (1.0 - bt), kx)
 
 
 # 治疗光圈：地面上的光圈和柔光、升起的光柱、盘旋上升的光带、十字光点和上飘的光点

@@ -40,7 +40,7 @@ import { remote } from "./kinds/remote.js";
 export const VFX_KINDS = [
   { id: "thunder", name: "雷电", help: "蓝白电核与分叉电弧；命中时短促闪光、多次放电、飞散电火花和逐渐冷却的放射电纹", defaults: { remoteSize: 20, palette: "animebolt", loop: true, size: 90, glow: 40, acc: "none" }, round: true },
   { id: "ice", name: "冰矛", help: "赛璐璐风格的冰枪：平涂的亮面、中间色和暗面，上沿一道高光、细描边，枪尖一颗四角闪光；身后只有几条白色速度线（拐弯时跟着弯成弧线），沿途掉落小冰屑；命中时一丛冰刺朝飞行方向扇形射出，停一下后碎开、翻滚着落下。颜色随配色", defaults: { remoteSize: 65, palette: "frost", loop: true, size: 90, glow: 0, acc: "none", flightPath: "straight" }, round: true },
-  { id: "water", name: "水球", help: "照开源项目 PixelFX 的水球画的：透明的水球，表皮会晃，迎光的左上方一圈白亮边，里面越深越暗、光在右下方聚成一个亮点，里面三圈水流绕着转、气泡往上飘，左上一道高光，外面几粒水雾绕着飞，周围一层水光；飞的时候从后面甩出带尾巴的水珠往下掉，还有水雾和细小的水花，都留在甩出来的地方；命中时白光一闪，水球破开成一圈水边往外扩、再一段段断开，水边上的水指甩出水珠，水花和大水珠四散落下，伴随闪光点和水雾。颜色随配色", defaults: { remoteSize: 30, palette: "torrent", loop: true, size: 90, glow: 0, acc: "none", flightPath: "straight" }, round: true },
+  { id: "water", name: "水球", help: "照开源项目 PixelFX 的水球画的：透明的水球，表皮会晃，迎光的左上方一圈白亮边，里面越深越暗、光在右下方聚成一个亮点，里面三圈水流绕着转、气泡往上飘，左上一道高光，外面几粒水雾绕着飞，周围一层水光；飞行时整团水球随惯性弹性伸缩与后半部左右晃荡、表面波浪从前端向后端起伏，内部水流、高光和气泡跟着一起晃动，并不断从后面甩出泪滴状带尾水珠、水雾和细小水花；命中时白光爆闪并扩出一圈断裂水波环，炸开多层水花瓣与平滑波浪水冠，粗细渐变的弯曲水舌拉丝颈缩后甩出大水珠，伴随定向飞溅的水滴群、雾化水花、闪光点与翻涌水雾。颜色随配色", defaults: { remoteSize: 30, palette: "torrent", loop: true, size: 90, glow: 0, acc: "none", flightPath: "straight" }, round: true },
   { id: "wind", name: "风刃", help: "白色翻滚气团、两端渐隐的细长流线与逐渐扩散的空气尾迹，命中时扩散", defaults: { remoteSize: 20, palette: "air", loop: true, size: 90, glow: 20, acc: "none" }, round: true },
   { id: "sand", name: "沙流", help: "流动的沙粒与金色细丝，沿路径飞行，命中时扬起散沙", defaults: { remoteSize: 20, palette: "sand", loop: true, size: 90, glow: 20, acc: "none", flightPath: "wave" }, round: true },
   { id: "slash", name: "剑气", help: "一道月牙形的剑气，光效和配色与同名攻击拖尾一样（烈焰斩是火焰、冰晶带冰晶、雷光带闪电……）；从左往右横着飞出去，鼓起的一面朝前，完整地飞到终点，再在「命中消散」的帧数里淡出消失。「剑气外形」两头尖是整个月牙，半头只留上半截、下面平切贴着飞行线；「地面夹角」0°~360°，整个剑气绕起点到终点这条飞行线连续旋转：90° 竖直，0° 和 180° 平行地面、从侧面看是扁扁的一道，约 163° 和 343° 侧对成一道细线，270° 倒过来，360° 回到 0°；「左右倾斜」-90°~90° 是剑气竖直时往前或往后斜（正数上端往飞行方向倾，负数往后倾），斜好之后再按地面夹角绕飞行线转；「剑气厚度」调粗细；「月牙弧度」60°~240° 调弯的程度，越小越平、越大越弯，过了 180° 两个尖往回卷；「剑气光丝」0%~100% 调刀身上细丝、卷流和弧形光丝的多少，100% 和攻击拖尾一样多", defaults: { remoteSize: 60, palette: "blaze", loop: true, size: 90, glow: 40, acc: "none", flightPath: "straight", startX: 12, startY: 55, endX: 88, endY: 55, chargeFrames: 2, travelFrames: 16, impactFrames: 4, slashAngle: 90, slashShape: "full", slashThick: 60, slashCurve: 170, slashLean: 0, slashStrands: 25 }, round: true },
@@ -49,7 +49,7 @@ export const VFX_KINDS = [
   { id: "explosion", name: "爆炸", help: "火球膨胀、冷却成烟往上飘，带飞散的火星", defaults: { palette: "inferno", frames: 12, loop: false, size: 80 } },
   { id: "shock", name: "冲击波", help: "向外扩散的环，可以压扁成地面上的冲击波；侧面是竖起来侧对着的环", defaults: { palette: "frost", frames: 8, loop: false, size: 80 }, side: true },
   { id: "dust", name: "烟尘", help: "落地、急停、冲刺扬起的烟尘，向两侧散开", defaults: { palette: "quake", frames: 10, loop: false, size: 80 } },
-  { id: "charge", name: "蓄力", help: "能量向中心汇聚成发光的球；不循环时最后爆开", defaults: { palette: "spark", frames: 12, loop: true, size: 80 } },
+  { id: "charge", name: "蓄力", help: "能量向中心汇聚成发光的球；可以压扁成地面上的蓄力漩涡，侧面是竖起来侧对着的蓄力平面；不循环时最后爆开", defaults: { palette: "spark", frames: 12, loop: true, size: 80, tilt: 0 }, side: true },
   { id: "circle", name: "魔法阵", help: "旋转的法阵：圆环、符文、星形，向上飘的光点；侧面是竖起来侧对着的法阵，像一道传送门", defaults: { palette: "crescent", frames: 16, loop: true, size: 80 }, side: true },
   { id: "heal", name: "治疗光圈", help: "脚下的光圈和升起的光柱、十字光点", defaults: { palette: "venom", frames: 12, loop: true, size: 80 } },
   { id: "aura", name: "环绕光", help: "超级赛亚人那样包住角色的斗气：向上舔动的光焰、中间透明、上升的光束和火花，可加闪电", defaults: { palette: "radiant", frames: 8, loop: true, size: 95, pad: 20 }, around: true, fit: auraBody },
@@ -80,7 +80,7 @@ export const VFX_DEFAULTS = {
   size: 80,      // % of the canvas the effect reaches
   amount: 100,   // particles, %
   glow: 60,      // bloom, %
-  tilt: 60,      // 冲击波 / 魔法阵 / 治疗 / 烟尘: how flat the ground is seen, degrees (0 = from above)
+  tilt: 60,      // 冲击波 / 蓄力 / 魔法阵 / 治疗 / 烟尘: how flat the ground is seen, degrees (0 = from above)
   pattern: "hex", // 魔法阵: "hex" 六芒星 | "penta" 五芒星 | "square" 双方形 | "taiji" 太极八卦 | 光环（kinds/auras.js GROUND_AURAS）
   ringHeight: 0, // 魔法阵: how high it sits in its box, % (0 at the feet … 50 the waist … 100 the head)
   ringWrap: false, ringFlip: false, // 魔法阵 环绕角色: its far half goes behind (vfx/layer.js), 反过来: the other half
@@ -137,7 +137,7 @@ export function renderVfx(p, i) {
     rx: w / 2 * clamp01(s.size / 100), ry: h / 2 * clamp01(s.size / 100),
     // the ground line: low enough for what rises off it to fit
     gy: s.kind === "dust" ? h * 0.85 : ground ? h / 2 + R * squash * 0.5 : h / 2,
-    squash: s.kind === "shock" && s.tilt <= 2 ? 1 : squash,
+    squash: (s.kind === "shock" || s.kind === "charge") && s.tilt <= 2 ? 1 : squash,
     amount: Math.max(0, s.amount / 100), glow: Math.max(0, s.glow / 100), loop: !!s.loop, pattern: s.pattern, edge: s.edge || "auto",
     root: Math.max(0.1, Math.min(1, (s.root ?? 100) / 100)), drift: !!s.drift, shape: s.shape || "arrow", spin: s.spin || "auto", coreShift: Math.max(-1, Math.min(1, (+s.coreShift || 0) / 100)),
     pixel: s.style === "pixel", px: Math.max(1, Math.min(8, s.pxSize | 0 || 1)), bolts: !!s.bolts, view: hasSide(s.kind) ? s.view : "front",
